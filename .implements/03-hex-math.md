@@ -47,10 +47,12 @@ Chỉ số hướng 0..5 dùng để: chọn hướng theo góc chuột, và ch�
 distance = (|x1-x2| + |y1-y2| + |z1-z2|) / 2
 ```
 
-## Bản đồ hình lục giác lớn
+## Bản đồ
 
-Tập ô hợp lệ = mọi `(q, r)` có `cubeDistance(center) <= MAP_RADIUS`.
-Số ô ≈ `3 * R² + 3 * R + 1`.
+- `mapCells(R)` — sân hình lục giác: mọi `(q,r)` có `cubeDistance(center) <= R`
+  (số ô ≈ `3R²+3R+1`). Dùng cho unit test toán hex.
+- **`mapRect(halfW, halfH, size)`** — sân **hình chữ nhật** (MVP hiện dùng): mọi hex có
+  TÂM nằm trong `[-halfW,halfW] × [-halfH,halfH]`. Cho **biên thẳng** để trượt mượt.
 
 ## Thuật toán chiếm đất (Flood Fill / "bao vây")
 

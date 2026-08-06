@@ -40,9 +40,11 @@ function GameLoop({
   const hitPoint = useMemo(() => new THREE.Vector3(), []);
   const ndc = useMemo(() => new THREE.Vector2(), []);
   // Rotation camera KHOÁ cố định (chỉ pan, không xoay theo chuột/di chuyển).
+  // Dùng dummy là CAMERA để lookAt đúng ngữ nghĩa (camera nhìn theo trục -Z);
+  // nếu dùng Object3D thường, three.js đảo chiều → camera quay ra xa scene (đen).
   const camQuat = useMemo(() => {
     const [ox, oy, oz] = CONFIG.CAMERA.OFFSET;
-    const dummy = new THREE.Object3D();
+    const dummy = new THREE.PerspectiveCamera();
     dummy.position.set(ox, oy, oz);
     dummy.lookAt(0, 0, 0);
     return dummy.quaternion.clone();
