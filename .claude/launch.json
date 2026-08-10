@@ -2,10 +2,11 @@
   "version": "0.0.1",
   "configurations": [
     {
-      "name": "hexagon-dev",
-      "runtimeExecutable": "npm",
-      "runtimeArgs": ["run", "dev"],
-      "port": 3000
+      "name": "hexagon-client",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": ["--filter", "@hexagon/client", "dev"],
+      "port": 3000,
+      "autoPort": true
     }
   ]
 }

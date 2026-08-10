@@ -85,15 +85,30 @@ mượt về phía con trỏ (giới hạn `CONFIG.TURN_RATE`). Lãnh thổ vẫ
 
 ## Ranh giới module (để sub-agent không dẫm chân)
 
-| Module | Sở hữu bởi task | Không được sửa |
-|--------|-----------------|----------------|
-| `src/game/hex.ts` | Task A | logic capture, render |
-| `src/game/floodfill.ts` | Task B | render |
-| `src/game/state.ts` | Task C | render, chỉ import hex+floodfill |
-| `src/components/*` (R3F) | Task D | logic trong `src/game` |
-| `app/*` (routing, HUD) | Task E | logic trong `src/game` |
+Từ **Pha 2**, logic đã tách sang `packages/shared` (xem bên dưới). Ranh giới hiện tại:
 
-## Chuyển sang server authoritative (sau)
-- `src/game/*` → `packages/shared`.
-- Server chạy `GameState.tick()` là nguồn chân lý; client chỉ render snapshot + nội suy.
-- Client-side prediction cho đầu người chơi để che độ trễ; reconcile theo snapshot.
+| Module | Vai trò | Không được sửa |
+|--------|---------|----------------|
+| `packages/shared/src/{hex,floodfill,arena}.ts` | toán hex, flood fill, hình học sân | render |
+| `packages/shared/src/state.ts` | `GameState` deterministic (chỉ import trong shared) | render |
+| `packages/shared/src/{protocol,spatialhash}.ts` | wire-format nhị phân + broad-phase va chạm | render |
+| `packages/client/src/components/*` (R3F) | render + input | logic trong `shared` |
+| `packages/client/src/net/*` | net layer client (predict/interp) | logic authoritative trong `shared`/`server` |
+| `packages/server/src/*` (NestJS + ws) | GameRoom authoritative, transport | logic trong `shared` (chỉ import) |
+
+## Monorepo (Pha 2 — ĐÃ TÁCH)
+
+```
+packages/
+  shared/   # @hexagon/shared — logic thuần TS deterministic, build tsc → dist (CJS)
+  client/   # @hexagon/client — Next.js + R3F, import @hexagon/shared
+  server/   # @hexagon/server — NestJS (standalone context, không HTTP) + ws
+```
+
+- Công cụ: **pnpm workspaces** (qua corepack). `node-linker=hoisted`. Xem
+  [05-roadmap.md](05-roadmap.md) và báo cáo [REPORT-pha-2.md](REPORT-pha-2.md).
+- Server chạy `GameState.update(dt)` là **nguồn chân lý** (tick cố định); client gửi
+  INPUT (heading) và **render snapshot** — không gửi vị trí.
+- **Client-side prediction** cho đầu người chơi (`stepHead` khớp `updateEntity` của server)
+  để che độ trễ; **reconcile** theo `ackSeq` trong snapshot; **interpolation** cho thực
+  thể khác (trễ ~100 ms).

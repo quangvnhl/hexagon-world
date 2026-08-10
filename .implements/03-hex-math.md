@@ -49,10 +49,23 @@ distance = (|x1-x2| + |y1-y2| + |z1-z2|) / 2
 
 ## Bản đồ
 
-- `mapCells(R)` — sân hình lục giác: mọi `(q,r)` có `cubeDistance(center) <= R`
-  (số ô ≈ `3R²+3R+1`). Dùng cho unit test toán hex.
-- **`mapRect(halfW, halfH, size)`** — sân **hình chữ nhật** (MVP hiện dùng): mọi hex có
-  TÂM nằm trong `[-halfW,halfW] × [-halfH,halfH]`. Cho **biên thẳng** để trượt mượt.
+- `mapCells(R)` — sân hình lục giác theo cube distance: mọi `(q,r)` có
+  `cubeDistance(center) <= R` (số ô ≈ `3R²+3R+1`). Dùng cho unit test toán hex.
+- `mapRect(halfW, halfH, size)` — sân **hình chữ nhật**: mọi hex có TÂM nằm trong
+  `[-halfW,halfW] × [-halfH,halfH]`. (Không còn dùng cho MVP; giữ cho test/tham chiếu.)
+- **`mapArena(margin)`** trong `src/game/arena.ts` — sân **LỤC GIÁC đều (flat-top)**
+  (MVP hiện dùng): mọi hex có TÂM nằm trong lục giác bán kính ngoại tiếp
+  `CONFIG.ARENA_RADIUS`, nới thêm `margin`. Biên là **6 tường nghiêng 120°** → không
+  còn góc vuông gây kẹt; vùng chơi = giao 6 nửa mặt phẳng `{ p : p·nₖ ≤ inradius }`.
+
+### Va chạm & trượt tường (biên lồi tổng quát — `arena.ts`)
+
+- `insideArena(x,y,slack)` — điểm có trong sân không (nới/thu biên `slack`).
+- `clampInside(x,y)` — kéo điểm về trong lục giác lồi (chiếu lên các tường bị vượt).
+- **Trượt tường giữ nguyên tốc độ:** với mỗi tường đang áp & hướng đi ra ngoài, bỏ
+  thành phần pháp tuyến của vận tốc rồi chuẩn hoá lại về 1 → không chậm/dừng. Đâm
+  chính diện 1 cạnh → chọn tiếp tuyến nghiêng về phía con trỏ (chỉ kẹt khi ép đúng
+  vào 1 đỉnh lục giác).
 
 ## Thuật toán chiếm đất (Flood Fill / "bao vây")
 

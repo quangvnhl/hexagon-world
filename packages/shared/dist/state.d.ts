@@ -1,0 +1,223 @@
+import { PlayerColor } from "./config";
+import { Axial, HexKey } from "./hex";
+import type { EntitySnap, TerritoryCell } from "./protocol";
+export interface Vec2 {
+    x: number;
+    y: number;
+}
+/** prep = 3s chuẩn bị (đứng yên, chỉ xoay); playing = đang chơi; dead = đã chết. */
+export type Phase = "prep" | "playing" | "dead";
+/** Lý do chết (để báo cho người chơi):
+ *  - ""            : chưa chết / chưa rõ (vd chưa có chỗ hồi sinh).
+ *  - "self"        : tự đâm vào đuôi của chính mình.
+ *  - "cut"         : bị đối thủ cắt đuôi (killerId cho biết là ai).
+ *  - "headIntruder": xâm nhập lãnh thổ đối thủ và bị chủ đất húc đầu hạ (killerId = chủ đất).
+ *  - "headMutual"  : đâm đầu trực diện ngoài sân nhà → cả hai cùng chết. */
+export type DeathCause = "" | "self" | "cut" | "headIntruder" | "headMutual";
+/** Một thực thể chơi (người hoặc bot): vị trí, đuôi, lãnh thổ, trạng thái. */
+export declare class Entity {
+    readonly id: number;
+    readonly isBot: boolean;
+    readonly color: PlayerColor;
+    /** Tên hiển thị (người chơi nhập ở màn hình đầu; rỗng → dùng `color.name`). */
+    name: string;
+    pos: Vec2;
+    heading: number;
+    targetHeading: number;
+    currentHex: Axial;
+    owned: Set<HexKey>;
+    trailHexes: HexKey[];
+    trailSet: Set<HexKey>;
+    trailPoints: Vec2[];
+    phase: Phase;
+    prepRemaining: number;
+    deaths: number;
+    /** Lý do chết lần gần nhất (cho popup). */
+    deathCause: DeathCause;
+    /** Id kẻ đã hạ ở lần chết gần nhất (-1 nếu tự chết / cả hai chết). */
+    killerId: number;
+    /** Ảnh chụp lãnh thổ (danh sách ô playable) NGAY TRƯỚC lần chết gần nhất — để vẽ
+     *  bản đồ "đất đã chiếm" trong popup chết (vì đất đã bị xoá/chuyển sau khi chết). */
+    lastTerritory: HexKey[];
+    /** % diện tích ngay trước lần chết gần nhất. */
+    lastPct: number;
+    home: Vec2;
+    /** EXPAND = bành trướng; RETURN = về khép vòng; HUNT = săn cắt đuôi; FLEE = rút lui. */
+    botState: "expand" | "return" | "hunt" | "flee";
+    /** Chỉ số vào CONFIG.BOT_DIFFICULTY (độ khó). */
+    botProfile: number;
+    /** Đếm ngược tới lần ra quyết định kế (giây). */
+    botDecisionTimer: number;
+    /** Id con mồi đang săn (khi ở HUNT). */
+    huntId: number;
+    botOutHeading: number;
+    botRange: number;
+    respawnTimer: number;
+    constructor(id: number, isBot: boolean, color: PlayerColor);
+    get alive(): boolean;
+}
+/**
+ * Trạng thái game thuần TypeScript, deterministic — không phụ thuộc render.
+ *
+ * ĐA THỰC THỂ: players[0] là người chơi, còn lại là bot. Mỗi thực thể di chuyển liên
+ * tục (pixel), để lại đuôi khi ra ngoài lãnh thổ; khép vòng → chiếm đất (flood fill,
+ * cướp cả ô của đối thủ nằm trong vòng); đầu đâm vào đuôi của ai đó → thực thể đó chết.
+ */
+export declare class GameState {
+    readonly map: Set<HexKey>;
+    /** Ô render/tính % (nằm trong tường) — vành biên ngoài KHÔNG thuộc tập này. */
+    readonly playable: Set<HexKey>;
+    readonly players: Entity[];
+    /** Số ghế NGƯỜI (không phải bot): players[0..humanCount-1]. Mặc định 1 (single-player).
+     *  Server multiplayer đặt >1 và gán mỗi kết nối vào một ghế người. */
+    readonly humanCount: number;
+    /** Chủ sở hữu / chủ đuôi của từng ô (id thực thể) — cho render nhanh & va chạm. */
+    private cellOwner;
+    private cellTrail;
+    /** Broad-phase va chạm đầu (spatial hash theo toạ độ liên tục). */
+    private headHash;
+    private fixedSpawn?;
+    private rng;
+    /** Tăng khi thực thể đổi (vị trí/đuôi) — cho renderer cube/line. */
+    revision: number;
+    /** Tăng khi lưới cần tô lại (owned hoặc trail hex đổi). */
+    gridRevision: number;
+    /** Thời gian (giây) còn lại phải giữ ngôi King liên tục để thắng. */
+    kingHoldRemaining: number;
+    /** Đã kết thúc chưa (có người thắng) → đóng băng game. */
+    won: boolean;
+    /** Id người thắng (-1 nếu chưa). */
+    winnerId: number;
+    /** Id KING đang được tính giờ giữ ngôi (đổi King → reset đồng hồ). */
+    private kingHolderId;
+    /** Người chơi đã chọn XEM (khán giả): không hồi sinh nữa tới khi hết ván. */
+    spectating: boolean;
+    constructor(spawnAt?: Axial, botCount?: number, humanCount?: number);
+    get human(): Entity;
+    get owned(): Set<HexKey>;
+    set owned(v: Set<HexKey>);
+    get trailHexes(): HexKey[];
+    get trailPoints(): Vec2[];
+    get pos(): Vec2;
+    get heading(): number;
+    get phase(): Phase;
+    get prepRemaining(): number;
+    get deaths(): number;
+    setHeadingTarget(angle: number): void;
+    /** Server authoritative: đặt hướng mong muốn cho thực thể theo id (input mạng). Chỉ
+     *  áp cho ghế người còn sống — bot tự điều khiển bằng botThink. */
+    setTargetHeading(id: number, angle: number): void;
+    /** Liệt kê mọi ô lãnh thổ (đất + đuôi) để server gửi keyframe TERRITORY. */
+    territoryCells(): TerritoryCell[];
+    /** [ONLINE] Đặt trạng thái một thực thể từ snapshot mạng (không chạy mô phỏng). */
+    applyEntity(id: number, x: number, y: number, heading: number, alive: boolean, hasTrail?: boolean): void;
+    /**
+     * [ONLINE] "Đỗ" một ghế: cho thực thể chết & trả toàn bộ đất/đuôi về trung lập, KHÔNG
+     * tự hồi sinh. Dùng cho GHẾ CHƯA CÓ NGƯỜI ở phòng chờ → ghế trống không mô phỏng, không
+     * để lại "bóng ma" trôi trên sân. Người vào (join) sẽ respawn ghế này.
+     */
+    park(id: number): void;
+    /** [ONLINE] Dựng lại toàn bộ lưới đất/đuôi từ keyframe TERRITORY của server. */
+    applyTerritory(cells: TerritoryCell[]): void;
+    /** % lãnh thổ của một thực thể theo id (cho HUD online — human getter chỉ trỏ players[0]). */
+    pctOf(id: number): number;
+    /** [ONLINE] Gán TÊN hiển thị cho một ghế (từ JOIN / roster server). */
+    setName(id: number, name: string): void;
+    /** Tên hiển thị của thực thể: ưu tiên tên người chơi, fallback tên màu. */
+    nameOf(id: number): string;
+    /** [ONLINE] Chốt NGƯỜI THẮNG (dùng khi phòng chỉ còn 1 người còn sống). */
+    declareWinner(id: number): void;
+    /** Ảnh chụp trạng thái thực thể để mã hoá SNAPSHOT (server→client). */
+    snapshotEntities(): EntitySnap[];
+    hasTrail(k: HexKey): boolean;
+    /** Số ô người chơi đang sở hữu / tổng ô chơi được (%). */
+    territoryPct(): number;
+    get isKing(): boolean;
+    /** Id KING hiện tại: thực thể CÒN SỐNG có % cao nhất và ≥ KING_PCT; -1 nếu không có. */
+    kingId(): number;
+    /** Phòng bị KHOÁ khi đã có KING: không cho ai hồi sinh/tham gia (người còn sống thì
+     *  đối kháng với nhau). Hết King → mở lại. */
+    roomLocked(): boolean;
+    /** Id thực thể CÒN SỐNG có nhiều đất nhất (cho camera khán giả); -1 nếu không có. */
+    leaderId(): number;
+    /** % lãnh thổ của mọi thực thể (cho bảng xếp hạng). */
+    scores(): {
+        id: number;
+        name: string;
+        pct: number;
+        alive: boolean;
+    }[];
+    private ownedPlayable;
+    /** Id chủ sở hữu ô (owned), hoặc -1 nếu trung lập. */
+    cellOwnerId(k: HexKey): number;
+    /** Màu RGB của 1 ô để render lưới. */
+    cellColor(k: HexKey): [number, number, number];
+    /** Duyệt các ô ĐẤT (owned) kèm id chủ sở hữu — cho minimap & vạch ranh giới. */
+    forEachOwned(cb: (k: HexKey, ownerId: number) => void): void;
+    private inMap;
+    /** Spawn e nếu CÒN vị trí hợp lệ (cách mọi lãnh thổ ≥ SPAWN_CLEARANCE, không đè đất
+     *  đã có). Trả về false nếu KHÔNG đủ chỗ → e nằm chờ (dead) chứ không spawn. */
+    private spawn;
+    /**
+     * Chết: mất TOÀN BỘ đuôi. Nếu bị `killer` hạ → toàn bộ ĐẤT của nạn nhân **thuộc về
+     * killer**; nếu tự chết (không killer) → đất trả về trung lập. Người chơi → chờ bấm
+     * Hồi sinh; bot → tự hồi sinh (khi phòng chưa khoá).
+     */
+    private kill;
+    /** Xoá mọi ô owned/trail của e khỏi bản đồ chia sẻ. */
+    private clearOwnership;
+    private claimCell;
+    /** Người chơi tự chết (dùng cho test / debug). */
+    die(): void;
+    /** Hồi sinh người chơi. Trả về false nếu không thể (đang sống, phòng bị KING khoá,
+     *  hoặc KHÔNG còn ô trống hợp lệ theo SPAWN_CLEARANCE). */
+    revive(): boolean;
+    /** Người chơi có thể hồi sinh ngay bây giờ không? (chưa chọn xem, không bị khoá, còn chỗ). */
+    canRevive(): boolean;
+    /** Người chơi chọn XEM (khán giả): từ bỏ hồi sinh, chờ đến khi hết ván mới chơi lại. */
+    spectate(): void;
+    /** [ONLINE] Server hồi sinh một GHẾ bất kỳ theo id (khi đang chết & phòng chưa khoá).
+     *  Trả false nếu không thể (đang sống, phòng có KING, hoặc hết chỗ hợp lệ). */
+    respawn(id: number): boolean;
+    /**
+     * Chơi lại từ đầu: xoá sạch bản đồ chia sẻ, đặt lại trạng thái thắng/đếm giữ
+     * ngôi, rồi spawn lại toàn bộ thực thể (mỗi thực thể nhận lại cụm 7 ô + vào
+     * lại giai đoạn chuẩn bị). Dùng cho nút "CHƠI LẠI" sau khi thắng.
+     */
+    restart(): void;
+    private botRange;
+    /**
+     * Chọn ô spawn TUÂN THỦ TUYỆT ĐỐI khoảng cách: tâm đủ sâu trong sân và KHÔNG có ô đất
+     * nào của ai trong bán kính `SPAWN_CLEARANCE` (⇒ cụm 7 ô chắc chắn trống, không đè đất
+     * đã có). Trả về `null` nếu KHÔNG còn vị trí hợp lệ (bản đồ đã đầy) → không cho hồi sinh.
+     * Người chơi có thể dùng `fixedSpawn` (test/deterministic).
+     */
+    private pickSpawnHex;
+    /** Gọi mỗi frame với dt (giây). */
+    update(dt: number): void;
+    /** Điều kiện thắng: (a) đấu loại — có KING và chỉ còn 1 thực thể sống; hoặc (b) một
+     *  KING giữ ngôi liên tục đủ WIN_HOLD_TIME giây. */
+    private checkWin;
+    private updateEntity;
+    /** API cho test: di chuyển người chơi tới (x,y) nếu ô đích hợp lệ. */
+    moveTo(x: number, y: number): void;
+    private stepEntity;
+    /** Xử lý khi đầu e bước vào ô mới. Trả về true nếu e chết. */
+    private enterHex;
+    private captureFor;
+    /** Chủ đất hạ KẺ XÂM NHẬP: nếu đầu đối thủ b đang đứng trên ĐẤT của a và sát đầu a
+     *  (≤ KILL_RADIUS) → b chết. Chủ đất bất khả xâm phạm trên sân nhà. */
+    private resolveHeadCollisions;
+    /** Đối thủ CÒN SỐNG gần e nhất trong bán kính r; onlyOutside=chỉ tính kẻ đang ở ngoài
+     *  (đang có đuôi → có thể săn / là mối đe doạ). */
+    private nearestEntity;
+    /** Điểm trên đuôi của prey gần `from` nhất (để nhắm cắt). */
+    private nearestTrailPoint;
+    /** Ô ngay phía trước (theo `heading`, cách `dist`) có bị chặn không: ra ngoài sân, hoặc
+     *  là ĐUÔI CỦA CHÍNH e (đâm vào = tự sát). */
+    private aheadBlocked;
+    /** Chọn hướng gần `desired` nhất mà phía trước KHÔNG bị chặn (né đuôi mình + tường).
+     *  Bot kỹ năng cao nhìn xa hơn và quét nhiều hướng hơn. */
+    private steerAvoiding;
+    private botThink;
+}

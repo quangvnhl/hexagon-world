@@ -9,20 +9,26 @@ Phân pha rõ ràng; mỗi pha có thể giao cho một nhóm sub-agent.
 - [x] Flood fill chiếm đất, HUD %, King ≥ 20%
 - [x] Tự cắt đuôi → chết/reset
 
-## Pha 1 — Gameplay hoàn thiện (vẫn local)
-- [ ] Bot AI đơn giản (đi tuần, mở rộng) để test cắt đuôi & bị tiêu diệt
-- [ ] Cơ chế thắng: giữ King 3 phút + đồng hồ + màn hình thắng
-- [ ] Camera zoom theo diện tích, minimap
-- [ ] Hiệu ứng: fill animation, particle khi chết
-- [ ] Mobile: joystick ảo + nút kỹ năng
-- [ ] Unit test cho hex math & flood fill (Vitest)
+## Pha 1 — Gameplay hoàn thiện (vẫn local) — ĐÃ XONG
+Xem báo cáo: [REPORT-pha-1.md](REPORT-pha-1.md).
+- [x] Bot AI đơn giản (đi tuần, mở rộng) để test cắt đuôi & bị tiêu diệt
+- [x] Cơ chế thắng: giữ King 3 phút + đồng hồ + màn hình thắng (`CONFIG.WIN_HOLD_TIME`, `GameState.won/kingHoldRemaining/restart()`)
+- [x] Camera zoom theo diện tích, minimap (`CONFIG.CAMERA.ZOOM`)
+- [x] Hiệu ứng: particle khi chết + lóe khi chiếm (`Effects.tsx`); *fill animation từng-ô để lại pha sau*
+- [x] Mobile: joystick ảo (`Joystick.tsx`); *nút kỹ năng chỉ là placeholder khoá — vật phẩm ở Pha 4*
+- [x] Unit test cho hex math & flood fill (Vitest — 28 test) ⚠️ `npm test` cần sửa quyền `node_modules` (xem báo cáo)
 
-## Pha 2 — Multiplayer nền tảng
-- [ ] Tách `packages/shared` (monorepo pnpm)
-- [ ] Server NestJS: GameRoom authoritative, tick 20–30 Hz
-- [ ] Transport `ws` thuần, snapshot broadcast
-- [ ] Client prediction + interpolation
-- [ ] Spatial hashing cho va chạm (xem 06)
+## Pha 2 — Multiplayer nền tảng — ĐÃ XONG
+Xem báo cáo: [REPORT-pha-2.md](REPORT-pha-2.md).
+- [x] Tách `packages/shared` (monorepo **pnpm workspaces** qua corepack; `shared`/`client`/`server`)
+- [x] Server NestJS: GameRoom authoritative, tick **24 Hz** (bước cố định bù trôi); NestJS bọc bootstrap, logic ở class thuần
+- [x] Transport `ws` thuần; SNAPSHOT nhị phân (DataView) broadcast per-client kèm `ackSeq`
+- [x] Client prediction + reconciliation (`stepHead` khớp server) + interpolation (trễ ~100ms)
+- [x] Spatial hashing cho va chạm đầu (`SpatialHash`, tích hợp `resolveHeadCollisions`; khớp brute-force)
+
+> Kiểm chứng độc lập: verify-logic 93/0 · vitest shared 41 / client 15 / server 1 (tích hợp
+> ws thật) · **e2e xuyên gói 4/4** (client predict ↔ server thật, dự đoán hội tụ drift=0) ·
+> `next build` xanh (client). Đồng bộ delta LÃNH THỔ + AoI để **Pha 3**.
 
 ## Pha 3 — Tối ưu mạng
 - [ ] Binary protocol (DataView → FlatBuffers)

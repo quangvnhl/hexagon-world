@@ -1,6 +1,9 @@
 # 06 — Multiplayer Netcode (thiết kế cho Pha 2+)
 
-> Chưa triển khai trong MVP. Tài liệu định hướng để tránh nợ kỹ thuật.
+> **Trạng thái (Pha 2 — xem [REPORT-pha-2.md](REPORT-pha-2.md)):** ĐÃ có server
+> authoritative + `ws` thuần, SNAPSHOT nhị phân (DataView) kèm `ackSeq`, client-side
+> prediction/reconciliation + interpolation, và spatial hashing va chạm đầu. **CÒN LẠI cho
+> Pha 3:** delta compression theo ô lãnh thổ, area-of-interest, và WebRTC DataChannel.
 
 ## Mô hình: Server Authoritative
 

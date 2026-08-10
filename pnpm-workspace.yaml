@@ -1,0 +1,12 @@
+packages:
+  - "packages/*"
+
+# Policy supply-chain của môi trường yêu cầu quyết định rõ true/false cho build script.
+# esbuild: bắt buộc (tsx + vitest dùng). sharp: Next tối ưu ảnh.
+allowBuilds:
+  esbuild: true
+  sharp: true
+
+onlyBuiltDependencies:
+  - esbuild
+  - sharp

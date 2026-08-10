@@ -31,6 +31,9 @@ phải đọc và tuân thủ các tài liệu này trước khi code.**
 
 - [x] Bộ tài liệu kế hoạch
 - [x] MVP scaffold (Next.js + React Three Fiber, single-player)
-- [ ] Bot/AI thử nghiệm cắt đuôi
-- [ ] Server authoritative + WebSocket
-- [ ] Binary protocol, matchmaking, totem, DB
+- [x] Sân LỤC GIÁC + tường trượt, spawn 7 ô ngẫu nhiên, 3s chuẩn bị, popup hồi sinh
+- [x] Bot/AI đối kháng (đa thực thể: bành trướng, cắt đuôi để hạ nhau)
+- [x] **Pha 1 hoàn thiện gameplay:** cơ chế thắng (giữ King 3 phút), camera zoom theo diện tích, hiệu ứng hạt, joystick mobile, unit test Vitest — xem [05-roadmap.md](05-roadmap.md) & [REPORT-pha-1.md](REPORT-pha-1.md)
+- [x] **Pha 2 nền tảng multiplayer:** monorepo pnpm (`shared`/`client`/`server`), server NestJS authoritative + `ws` (tick 24Hz), protocol nhị phân + snapshot, client prediction/interpolation, spatial hashing — xem [REPORT-pha-2.md](REPORT-pha-2.md)
+- [ ] Pha 3: binary delta compression, area-of-interest, WebRTC
+- [ ] Matchmaking, totem, DB (Pha 4+)
