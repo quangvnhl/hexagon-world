@@ -43,12 +43,15 @@ function decodeInput(buf) {
     return { seq: dv.getUint32(1, true), heading: dv.getFloat32(5, true) };
 }
 // ---- SNAPSHOT (server → client, binary) -----------------------------------
-// Header (13 bytes): u8 tag(102) | u32 tick | u32 ackSeq | u16 selfPrep(ms) | u16 count
+// Header (15 bytes): u8 tag(102) | u32 tick | u32 ackSeq | u16 selfPrep(ms)
+//                    | u16 kingHold(deciseconds) | u16 count
 //   selfPrep = số ms chuẩn bị còn lại của CHÍNH client nhận (0 nếu đang chơi/chết) →
 //   client hiện đếm ngược "3,2,1" và biết vì sao chưa di chuyển được.
+//   kingHold = số 0.1-giây (deciseconds) còn phải giữ ngôi KING để thắng, do server tính
+//   (client không chạy mô phỏng nên phải nhận số này để đếm ngược đồng hồ 3 phút).
 // Mỗi entity (20 bytes): u8 id | u8 flags | u8 colorIndex | u8 _pad
 //                        | f32 x | f32 y | f32 heading | u16 score | u16 _pad
-exports.SNAPSHOT_HEADER = 13;
+exports.SNAPSHOT_HEADER = 15;
 exports.SNAPSHOT_ENTITY = 20;
 /** Bit cờ của mỗi entity trong snapshot. */
 exports.FLAG = {
@@ -63,7 +66,9 @@ function encodeSnapshot(s) {
     dv.setUint32(1, s.tick >>> 0, true);
     dv.setUint32(5, s.ackSeq >>> 0, true);
     dv.setUint16(9, Math.min(0xffff, Math.max(0, s.selfPrep | 0)), true);
-    dv.setUint16(11, n, true);
+    const kingDs = Math.round((s.kingHold ?? 0) * 10);
+    dv.setUint16(11, Math.min(0xffff, Math.max(0, kingDs)), true);
+    dv.setUint16(13, n, true);
     let o = exports.SNAPSHOT_HEADER;
     for (const e of s.entities) {
         let flags = 0;
@@ -91,7 +96,8 @@ function decodeSnapshot(buf) {
     const tick = dv.getUint32(1, true);
     const ackSeq = dv.getUint32(5, true);
     const selfPrep = dv.getUint16(9, true);
-    const n = dv.getUint16(11, true);
+    const kingHold = dv.getUint16(11, true) / 10;
+    const n = dv.getUint16(13, true);
     if (dv.byteLength < exports.SNAPSHOT_HEADER + n * exports.SNAPSHOT_ENTITY)
         return null;
     const entities = [];
@@ -110,7 +116,7 @@ function decodeSnapshot(buf) {
         });
         o += exports.SNAPSHOT_ENTITY;
     }
-    return { tick, ackSeq, selfPrep, entities };
+    return { tick, ackSeq, selfPrep, kingHold, entities };
 }
 // ---- TERRITORY keyframe (server → client, binary) -------------------------
 // Đồng bộ LÃNH THỔ theo ô cho chế độ online (Pha 2 gửi FULL keyframe, throttle vài Hz;

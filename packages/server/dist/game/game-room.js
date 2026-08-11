@@ -113,6 +113,7 @@ class GameRoom {
             tick: this.tickCount,
             ackSeq: ack,
             selfPrep,
+            kingHold: this.gs.kingHoldRemaining,
             entities: this.gs.snapshotEntities(),
         };
     }

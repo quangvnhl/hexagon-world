@@ -1,13 +1,18 @@
 export declare const CONFIG: {
     /** Bán kính NGOẠI TIẾP (tâm → đỉnh) của SÂN CHƠI hình LỤC GIÁC (flat-top), world
      *  units. Biên là 6 tường nghiêng 120° → không còn góc vuông gây kẹt. */
-    readonly ARENA_RADIUS: 60;
+    readonly ARENA_RADIUS: 130;
+    /** Hệ số CO BIÊN VA CHẠM THẬT vào trong (nhân vào inradius/circumradius). 1 = biên đầy
+     *  đủ; < 1 = tường va chạm + sàn hex + đường line đỏ debug cùng co vào (vd 0.97 ≈ sát
+     *  hơn 3%). ĐÂY LÀ NGUỒN DUY NHẤT: physics (arena.ts), vùng ô hợp lệ (mapArena) và line
+     *  đỏ (ArenaCollider) đều đọc chung → biên vật lý LUÔN trùng đường line đỏ. */
+    readonly WALL_SCALE: 0.99;
     /** Lề (world units) phủ thêm hex NGOÀI tường: chỉ dùng cho tính toán (đầu người
      *  chơi luôn rơi vào ô hợp lệ + flood fill có vành biên); các ô này KHÔNG render
      *  nên không "thò ra" ngoài tường. */
-    readonly MAP_MARGIN: 1.5;
+    readonly MAP_MARGIN: 0.6;
     /** Số bot đối kháng. */
-    readonly BOT_COUNT: 4;
+    readonly BOT_COUNT: 45;
     /** Bán kính cụm khởi đầu (cube distance). 1 = ô hiện tại + 6 ô kề = 7 ô. */
     readonly START_RADIUS: 1;
     /** Khoảng trống tối thiểu quanh điểm spawn (cube distance): không được có ô đất của
@@ -20,17 +25,21 @@ export declare const CONFIG: {
     /** Cạnh cube nhân vật (người + bot), đơn vị world. Chỉnh to/nhỏ nhân vật ở đây. */
     readonly CUBE_SIZE: 1;
     /** Tốc độ di chuyển liên tục (world units / giây). Nhỏ = chậm. */
-    readonly SPEED: 10;
+    readonly SPEED: 5.5;
     /** Tốc độ quay đầu tối đa (rad / giây) — làm chuyển hướng mượt. */
-    readonly TURN_RATE: 15;
+    readonly TURN_RATE: 4.5;
     /** Khoảng cách tối thiểu giữa 2 điểm ghi vào đường đuôi (để line mượt & gọn). */
-    readonly TRAIL_POINT_DIST: 0.18;
+    readonly TRAIL_POINT_DIST: 0.1;
     /** Ngưỡng % diện tích để lên King. */
     readonly KING_PCT: 20;
     /** Thời gian (giây) phải giữ ngôi King liên tục để thắng. */
     readonly WIN_HOLD_TIME: 180;
     /** Bán kính va chạm ĐẦU (world units): chủ đất hạ kẻ xâm nhập khi hai đầu sát nhau. */
-    readonly KILL_RADIUS: 0.7;
+    readonly KILL_RADIUS: 0.25;
+    /** Số ô ĐUÔI mới nhất (sát đầu) được MIỄN luật tự-cắt-đuôi. Cần ≥1 để đầu không "chết
+     *  oan" khi làm tròn hex dao động lúc đi dọc đúng ranh giới cột hex / men theo tường
+     *  (đầu bị bật qua-lại giữa 2 ô kề). Cắt vào đoạn đuôi CŨ hơn thì vẫn chết như thường. */
+    readonly SELF_TRAIL_GRACE: 2;
     /** Tường biên: dày (world units, ăn ra ngoài sân), cao, độ nhô lên khỏi mặt sân. */
     readonly WALL: {
         readonly THICKNESS: 0.1;
@@ -38,15 +47,19 @@ export declare const CONFIG: {
     };
     /** AI bot. */
     readonly BOT: {
+        /** Tốc độ quay đầu RIÊNG của bot (rad/giây) — TÁCH khỏi TURN_RATE của người chơi để
+         *  chỉnh độ nhanh nhẹn của bot mà không đổi cảm giác lái của người. Cao hơn → bot
+         *  khép được vòng LỚN (bành trướng nhanh) nhưng nếu quá cao dễ curl vào đuôi mình. */
+        readonly TURN_RATE: 4;
         /** Khoảng cách tối đa rời "nhà" trước khi quay về khép vòng (world units). */
-        readonly RANGE_MIN: 6;
-        readonly RANGE_MAX: 16;
+        readonly RANGE_MIN: 2;
+        readonly RANGE_MAX: 20;
         /** Nhiễu hướng khi bành trướng (rad) — cho đường đi bớt thẳng đơ. */
         readonly WANDER: 0.05;
         /** Thời gian (giây) bot nằm chờ trước khi tự hồi sinh sau khi chết. */
         readonly RESPAWN_DELAY: 1.5;
         /** Cự ly quét chướng ngại phía trước (world units) khi né đuôi/tường. */
-        readonly AVOID_DIST: 1.6;
+        readonly AVOID_DIST: 3;
     };
     /** Hồ sơ ĐỘ KHÓ của bot (gán luân phiên cho từng bot). FSM: EXPAND/RETURN/HUNT/FLEE.
      *  - aggression: xác suất chuyển sang SĂN khi thấy con mồi.
@@ -54,23 +67,11 @@ export declare const CONFIG: {
      *  - skill: chất lượng né chướng ngại (0..1) — cao thì quét nhiều hướng, nhìn xa hơn.
      *  - reaction: nhịp ra quyết định (giây) — nhỏ = phản ứng nhanh. */
     readonly BOT_DIFFICULTY: readonly [{
-        readonly label: "Dễ";
-        readonly aggression: 0.12;
-        readonly vision: 12;
-        readonly skill: 0.4;
-        readonly reaction: 0.6;
-    }, {
-        readonly label: "Thường";
-        readonly aggression: 0.45;
-        readonly vision: 20;
-        readonly skill: 0.75;
-        readonly reaction: 0.3;
-    }, {
         readonly label: "Khó";
-        readonly aggression: 3.8;
-        readonly vision: 28;
-        readonly skill: 10;
-        readonly reaction: 0.15;
+        readonly aggression: 10;
+        readonly vision: 20;
+        readonly skill: 1;
+        readonly reaction: 0.01;
     }];
     /** Camera perspective: vị trí lệch so với người chơi (x, sau, cao) + fov + độ mượt pan.
      *  Rotation KHOÁ cố định (chỉ pan theo người chơi, không xoay theo chuột). */
@@ -82,7 +83,7 @@ export declare const CONFIG: {
          *  ngưỡng King (giống agar.io: càng lớn càng thấy rộng sân). */
         readonly ZOOM: {
             readonly MIN: 1;
-            readonly MAX: 1.3;
+            readonly MAX: 1.4;
         };
     };
     /** Hiệu ứng "juice": số hạt mỗi lần nổ + thời gian sống (giây) của hạt. */
@@ -96,6 +97,12 @@ export declare const CONFIG: {
         readonly WIDTH: 0.18;
         readonly COLOR: "#ffe14d";
         readonly GLOW: 2.2;
+        /** VIỀN TỐI (casing) vẽ RỘNG HƠN nằm dưới lõi vàng → vạch nổi trên MỌI màu đất, kể cả
+         *  nền ấm (cam/vàng) khiến lõi vàng additive bị "cháy trắng" chìm. CASING_WIDTH = bề
+         *  rộng dải tối (world units, > WIDTH); CASING_COLOR = màu viền (đục, blend thường).
+         *  Đặt CASING_WIDTH = 0 để TẮT viền tối (chỉ còn lõi vàng như cũ). */
+        readonly CASING_WIDTH: 0.34;
+        readonly CASING_COLOR: "#05070d";
     };
     /** Joystick ảo (thiết bị chạm): SIZE = đường kính base, KNOB = đường kính núm
      *  (px); DEADZONE = vùng chết tính theo tỉ lệ bán kính (bỏ qua rung tay nhỏ). */
@@ -104,13 +111,46 @@ export declare const CONFIG: {
         readonly KNOB: 56;
         readonly DEADZONE: 0.18;
     };
+    /** Bật/tắt các lớp HIỂN THỊ để giảm tải khi đông bot (mỗi lớp là 1 chi phí/​frame).
+     *  Tắt bớt khi máy yếu / nhiều bot cho mượt. FPS = đồng hồ khung hình góc màn hình. */
+    readonly DISPLAY: {
+        /** Đồng hồ FPS (overlay DOM góc trên-trái). */
+        readonly FPS: true;
+        /** Bảng điều khiển HUD (điểm số, King, countdown, popup chết…). */
+        readonly HUD: true;
+        /** Bản đồ con minimap (góc dưới-phải) — có vòng lặp rAF riêng, tắt để tiết kiệm. */
+        readonly MINIMAP: true;
+        /** Ống ĐUÔI 3D phát sáng của MỌI thực thể — CHI PHÍ LỚN NHẤT khi đông bot (mỗi
+         *  frame dựng lại 1 TubeGeometry/​thực thể đang vẽ đuôi). Tắt → đuôi chỉ còn ô màu. */
+        readonly TRAILS: true;
+        /** Hạt hiệu ứng nổ/​chiếm đất (pooled Points). */
+        readonly PARTICLES: true;
+        /** Vạch vàng phân ranh đất cùng màu khác chủ. */
+        readonly TERRITORY_BORDERS: true;
+    };
     /** Gỡ lỗi hình ảnh. COLLISION_VECTORS = true → vẽ mũi tên vector vật lý va chạm
      *  tường ngay tại đầu người chơi: xanh dương = hướng đi mong muốn, đỏ = pháp tuyến
      *  tường đang chạm, xanh lá = hướng trượt kết quả. Dùng để thấy vì sao chết sát biên. */
     readonly DEBUG: {
-        readonly COLLISION_VECTORS: true;
+        readonly COLLISION_VECTORS: false;
+        /** Đường LINE ĐỎ ở BIÊN va chạm (ArenaCollider) — viền lục giác + mũi tên pháp tuyến 6
+         *  tường. Chỉ vẽ khi COLLISION_VECTORS bật. COLOR = màu đường/​mũi tên; Z = độ cao nhô
+         *  khỏi mặt sân (tránh z-fight); NORMALS = có vẽ mũi tên pháp tuyến không; NORMAL_LEN =
+         *  độ dài mũi tên (world units). Lưu ý: bề rộng nét (linewidth) đa số GPU BỎ QUA nên
+         *  không đưa vào — muốn dày hơn thì tăng GLOW/đổi màu cho nổi. */
+        readonly ARENA_LINE: {
+            readonly COLOR: "#ff4d6d";
+            readonly Z: 0.35;
+            readonly NORMALS: true;
+            readonly NORMAL_LEN: 2.4;
+        };
         /** Ngưỡng (world units) coi là "đang áp sát tường" để hiện vector (sớm hơn eps thật). */
         readonly WALL_NEAR: 0.6;
+        /** Bán kính (world units) VÒNG collider của cube người chơi (stroke tròn debug). */
+        readonly CUBE_COLLIDER_RADIUS: 0.3;
+        /** Bán kính (world units) VÒNG va chạm đầu vẽ debug. Mặc định = KILL_RADIUS thật;
+         *  đổi ở đây để phóng to/thu nhỏ vòng hiển thị mà không ảnh hưởng luật chơi. */
+        readonly KILL_RING_RADIUS: 0.3;
     };
 };
 export declare const COLORS: {

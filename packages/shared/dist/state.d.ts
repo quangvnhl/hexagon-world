@@ -82,6 +82,9 @@ export declare class GameState {
     revision: number;
     /** Tăng khi lưới cần tô lại (owned hoặc trail hex đổi). */
     gridRevision: number;
+    /** Tăng CHỈ khi CHỦ SỞ HỮU ô đổi (không kể đuôi) — cho lớp vạch ranh giới tô lại HIẾM
+     *  hơn nhiều (đuôi đổi ~56% frame nhưng KHÔNG ảnh hưởng vạch ranh). */
+    territoryRevision: number;
     /** Thời gian (giây) còn lại phải giữ ngôi King liên tục để thắng. */
     kingHoldRemaining: number;
     /** Đã kết thúc chưa (có người thắng) → đóng băng game. */
@@ -112,6 +115,15 @@ export declare class GameState {
     /** [ONLINE] Đặt trạng thái một thực thể từ snapshot mạng (không chạy mô phỏng). */
     applyEntity(id: number, x: number, y: number, heading: number, alive: boolean, hasTrail?: boolean): void;
     /**
+     * [ONLINE] DỰ ĐOÁN Ô ĐUÔI cục bộ cho SELF: tô NGAY hex dưới đầu (đã dự đoán) thành ô đuôi
+     * để MÀU Ô bám kịp đầu, không chờ keyframe TERRITORY (~4Hz + trễ mạng) — nếu không, di
+     * chuyển lên ô trung lập bị trễ đổi màu dù đường line đã mượt. Chỉ tô ô TRUNG LẬP (không
+     * đè chủ/đuôi của ai); keyframe sau đó GHI ĐÈ authoritative. Gọi cho self MỖI FRAME (sau
+     * applyEntity + sau applyTerritory) → kể cả frame vừa reconcile keyframe cũng không nhấp
+     * nháy vì ô đầu được tô lại ngay. Chỉ gọi khi self còn sống & đang có đuôi (hasTrail).
+     */
+    predictTrailCell(id: number): void;
+    /**
      * [ONLINE] "Đỗ" một ghế: cho thực thể chết & trả toàn bộ đất/đuôi về trung lập, KHÔNG
      * tự hồi sinh. Dùng cho GHẾ CHƯA CÓ NGƯỜI ở phòng chờ → ghế trống không mô phỏng, không
      * để lại "bóng ma" trôi trên sân. Người vào (join) sẽ respawn ghế này.
@@ -140,6 +152,10 @@ export declare class GameState {
     roomLocked(): boolean;
     /** Id thực thể CÒN SỐNG có nhiều đất nhất (cho camera khán giả); -1 nếu không có. */
     leaderId(): number;
+    /** [KHÁN GIẢ] Id thực thể CÒN SỐNG kế tiếp (dir=+1) / trước (dir=-1) theo thứ tự id — để
+     *  chuyển tay xem thủ công. `from` = id đang xem (nếu đã chết/không có trong danh sách thì
+     *  nhảy vào đầu/cuối). Trả -1 nếu không còn ai sống. */
+    spectateCycle(from: number, dir: 1 | -1): number;
     /** % lãnh thổ của mọi thực thể (cho bảng xếp hạng). */
     scores(): {
         id: number;

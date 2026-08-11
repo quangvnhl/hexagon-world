@@ -104,6 +104,28 @@ describe("GameState: chạm biên LỤC GIÁC → trượt mượt, không lọt
     expect(movedTotal).toBeGreaterThan(0.05); // vẫn trượt, không đứng yên
     expect(insideOK).toBe(true); // không lọt ra ngoài lục giác
   });
+
+  it("trượt dọc biên giữ TỐC ĐỘ đầy đủ (không bị chậm/kẹt khi men theo tường)", () => {
+    const g = new GameState({ q: 0, r: 0 }, 0);
+    g.setHeadingTarget(0.35); // đâm chếch vào cạnh rồi trượt dọc
+    skipPrep(g);
+    // Chạy tới khi áp sát biên.
+    for (let i = 0; i < 1500 && insideArena(g.pos.x, g.pos.y, -0.8); i++) {
+      g.update(1 / 60);
+    }
+    // 30 frame trượt dọc biên: quãng đường/ frame gần bằng SPEED/60 (đầy đủ), không crawl.
+    const full = CONFIG.SPEED / 60;
+    let moved = 0;
+    let frames = 0;
+    for (let j = 0; j < 30 && g.phase === "playing"; j++) {
+      const a = { x: g.pos.x, y: g.pos.y };
+      g.update(1 / 60);
+      moved += Math.hypot(g.pos.x - a.x, g.pos.y - a.y);
+      frames++;
+    }
+    // Trung bình ≥ 70% tốc độ tối đa → đang trượt full-speed dọc tường, không bị ghìm.
+    expect(moved / frames).toBeGreaterThan(0.7 * full);
+  });
 });
 
 describe("GameState: pha chuẩn bị đứng yên nhưng xoay được", () => {

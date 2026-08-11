@@ -46,8 +46,7 @@ class NetServer {
             return;
         this.stepRoom(r);
         this.broadcast(r);
-        if (r.room.tick % TERRITORY_EVERY === 0)
-            this.broadcastTerritory(r);
+        this.flushTerritoryIfDue(r);
     }
     whenListening() {
         if (this.wss.address())
@@ -70,6 +69,7 @@ class NetServer {
                 lastTime: 0,
                 accumulator: 0,
                 running: false,
+                lastTerrRev: -1,
                 prevAlive: [],
                 prevWon: false,
                 prevKingId: -1,
@@ -192,8 +192,7 @@ class NetServer {
         }
         if (stepped) {
             this.broadcast(r);
-            if (r.room.tick % TERRITORY_EVERY === 0)
-                this.broadcastTerritory(r);
+            this.flushTerritoryIfDue(r);
         }
         if (r.ended && Date.now() - r.endedAt > ENDED_GRACE_MS) {
             this.closeRoom(r);
@@ -307,6 +306,13 @@ class NetServer {
             ws.send((0, shared_1.encodeSnapshot)(r.room.buildSnapshotFor(conn.entityId)), {
                 binary: true,
             });
+        }
+    }
+    flushTerritoryIfDue(r) {
+        const rev = r.room.gameState.territoryRevision;
+        if (r.room.tick % TERRITORY_EVERY === 0 || rev !== r.lastTerrRev) {
+            r.lastTerrRev = rev;
+            this.broadcastTerritory(r);
         }
     }
     broadcastTerritory(r) {

@@ -22,7 +22,7 @@ export const MAX_PLAYERS = 8;
 export const BOT_COUNT = CONFIG.BOT_COUNT;
 
 /** Phòng ONLINE KHÔNG dùng bot: chỉ người thật đấu nhau. */
-export const ONLINE_BOTS = 0;
+export const ONLINE_BOTS = 40;
 
 /** Số người THẬT tối thiểu để BẮT ĐẦU một ván online. Chưa đủ → phòng ở trạng thái CHỜ. */
 export const MIN_PLAYERS = 2;

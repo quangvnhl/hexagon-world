@@ -18,9 +18,12 @@ import { TerritoryBorders } from "./TerritoryBorders";
 import { BorderRim } from "./BorderRim";
 import { TrailLine } from "./TrailLine";
 import { PlayerCube } from "./PlayerCube";
+import { CollisionDebug } from "./CollisionDebug";
+import { ArenaCollider } from "./ArenaCollider";
 import { MiniMap } from "./MiniMap";
 import { Joystick } from "./Joystick";
 import { HUD, Stats } from "./HUD";
+import { FpsMeterIfEnabled } from "./FpsMeter";
 import { MenuButton } from "./GameScene";
 import {
   NetClient,
@@ -68,6 +71,7 @@ function NetLoop({
   pointer,
   joystick,
   spectatingRef,
+  spectateTargetRef,
   onStats,
   onPing,
 }: {
@@ -77,11 +81,13 @@ function NetLoop({
   pointer: React.MutableRefObject<PointerRef>;
   joystick: React.MutableRefObject<{ active: boolean; angle: number }>;
   spectatingRef: React.MutableRefObject<boolean>;
+  spectateTargetRef: React.MutableRefObject<number>;
   onStats: (
     g: GameState,
     localId: number,
     alive: boolean,
-    prepMs: number
+    prepMs: number,
+    kingHold: number
   ) => void;
   onPing: (ms: number) => void;
 }) {
@@ -89,6 +95,8 @@ function NetLoop({
   const statAcc = useRef(0);
   const zoom = useRef(CONFIG.CAMERA.ZOOM.MIN);
   const lastTerr = useRef(-1);
+  /** Hướng ngắm/đi gần nhất — giữ để dự đoán tiến ngay cả frame không có hướng mới. */
+  const lastHeading = useRef<number | null>(null);
   const ray = useMemo(() => new THREE.Raycaster(), []);
   const groundPlane = useMemo(
     () => new THREE.Plane(new THREE.Vector3(0, 0, 1), 0),
@@ -117,7 +125,7 @@ function NetLoop({
     }
 
     // 2) Đẩy trạng thái thực thể: self (dự đoán) + others (nội suy).
-    if (rs.self)
+    if (rs.self) {
       game.applyEntity(
         rs.self.id,
         rs.self.x,
@@ -126,6 +134,10 @@ function NetLoop({
         rs.self.alive,
         rs.self.hasTrail
       );
+      // Dự đoán Ô ĐUÔI cục bộ cho self → màu ô bám kịp đầu (không chờ keyframe ~4Hz). Gọi
+      // SAU applyTerritory (bước 1) + applyEntity nên frame vừa reconcile cũng không nhấp nháy.
+      if (rs.self.alive && rs.self.hasTrail) game.predictTrailCell(rs.self.id);
+    }
     for (const o of rs.others)
       game.applyEntity(o.id, o.x, o.y, o.heading, o.alive, o.hasTrail);
 
@@ -152,9 +164,20 @@ function NetLoop({
           }
         }
       }
-      if (heading !== null) {
-        if (inPrep) client.sendAim(heading);
-        else client.sendInput(heading, dt);
+      if (inPrep) {
+        // Chuẩn bị: chỉ NGẮM khi có hướng mới; KHÔNG dự đoán tiến (server còn đứng yên).
+        if (heading !== null) {
+          client.sendAim(heading);
+          lastHeading.current = heading;
+        }
+      } else {
+        // ĐANG CHƠI: server đi TIẾP mỗi tick theo heading cuối, nên client phải dự đoán
+        // TIẾN MỖI FRAME (kể cả khi con trỏ nằm trong dead-zone → heading null). Dùng
+        // hướng mới nếu có, không thì giữ hướng cuối / hướng đầu hiện tại. Nhờ vậy dự đoán
+        // luôn khớp NHỊP server → hết giật do "bỏ frame dự đoán".
+        const h = heading ?? lastHeading.current ?? self.heading;
+        client.sendInput(h, dt);
+        if (heading !== null) lastHeading.current = heading;
       }
     }
 
@@ -162,10 +185,13 @@ function NetLoop({
     let fx = self?.x ?? 0;
     let fy = self?.y ?? 0;
     if (!alive || spectatingRef.current) {
-      const lid = game.leaderId();
-      if (lid >= 0) {
-        fx = game.players[lid].pos.x;
-        fy = game.players[lid].pos.y;
+      // Bám thực thể ĐANG CHỌN xem nếu còn sống; nếu chưa chọn / đã chết → bám thực thể dẫn đầu.
+      const want = spectateTargetRef.current;
+      const tid =
+        want >= 0 && game.players[want]?.alive ? want : game.leaderId();
+      if (tid >= 0) {
+        fx = game.players[tid].pos.x;
+        fy = game.players[tid].pos.y;
       }
     }
     const [ox, oy, oz] = CONFIG.CAMERA.OFFSET;
@@ -183,7 +209,7 @@ function NetLoop({
     statAcc.current += dt;
     if (statAcc.current >= 0.2) {
       statAcc.current = 0;
-      onStats(game, localId, alive, rs.selfPrep);
+      onStats(game, localId, alive, rs.selfPrep, rs.kingHold);
       onPing(client.getPing());
     }
   });
@@ -212,6 +238,8 @@ export default function NetGameScene({
   });
   const localIdRef = useRef(0);
   const spectatingRef = useRef(false);
+  // Id thực thể ĐANG XEM khi khán giả (-1 = tự bám thực thể dẫn đầu). Nút ◀ ▶ đổi giá trị này.
+  const spectateTargetRef = useRef(-1);
   const deathInfoRef = useRef<DeathInfo>({
     cause: "",
     killerName: "",
@@ -261,7 +289,13 @@ export default function NetGameScene({
   const url = serverUrl || DEFAULT_SERVER_URL;
 
   const buildStats = useCallback(
-    (g: GameState, localId: number, alive: boolean, prepMs: number) => {
+    (
+      g: GameState,
+      localId: number,
+      alive: boolean,
+      prepMs: number,
+      kingHold: number
+    ) => {
       // Phát hiện chuyển sống→chết để chốt "ảnh lãnh thổ" cho bản đồ popup.
       if (wasAliveRef.current && !alive) {
         deathCountRef.current++;
@@ -282,6 +316,10 @@ export default function NetGameScene({
       const won = wonRef.current.won;
       const winnerId = wonRef.current.winnerId;
       const inPrep = prepMs > 0;
+      // Tên thực thể đang xem (khớp camera): mục tiêu đã chọn nếu còn sống, không thì dẫn đầu.
+      const specWant = spectateTargetRef.current;
+      const specId =
+        specWant >= 0 && g.players[specWant]?.alive ? specWant : g.leaderId();
       setStats({
         pct: g.pctOf(localId),
         king: kid === localId,
@@ -290,13 +328,14 @@ export default function NetGameScene({
         prep: prepMs / 1000,
         scores: g.scores(),
         won,
-        kingHold: CONFIG.WIN_HOLD_TIME,
+        kingHold, // đồng hồ giữ ngôi do server tính (đếm ngược 3 phút)
         locked: kid !== -1,
         kingName: kid >= 0 ? g.nameOf(kid) : "",
         winnerId,
         winnerName: winnerId >= 0 ? g.nameOf(winnerId) : "",
         canRevive: kid === -1, // phòng chưa bị KING khoá thì cho thử hồi sinh
         spectating: spectatingRef.current,
+        spectateName: specId >= 0 ? g.nameOf(specId) : "",
         deathCause: deathInfoRef.current.cause,
         killerName: deathInfoRef.current.killerName,
         lastPct: deathInfoRef.current.lastPct,
@@ -319,6 +358,7 @@ export default function NetGameScene({
         setGame(g);
         // Reset trạng thái vòng chơi mới (quay lại phòng chờ).
         spectatingRef.current = false;
+        spectateTargetRef.current = -1;
         setSpectating(false);
         startedRef.current = false;
         setStarted(false);
@@ -385,6 +425,15 @@ export default function NetGameScene({
     spectatingRef.current = true;
     setSpectating(true);
   }, []);
+  // Chuyển thực thể đang xem sang người sống trước/sau (thủ công thay cho tự bám dẫn đầu).
+  const onSpectatePrev = useCallback(() => {
+    const g = gameRef.current;
+    if (g) spectateTargetRef.current = g.spectateCycle(spectateTargetRef.current, -1);
+  }, []);
+  const onSpectateNext = useCallback(() => {
+    const g = gameRef.current;
+    if (g) spectateTargetRef.current = g.spectateCycle(spectateTargetRef.current, 1);
+  }, []);
   const onRestart = useCallback(() => {
     // Online: chơi lại = kết nối lại (nhận ghế mới, spawn mới).
     wonRef.current = { won: false, winnerId: -1 };
@@ -425,32 +474,44 @@ export default function NetGameScene({
               pointer={pointer}
               joystick={joystick}
               spectatingRef={spectatingRef}
+              spectateTargetRef={spectateTargetRef}
               onStats={buildStats}
               onPing={setPing}
             />
             <HexGridView game={game} />
-            <TerritoryBorders game={game} />
+            {CONFIG.DISPLAY.TERRITORY_BORDERS && <TerritoryBorders game={game} />}
             <BorderRim game={game} />
             <TrailLine game={game} />
             <PlayerCube game={game} />
+            {CONFIG.DEBUG.COLLISION_VECTORS && (
+              <>
+                <ArenaCollider />
+                <CollisionDebug game={game} entityId={localIdRef.current} />
+              </>
+            )}
           </>
         )}
       </Canvas>
 
       {connected && game && started && (
         <>
-          <HUD
-            stats={stats}
-            onRevive={onRevive}
-            onRestart={onRestart}
-            onSpectate={onSpectate}
-            localId={playerId}
-            playerName={playerName}
-          />
-          <MiniMap game={game} localId={playerId} />
+          {CONFIG.DISPLAY.HUD && (
+            <HUD
+              stats={stats}
+              onRevive={onRevive}
+              onRestart={onRestart}
+              onSpectate={onSpectate}
+              onSpectatePrev={onSpectatePrev}
+              onSpectateNext={onSpectateNext}
+              localId={playerId}
+              playerName={playerName}
+            />
+          )}
+          {CONFIG.DISPLAY.MINIMAP && <MiniMap game={game} localId={playerId} />}
           <Joystick dir={joystick} />
         </>
       )}
+      {connected && game && started && <FpsMeterIfEnabled />}
 
       {onExit && <MenuButton onExit={onExit} />}
 

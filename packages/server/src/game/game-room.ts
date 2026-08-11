@@ -168,6 +168,8 @@ export class GameRoom {
       tick: this.tickCount,
       ackSeq: ack,
       selfPrep,
+      // Đồng hồ giữ ngôi KING (giây) do server tính — client dùng để đếm ngược 3 phút.
+      kingHold: this.gs.kingHoldRemaining,
       entities: this.gs.snapshotEntities(),
     };
   }

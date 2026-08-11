@@ -112,3 +112,39 @@ packages/
 - **Client-side prediction** cho đầu người chơi (`stepHead` khớp `updateEntity` của server)
   để che độ trễ; **reconcile** theo `ackSeq` trong snapshot; **interpolation** cho thực
   thể khác (trễ ~100 ms).
+
+## Hiệu năng (đông bot)
+
+Triệu chứng cũ: tăng bot (≈20) → GIẬT không chơi nổi. Nguyên nhân & khắc phục:
+
+1. **`captureEnclosed` (shared/floodfill.ts) — thủ phạm chính (~97% CPU mô phỏng).** Mỗi
+   lần khép vòng chiếm đất quét TOÀN bản đồ (~8000 ô) → **9.6 ms/lần**; nhiều bot khép vòng
+   cùng tick ⇒ đơ khung. Sửa: chỉ loang trong **cửa sổ = bbox(owned ∪ trail) + 1 vành**
+   (interior luôn nằm trong đó) → **0.19 ms/lần (~50×)**, `update()` 20 bot: 6.9 → 0.54
+   ms/tick (~13×). Đã kiểm chứng **0 sai khác** vs bản quét toàn map qua 1412 lần chiếm.
+2. **`TrailLine` (client) dựng lại `TubeGeometry` MỖI FRAME / mỗi thực thể** (tới 600 đoạn)
+   ⇒ GC dồn. Sửa: chỉ dựng lại khi ĐUÔI đổi (chữ ký: số điểm + điểm đầu), pool Vector3, hạ
+   trần đoạn 600→200, radial 8→6.
+3. **AI bot: `steerAvoiding`** với `skill` lớn (hồ sơ "Khó") cho dist/số lần quét khổng lồ,
+   luôn thất bại. Sửa: kẹp `dist ≤ ARENA_R·0.33` và `maxK ≤ 18`.
+
+4. **Render dựng lại MỖI FRAME theo `gridRevision`.** Đo với 20 bot: `gridRevision` đổi ở
+   **56% số frame** (mỗi ô đuôi thêm vào cũng bump) ⇒ cả `HexGridView` (tô lại ~8000
+   instance) LẪN `TerritoryBorders` dựng lại > nửa số frame. `TerritoryBorders` nặng nhất:
+   **1,35 ms/frame và TĂNG theo diện tích** + cấp phát `Float32Array` mới mỗi lần ⇒ GC giật.
+   Sửa: thêm `GameState.territoryRevision` (chỉ bump khi CHỦ ô đổi, không kể đuôi) và gate
+   `TerritoryBorders` theo nó → dựng lại chỉ còn **10% frame (giảm 5,6×)**; đồng thời DÙNG
+   LẠI buffer đỉnh (DynamicDrawUsage, cấp dôi 1,5×) → hết cấp phát mỗi frame. `HexGridView`
+   (0,43 ms/frame) giữ nguyên vì màu đuôi phải cập nhật theo `gridRevision`.
+
+5. **`pickSpawnHex` — SPIKE ~500 ms (thủ phạm chính của "giật" thực sự).** Đo p99 = 466 ms,
+   MAX = 519 ms/frame (p50 chỉ 0,41 ms → phần lớn frame ổn, nhưng thỉnh thoảng đơ nửa giây).
+   `clearAround` duyệt TOÀN BỘ ô owned (O(owned)) cho mỗi ứng viên; lúc bản đồ đông, bước quét
+   dự phòng = 7957 ô × ~3700 owned ≈ **29 TRIỆU phép/​lần**, chạy mỗi lần bot hồi sinh + mỗi
+   0,2 s khi người chơi đang chết (`canRevive`). Sửa: `clearAround` chỉ quét ĐĨA hex bán kính
+   `SPAWN_CLEARANCE` quanh ứng viên (O(clearance²), độc lập diện tích); BOT bỏ qua bước quét
+   xác định (chờ lần hồi sinh sau). Kết quả: MAX **519 → 4,94 ms**, p99 **466 → 1,93 ms**.
+
+Đo FPS tại chỗ: overlay `FpsMeter` (góc trên-trái). Tắt/bật lớp hiển thị để giảm tải qua
+`CONFIG.DISPLAY` (FPS / HUD / MINIMAP / TRAILS / PARTICLES / TERRITORY_BORDERS) —
+`TRAILS=false` là công tắc giảm tải mạnh nhất khi máy yếu.

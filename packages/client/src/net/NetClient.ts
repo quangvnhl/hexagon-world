@@ -68,6 +68,8 @@ export interface RenderState {
   playerCount: number;
   /** Ms chuẩn bị còn lại của người chơi cục bộ (>0 = đang đếm ngược, đứng yên). */
   selfPrep: number;
+  /** Giây còn phải giữ ngôi KING để thắng (server tính) — cho đồng hồ 3 phút ở HUD. */
+  kingHold: number;
   /** Ping (RTT) tới server tính bằng ms (0 nếu chưa đo). */
   ping: number;
 }
@@ -331,7 +333,7 @@ export class NetClient {
     let self: RenderEntity | null = null;
     if (playerId !== null && meta.has(playerId)) {
       const m = meta.get(playerId)!;
-      const p = this.predictor.getPredicted();
+      const p = this.predictor.getRenderHead();
       self = {
         id: playerId,
         x: p.x,
@@ -365,6 +367,7 @@ export class NetClient {
 
     const playerCount = this.latest ? this.latest.entities.length : 0;
     const selfPrep = this.latest ? this.latest.selfPrep : 0;
+    const kingHold = this.latest?.kingHold ?? 0;
     return {
       status: this.status,
       playerId,
@@ -372,6 +375,7 @@ export class NetClient {
       others,
       playerCount,
       selfPrep,
+      kingHold,
       ping: this.ping,
     };
   }

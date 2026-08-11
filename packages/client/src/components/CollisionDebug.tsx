@@ -5,7 +5,7 @@ import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { GameState } from "@hexagon/shared";
 import { CONFIG } from "@hexagon/shared";
-import { WALLS, ARENA_INRADIUS } from "@hexagon/shared";
+import { WALLS, WALL_LIMIT } from "@hexagon/shared";
 
 const MAX_WALLS = 3;
 
@@ -20,11 +20,42 @@ const MAX_WALLS = 3;
  */
 export const CollisionDebug = memo(function CollisionDebug({
   game,
+  entityId = 0,
 }: {
   game: GameState;
+  /** Thực thể cần vẽ vector (chơi đơn = 0; online = ghế người cục bộ). */
+  entityId?: number;
 }) {
   const dir = useMemo(() => new THREE.Vector3(), []);
   const origin = useMemo(() => new THREE.Vector3(), []);
+
+  // COLLIDER của cube người chơi (stroke vector): vòng TRÒN bán kính
+  // CONFIG.DEBUG.CUBE_COLLIDER_RADIUS + vòng TRÒN bán kính va chạm ĐẦU
+  // (CONFIG.DEBUG.KILL_RING_RADIUS) — vùng phân xử va đầu trên/ngoài sân nhà.
+  const makeRing = (radius: number, color: number) => {
+    const seg = 40;
+    const pos: number[] = [];
+    for (let i = 0; i < seg; i++) {
+      const a = (i / seg) * Math.PI * 2;
+      pos.push(Math.cos(a) * radius, Math.sin(a) * radius, 0);
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(pos, 3));
+    const line = new THREE.LineLoop(
+      geo,
+      new THREE.LineBasicMaterial({ color, toneMapped: false })
+    );
+    line.frustumCulled = false;
+    return line;
+  };
+  const cubeOutline = useMemo(
+    () => makeRing(CONFIG.DEBUG.CUBE_COLLIDER_RADIUS, 0x8be9ff),
+    []
+  );
+  const killCircle = useMemo(
+    () => makeRing(CONFIG.DEBUG.KILL_RING_RADIUS, 0xffd23f),
+    []
+  );
 
   const velArrow = useMemo(
     () =>
@@ -68,10 +99,19 @@ export const CollisionDebug = memo(function CollisionDebug({
   );
 
   useFrame(() => {
-    const e = game.human;
+    const e = game.players[entityId] ?? game.human;
     const z = CONFIG.CUBE_SIZE + 0.2;
     origin.set(e.pos.x, e.pos.y, z);
     const show = e.alive;
+
+    // Collider cube: vòng tròn collider + vòng va chạm đầu, sát mặt sân.
+    const cz = 0.32;
+    cubeOutline.visible = show;
+    killCircle.visible = show;
+    if (show) {
+      cubeOutline.position.set(e.pos.x, e.pos.y, cz);
+      killCircle.position.set(e.pos.x, e.pos.y, cz);
+    }
 
     // Hướng mong muốn (heading).
     velArrow.visible = show;
@@ -86,7 +126,7 @@ export const CollisionDebug = memo(function CollisionDebug({
     let vx = Math.cos(e.heading);
     let vy = Math.sin(e.heading);
     let wi = 0;
-    const near = ARENA_INRADIUS - CONFIG.DEBUG.WALL_NEAR;
+    const near = WALL_LIMIT - CONFIG.DEBUG.WALL_NEAR;
     for (const w of WALLS) {
       const d = e.pos.x * w.nx + e.pos.y * w.ny;
       const outward = vx * w.nx + vy * w.ny > 0;
@@ -116,6 +156,8 @@ export const CollisionDebug = memo(function CollisionDebug({
 
   return (
     <>
+      <primitive object={cubeOutline} />
+      <primitive object={killCircle} />
       <primitive object={velArrow} />
       <primitive object={slideArrow} />
       {wallArrows.map((a, i) => (

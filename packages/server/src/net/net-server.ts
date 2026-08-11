@@ -34,6 +34,9 @@ interface Room {
   lastTime: number;
   accumulator: number;
   running: boolean;
+  /** territoryRevision lần cuối đã broadcast keyframe TERRITORY. Dùng để FLUSH NGAY khi chủ
+   *  ô đổi (capture/chết) thay vì chờ nhịp định kỳ → flood fill hiện gần như tức thì. */
+  lastTerrRev: number;
   // theo dõi để phát event
   prevAlive: boolean[];
   prevWon: boolean;
@@ -120,7 +123,7 @@ export class NetServer {
     if (!r || !r.started) return;
     this.stepRoom(r);
     this.broadcast(r);
-    if (r.room.tick % TERRITORY_EVERY === 0) this.broadcastTerritory(r);
+    this.flushTerritoryIfDue(r);
   }
 
   private whenListening(): Promise<void> {
@@ -146,6 +149,7 @@ export class NetServer {
         lastTime: 0,
         accumulator: 0,
         running: false,
+        lastTerrRev: -1,
         prevAlive: [],
         prevWon: false,
         prevKingId: -1,
@@ -280,7 +284,7 @@ export class NetServer {
     }
     if (stepped) {
       this.broadcast(r);
-      if (r.room.tick % TERRITORY_EVERY === 0) this.broadcastTerritory(r);
+      this.flushTerritoryIfDue(r);
     }
     // Phòng đã kết thúc → đóng sau grace (client kịp xem kết quả).
     if (r.ended && Date.now() - r.endedAt > ENDED_GRACE_MS) {
@@ -394,6 +398,18 @@ export class NetServer {
       ws.send(encodeSnapshot(r.room.buildSnapshotFor(conn.entityId)), {
         binary: true,
       });
+    }
+  }
+
+  /** Gửi keyframe TERRITORY khi TỚI NHỊP định kỳ (fallback) HOẶC khi CHỦ Ô vừa đổi
+   *  (territoryRevision khác lần gửi trước — capture/chết/hồi sinh). Nhờ vế thứ hai, flood
+   *  fill lan tới client trong ~1 tick (+ping) thay vì chờ tới 250ms; băng thông chỉ tăng
+   *  đúng những tick có thay đổi (roaming/​đặt đuôi KHÔNG bump territoryRevision). */
+  private flushTerritoryIfDue(r: Room): void {
+    const rev = r.room.gameState.territoryRevision;
+    if (r.room.tick % TERRITORY_EVERY === 0 || rev !== r.lastTerrRev) {
+      r.lastTerrRev = rev;
+      this.broadcastTerritory(r);
     }
   }
 

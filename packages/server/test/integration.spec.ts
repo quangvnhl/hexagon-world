@@ -11,7 +11,7 @@ import {
   type Snapshot,
 } from "@hexagon/shared";
 import { NetServer } from "../src/net/net-server";
-import { MAX_PLAYERS } from "../src/config";
+import { MAX_PLAYERS, ONLINE_BOTS } from "../src/config";
 
 /**
  * Integration test: dựng GameRoom + NetServer THẬT trên cổng tạm (port 0), dùng gói `ws`
@@ -175,8 +175,8 @@ describe("NetServer integration (real ws, deterministic ticks)", () => {
     expect(lastA.ackSeq).toBe(LAST_SEQ);
     expect(b.snapshots[b.snapshots.length - 1].ackSeq).toBe(LAST_SEQ);
 
-    // Online KHÔNG bot → snapshot liệt kê đúng MAX_PLAYERS ghế người (ghế trống = đã "đỗ").
-    expect(lastA.entities.length).toBe(MAX_PLAYERS);
+    // Snapshot liệt kê đủ MAX_PLAYERS ghế người + ONLINE_BOTS bot (ghế trống = đã "đỗ").
+    expect(lastA.entities.length).toBe(MAX_PLAYERS + ONLINE_BOTS);
 
     // Vị trí thực thể của CHÍNH client thay đổi theo thời gian (đã qua prep, đang chạy).
     const ownFirst = firstA.entities.find((e) => e.id === idA)!;

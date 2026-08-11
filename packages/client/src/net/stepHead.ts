@@ -6,7 +6,7 @@
 // giới hạn theo TURN_RATE, rồi di chuyển và clamp về trong sân (tự trượt dọc tường).
 // KHÔNG dự đoán đuôi/chiếm đất (đó là việc của server).
 
-import { CONFIG, clampInside } from "@hexagon/shared";
+import { CONFIG, slideMove } from "@hexagon/shared";
 
 /** Trạng thái đầu tối thiểu cần cho dự đoán. */
 export interface HeadState {
@@ -43,12 +43,9 @@ export function stepHead(
   else if (diff < -maxTurn) diff = -maxTurn;
   let heading = state.heading + diff;
 
-  // 2) Di chuyển rồi clamp về trong sân.
+  // 2) Di chuyển rồi TRƯỢT dọc tường ở tốc độ đầy đủ (khớp updateEntity của server).
   const dist = CONFIG.SPEED * dt;
-  const c = clampInside(
-    state.x + Math.cos(heading) * dist,
-    state.y + Math.sin(heading) * dist,
-  );
+  const c = slideMove(state.x, state.y, heading, dist);
   const mdx = c.x - state.x;
   const mdy = c.y - state.y;
   if (Math.hypot(mdx, mdy) > 1e-7) {

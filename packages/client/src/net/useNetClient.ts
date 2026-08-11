@@ -38,6 +38,7 @@ export function useNetClient(url: string = DEFAULT_SERVER_URL): UseNetClient {
     others: [],
     playerCount: 0,
     selfPrep: 0,
+    kingHold: 0,
     ping: 0,
   });
 

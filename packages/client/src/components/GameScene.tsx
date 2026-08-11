@@ -13,10 +13,12 @@ import { Effects } from "./Effects";
 import { TrailLine } from "./TrailLine";
 import { BorderRim } from "./BorderRim";
 import { CollisionDebug } from "./CollisionDebug";
+import { ArenaCollider } from "./ArenaCollider";
 import { TerritoryBorders } from "./TerritoryBorders";
 import { MiniMap } from "./MiniMap";
 import { Joystick } from "./Joystick";
 import { HUD, Stats } from "./HUD";
+import { FpsMeterIfEnabled } from "./FpsMeter";
 
 interface PointerRef {
   x: number;
@@ -58,11 +60,13 @@ function GameLoop({
   game,
   pointer,
   joystick,
+  spectateTargetRef,
   onStats,
 }: {
   game: GameState;
   pointer: React.MutableRefObject<PointerRef>;
   joystick: React.MutableRefObject<{ active: boolean; angle: number }>;
+  spectateTargetRef: React.MutableRefObject<number>;
   onStats: (s: Stats) => void;
 }) {
   const camera = useThree((s) => s.camera);
@@ -132,10 +136,13 @@ function GameLoop({
     let fx = game.pos.x;
     let fy = game.pos.y;
     if (!game.human.alive && game.spectating) {
-      const lid = game.leaderId();
-      if (lid >= 0) {
-        fx = game.players[lid].pos.x;
-        fy = game.players[lid].pos.y;
+      // Bám thực thể ĐANG CHỌN xem nếu còn sống; nếu chưa chọn / đã chết → bám thực thể dẫn đầu.
+      const want = spectateTargetRef.current;
+      const tid =
+        want >= 0 && game.players[want]?.alive ? want : game.leaderId();
+      if (tid >= 0) {
+        fx = game.players[tid].pos.x;
+        fy = game.players[tid].pos.y;
       }
     }
     camera.quaternion.copy(camQuat);
@@ -164,6 +171,13 @@ function GameLoop({
         winnerName: game.winnerId >= 0 ? game.nameOf(game.winnerId) : "",
         canRevive: game.phase === "dead" ? game.canRevive() : true,
         spectating: game.spectating,
+        spectateName: (() => {
+          if (!game.spectating) return "";
+          const want = spectateTargetRef.current;
+          const id =
+            want >= 0 && game.players[want]?.alive ? want : game.leaderId();
+          return id >= 0 ? game.nameOf(id) : "";
+        })(),
         deathCause: game.human.deathCause,
         killerName:
           game.human.killerId >= 0 ? game.nameOf(game.human.killerId) : "",
@@ -221,10 +235,21 @@ export default function GameScene({
     deathCells: [],
   });
 
+  // Id thực thể ĐANG XEM khi khán giả (-1 = tự bám thực thể dẫn đầu). Nút ◀ ▶ đổi giá trị này.
+  const spectateTargetRef = useRef(-1);
+
   const onStats = useCallback((s: Stats) => setStats(s), []);
   const onRevive = useCallback(() => game.revive(), [game]);
   const onRestart = useCallback(() => game.restart(), [game]);
   const onSpectate = useCallback(() => game.spectate(), [game]);
+  const onSpectatePrev = useCallback(
+    () => (spectateTargetRef.current = game.spectateCycle(spectateTargetRef.current, -1)),
+    [game]
+  );
+  const onSpectateNext = useCallback(
+    () => (spectateTargetRef.current = game.spectateCycle(spectateTargetRef.current, 1)),
+    [game]
+  );
 
   const handlePointer = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
     const rect = e.currentTarget.getBoundingClientRect();
@@ -260,24 +285,40 @@ export default function GameScene({
         <ambientLight intensity={0.8} />
         <directionalLight position={[4, 6, 12]} intensity={1.15} />
 
-        <GameLoop game={game} pointer={pointer} joystick={joystick} onStats={onStats} />
+        <GameLoop
+          game={game}
+          pointer={pointer}
+          joystick={joystick}
+          spectateTargetRef={spectateTargetRef}
+          onStats={onStats}
+        />
         <HexGridView game={game} />
-        <TerritoryBorders game={game} />
+        {CONFIG.DISPLAY.TERRITORY_BORDERS && <TerritoryBorders game={game} />}
         <BorderRim game={game} />
         <TrailLine game={game} />
         <PlayerCube game={game} />
-        <Effects game={game} />
-        {CONFIG.DEBUG.COLLISION_VECTORS && <CollisionDebug game={game} />}
+        {CONFIG.DISPLAY.PARTICLES && <Effects game={game} />}
+        {CONFIG.DEBUG.COLLISION_VECTORS && (
+          <>
+            <ArenaCollider />
+            <CollisionDebug game={game} />
+          </>
+        )}
       </Canvas>
-      <HUD
-        stats={stats}
-        onRevive={onRevive}
-        onRestart={onRestart}
-        onSpectate={onSpectate}
-        playerName={playerName}
-      />
+      {CONFIG.DISPLAY.HUD && (
+        <HUD
+          stats={stats}
+          onRevive={onRevive}
+          onRestart={onRestart}
+          onSpectate={onSpectate}
+          onSpectatePrev={onSpectatePrev}
+          onSpectateNext={onSpectateNext}
+          playerName={playerName}
+        />
+      )}
       {onExit && <MenuButton onExit={onExit} />}
-      <MiniMap game={game} />
+      {CONFIG.DISPLAY.MINIMAP && <MiniMap game={game} />}
+      <FpsMeterIfEnabled />
       <Joystick dir={joystick} />
       {CONFIG.DEBUG.COLLISION_VECTORS && (
         <div

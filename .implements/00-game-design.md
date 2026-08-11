@@ -48,6 +48,16 @@ Tham chiếu: hexanaut.io, paper.io, splix.io.
   tại đầu người chơi để thấy vì sao chết khi đi lướt sát biên: **xanh dương** = hướng
   đi mong muốn, **đỏ** = pháp tuyến (các) tường đang áp sát, **xanh lá** = hướng trượt
   kết quả. HUD hiện chú thích màu. Đặt `false` để tắt hoàn toàn (component không mount).
+- Cùng cờ đó, `ArenaCollider` vẽ **BIÊN VA CHẠM thật dạng stroke vector**: đường viền
+  lục giác nối 6 đỉnh collider (bán kính ngoại tiếp `ARENA_R`) + mũi tên **pháp tuyến 6
+  tường** (tại `ARENA_INRADIUS`) hướng ra ngoài. Đây chính là ranh giới mà `clampInside`
+  giữ đầu ở trong (KHÁC với `BorderRim` chỉ là hình hiển thị) → nhìn ra ngay nơi đầu bị
+  chặn/trượt. Dùng chung cho cả chơi đơn (`game.human`) và online (ghế người cục bộ qua
+  prop `entityId` của `CollisionDebug`).
+- `CollisionDebug` còn vẽ **COLLIDER của cube người chơi dạng stroke vector**: viền hình
+  VUÔNG footprint (cạnh `CUBE_SIZE`, xoay theo heading, màu lam) + vòng tròn **bán kính
+  va chạm đầu** `KILL_RADIUS` (màu vàng) — vùng phân xử va đầu (chủ đất hạ kẻ xâm nhập /
+  đâm đầu ngoài sân).
 
 ### 2a. Hiển thị lãnh thổ
 - Ô trung lập vẫn render dạng **lưới lục giác** (mỗi ô = 1 instance, scale 0.92 để lộ

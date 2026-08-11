@@ -62,10 +62,15 @@ distance = (|x1-x2| + |y1-y2| + |z1-z2|) / 2
 
 - `insideArena(x,y,slack)` — điểm có trong sân không (nới/thu biên `slack`).
 - `clampInside(x,y)` — kéo điểm về trong lục giác lồi (chiếu lên các tường bị vượt).
-- **Trượt tường giữ nguyên tốc độ:** với mỗi tường đang áp & hướng đi ra ngoài, bỏ
-  thành phần pháp tuyến của vận tốc rồi chuẩn hoá lại về 1 → không chậm/dừng. Đâm
-  chính diện 1 cạnh → chọn tiếp tuyến nghiêng về phía con trỏ (chỉ kẹt khi ép đúng
-  vào 1 đỉnh lục giác).
+- **`slideMove(x,y,heading,dist)` — trượt tường GIỮ TỐC ĐỘ ĐẦY ĐỦ (nguồn chân lý va
+  chạm di chuyển, dùng chung server `updateEntity` + client `stepHead`):** dịch theo
+  hướng rồi `clampInside`; nếu tường cắt bớt bước mà CÒN thành phần trượt (song song
+  tường) đáng kể → KÉO DÀI phần trượt về đủ `dist` rồi clamp lại → men theo biên ở tốc
+  độ đầy đủ, **hết crawl/kẹt**. Chỉ đứng lại khi đâm gần như VUÔNG GÓC tuyệt đối / ép
+  đúng ĐỈNH lồi (không còn tiếp tuyến). Trả thêm `blocked` = bước bị tường cắt.
+- **Không còn guard "chết oan tự đâm đuôi":** `slideMove` không bao giờ sinh vận tốc
+  LÙI (chỉ tiến/tiếp tuyến), nên `updateEntity` bước thẳng — nếu ô đích là đuôi của
+  chính mình thì đó là tự cắt đuôi THẬT (đúng luật), không phải giật lùi do clamp.
 
 ## Thuật toán chiếm đất (Flood Fill / "bao vây")
 

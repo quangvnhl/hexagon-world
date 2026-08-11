@@ -21,7 +21,9 @@ Client → Server:
 
 Server → Client:
 - `WELCOME {playerId, mapRadius, seed}`
-- `SNAPSHOT {tick, players[], captures[], items[]}`  // delta-encoded
+- `SNAPSHOT {tick, ackSeq, selfPrep, kingHold, entities[]}`  // nhị phân; `kingHold` =
+  giây còn phải giữ ngôi KING để thắng (server tính; wire = deciseconds u16) → client
+  đếm ngược đồng hồ 3 phút ở HUD (client KHÔNG chạy mô phỏng nên phải nhận số này).
 - `EVENT {type: DEATH|KING|WIN, ...}`
 - `PONG {t}`
 
@@ -40,6 +42,18 @@ Server → Client:
   xác nhận.
 - **Interpolation:** thực thể của người khác render trễ ~100 ms và nội suy giữa 2
   snapshot cho mượt.
+- **Làm mượt hoà giải (error-offset decay) — chống giật 24Hz:** `predicted` là nguồn
+  chân lý vật lý (bị GÁN CỨNG mỗi snapshot). Nhưng đầu người chơi KHÔNG render thẳng
+  `predicted`; thay vào đó `Predictor.getRenderHead()` trả `predicted + err`, với `err`
+  = độ lệch giữa "đang hiển thị" và "dự đoán mới" được NẠP mỗi lần hoà giải rồi GIẢM
+  DẦN theo hằng số thời gian `SMOOTH_TAU` (~0.09s). Nhờ đó các hiệu chỉnh nhỏ mỗi
+  snapshot (24Hz) được rải ra nhiều frame 60fps → hết "giật" (đặc biệt khi trượt sát
+  tường). Lệch lớn (> `SNAP_DIST`, hoặc hướng > `SNAP_HEADING`) → SNAP ngay (spawn/hồi
+  sinh/teleport, không trượt cả sân). Xem `packages/client/src/net/prediction.ts`.
+- **Luôn dự đoán mỗi frame khi ĐANG CHƠI:** server đi tiếp mỗi tick theo heading cuối,
+  nên client phải `sendInput` (⇒ dự đoán tiến) MỖI FRAME, kể cả khi con trỏ nằm trong
+  dead-zone (không có hướng mới) — giữ hướng cuối. Tránh lệch tích luỹ do "bỏ frame dự
+  đoán" rồi bị snapshot kéo giật. Lúc CHUẨN BỊ (prep) chỉ `sendAim` (không dự đoán tiến).
 
 ## Spatial partitioning (chống O(n²))
 

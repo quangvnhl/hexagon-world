@@ -81,7 +81,7 @@ export interface InputMsg {
     heading: number;
 }
 export declare function decodeInput(buf: ArrayBuffer | Uint8Array): InputMsg | null;
-export declare const SNAPSHOT_HEADER = 13;
+export declare const SNAPSHOT_HEADER = 15;
 export declare const SNAPSHOT_ENTITY = 20;
 /** Bit cờ của mỗi entity trong snapshot. */
 export declare const FLAG: {
@@ -105,6 +105,9 @@ export interface Snapshot {
     ackSeq: number;
     /** Ms chuẩn bị còn lại của CHÍNH client nhận (0 nếu đang chơi/chết). */
     selfPrep: number;
+    /** Giây còn phải giữ ngôi KING để thắng (do server tính; 0/đầy khi chưa có KING).
+     *  Bỏ trống khi mã hoá → coi là 0. Truyền qua wire dưới dạng deciseconds. */
+    kingHold?: number;
     entities: EntitySnap[];
 }
 export declare function encodeSnapshot(s: Snapshot): ArrayBuffer;

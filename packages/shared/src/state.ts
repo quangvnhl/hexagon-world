@@ -3,15 +3,17 @@ import {
   Axial,
   HexKey,
   keyOf,
+  neighbors,
   cubeDistance,
   axialToPixel,
   pixelToAxial,
   hexLinedraw,
 } from "./hex";
 import {
-  ARENA_INRADIUS,
+  ARENA_R,
+  WALL_LIMIT,
   insideArena,
-  clampInside,
+  slideMove,
   mapArena,
 } from "./arena";
 import { captureEnclosed } from "./floodfill";
@@ -124,6 +126,9 @@ export class GameState {
   revision = 0;
   /** Tăng khi lưới cần tô lại (owned hoặc trail hex đổi). */
   gridRevision = 0;
+  /** Tăng CHỈ khi CHỦ SỞ HỮU ô đổi (không kể đuôi) — cho lớp vạch ranh giới tô lại HIẾM
+   *  hơn nhiều (đuôi đổi ~56% frame nhưng KHÔNG ảnh hưởng vạch ranh). */
+  territoryRevision = 0;
 
   /** Thời gian (giây) còn lại phải giữ ngôi King liên tục để thắng. */
   kingHoldRemaining: number = CONFIG.WIN_HOLD_TIME;
@@ -143,11 +148,18 @@ export class GameState {
   ) {
     this.fixedSpawn = spawnAt;
     this.humanCount = Math.max(1, humanCount);
-    this.map = mapArena(CONFIG.MAP_MARGIN);
+    // playable = ô có TÂM nằm trong tường va chạm (WALL_LIMIT, đã co theo WALL_SCALE).
     this.playable = new Set();
-    for (const k of this.map) {
+    for (const k of mapArena(CONFIG.MAP_MARGIN)) {
       const p = axialToPixel(keyToAxial(k), CONFIG.HEX_SIZE);
       if (insideArena(p.x, p.y, 0)) this.playable.add(k);
+    }
+    // map = playable ∪ ĐÚNG 1 VÀNH ô kề bao quanh. Vành này = tường hiển thị (BorderRim) +
+    // vành biên cho flood fill + đảm bảo đầu bị clamp luôn rơi vào ô hợp lệ. Dựng theo ô KỀ
+    // (không theo dải world-units mỏng) nên KHÔNG BAO GIỜ mất tường khi đổi WALL_SCALE.
+    this.map = new Set(this.playable);
+    for (const k of this.playable) {
+      for (const nb of neighbors(keyToAxial(k))) this.map.add(keyOf(nb));
     }
 
     const n = this.humanCount + Math.max(0, botCount);
@@ -263,6 +275,26 @@ export class GameState {
   }
 
   /**
+   * [ONLINE] DỰ ĐOÁN Ô ĐUÔI cục bộ cho SELF: tô NGAY hex dưới đầu (đã dự đoán) thành ô đuôi
+   * để MÀU Ô bám kịp đầu, không chờ keyframe TERRITORY (~4Hz + trễ mạng) — nếu không, di
+   * chuyển lên ô trung lập bị trễ đổi màu dù đường line đã mượt. Chỉ tô ô TRUNG LẬP (không
+   * đè chủ/đuôi của ai); keyframe sau đó GHI ĐÈ authoritative. Gọi cho self MỖI FRAME (sau
+   * applyEntity + sau applyTerritory) → kể cả frame vừa reconcile keyframe cũng không nhấp
+   * nháy vì ô đầu được tô lại ngay. Chỉ gọi khi self còn sống & đang có đuôi (hasTrail).
+   */
+  predictTrailCell(id: number): void {
+    const e = this.players[id];
+    if (!e || e.phase !== "playing") return;
+    const hk = keyOf(e.currentHex);
+    if (this.cellOwner.has(hk)) return; // ô đã có chủ (mình/đối thủ) → authoritative lo
+    if (this.cellTrail.has(hk)) return; // đã là đuôi (mình/đối thủ) → không đè
+    this.cellTrail.set(hk, id);
+    e.trailHexes.push(hk);
+    e.trailSet.add(hk);
+    this.gridRevision++;
+  }
+
+  /**
    * [ONLINE] "Đỗ" một ghế: cho thực thể chết & trả toàn bộ đất/đuôi về trung lập, KHÔNG
    * tự hồi sinh. Dùng cho GHẾ CHƯA CÓ NGƯỜI ở phòng chờ → ghế trống không mô phỏng, không
    * để lại "bóng ma" trôi trên sân. Người vào (join) sẽ respawn ghế này.
@@ -306,6 +338,10 @@ export class GameState {
     // KHÔNG dựng trailPoints từ tâm ô ở đây — đường đuôi MƯỢT do applyEntity tích luỹ theo
     // vị trí đầu thực tế (xem applyEntity). Keyframe chỉ dựng lại các Ô đuôi (tô màu nền).
     this.gridRevision++;
+    // Keyframe thay TOÀN BỘ chủ ô → CHỦ ô có thể đã đổi. Bump territoryRevision để vạch ranh
+    // (TerritoryBorders, gate theo revision này) dựng lại — ở NET MODE đây là đường DUY NHẤT
+    // cập nhật lãnh thổ (client không chạy claimCell), thiếu bump ⇒ vạch ranh không bao giờ hiện.
+    this.territoryRevision++;
   }
 
   /** % lãnh thổ của một thực thể theo id (cho HUD online — human getter chỉ trỏ players[0]). */
@@ -396,6 +432,20 @@ export class GameState {
       }
     }
     return id;
+  }
+
+  /** [KHÁN GIẢ] Id thực thể CÒN SỐNG kế tiếp (dir=+1) / trước (dir=-1) theo thứ tự id — để
+   *  chuyển tay xem thủ công. `from` = id đang xem (nếu đã chết/không có trong danh sách thì
+   *  nhảy vào đầu/cuối). Trả -1 nếu không còn ai sống. */
+  spectateCycle(from: number, dir: 1 | -1): number {
+    const alive = this.players
+      .filter((e) => e.alive)
+      .map((e) => e.id)
+      .sort((a, b) => a - b);
+    if (alive.length === 0) return -1;
+    const idx = alive.indexOf(from);
+    if (idx < 0) return dir > 0 ? alive[0] : alive[alive.length - 1];
+    return alive[(idx + dir + alive.length) % alive.length];
   }
 
   /** % lãnh thổ của mọi thực thể (cho bảng xếp hạng). */
@@ -528,7 +578,10 @@ export class GameState {
   /** Xoá mọi ô owned/trail của e khỏi bản đồ chia sẻ. */
   private clearOwnership(e: Entity): void {
     for (const k of e.owned) {
-      if (this.cellOwner.get(k) === e.id) this.cellOwner.delete(k);
+      if (this.cellOwner.get(k) === e.id) {
+        this.cellOwner.delete(k);
+        this.territoryRevision++;
+      }
     }
     for (const t of e.trailHexes) {
       if (this.cellTrail.get(t) === e.id) this.cellTrail.delete(t);
@@ -537,9 +590,11 @@ export class GameState {
 
   private claimCell(k: HexKey, e: Entity): void {
     const prev = this.cellOwner.get(k);
-    if (prev !== undefined && prev !== e.id) this.players[prev].owned.delete(k);
+    if (prev === e.id) return; // đã thuộc e → không có gì đổi (khỏi bump revision)
+    if (prev !== undefined) this.players[prev].owned.delete(k);
     this.cellOwner.set(k, e.id);
     e.owned.add(k);
+    this.territoryRevision++; // CHỦ ô đổi → vạch ranh có thể phải vẽ lại
   }
 
   /** Người chơi tự chết (dùng cho test / debug). */
@@ -613,14 +668,20 @@ export class GameState {
   private pickSpawnHex(e: Entity): Axial | null {
     if (e === this.human && this.fixedSpawn) return this.fixedSpawn;
     const inset = (CONFIG.START_RADIUS + 1) * CONFIG.HEX_SIZE * Math.sqrt(3);
-    const lim = ARENA_INRADIUS - inset; // biên lấy mẫu (đủ sâu để cụm khởi đầu lọt trong)
+    const lim = WALL_LIMIT - inset; // biên lấy mẫu (theo tường va chạm thật đã co WALL_SCALE)
     const clearance = CONFIG.SPAWN_CLEARANCE;
 
-    // Không có ĐẤT (owned) của ai trong bán kính `clearance` quanh c — chỉ duyệt ô đã
-    // chiếm (cellOwner), O(owned).
+    // Không có ĐẤT (owned) của ai trong bán kính `clearance` quanh c. QUÉT ĐĨA hex bán kính
+    // `clearance` quanh c (O(clearance²), ĐỘC LẬP với diện tích đã chiếm) thay vì duyệt TOÀN
+    // BỘ ô owned (O(owned)) — bản cũ khiến bước quét dự phòng tốn ~29 TRIỆU phép/​lần lúc bản
+    // đồ đông ⇒ đơ ~500 ms mỗi lần bot hồi sinh / mỗi 0.2s khi người chơi đang chết.
     const clearAround = (c: Axial): boolean => {
-      for (const k of this.cellOwner.keys()) {
-        if (cubeDistance(keyToAxial(k), c) <= clearance) return false;
+      for (let dq = -clearance; dq <= clearance; dq++) {
+        const lo = Math.max(-clearance, -dq - clearance);
+        const hi = Math.min(clearance, -dq + clearance);
+        for (let dr = lo; dr <= hi; dr++) {
+          if (this.cellOwner.has(keyOf({ q: c.q + dq, r: c.r + dr }))) return false;
+        }
       }
       return true;
     };
@@ -633,6 +694,10 @@ export class GameState {
       const a = pixelToAxial(x, y, CONFIG.HEX_SIZE);
       if (this.map.has(keyOf(a)) && clearAround(a)) return a;
     }
+    // BOT: bỏ qua bước quét xác định (tốn) — nếu lấy mẫu ngẫu nhiên trượt thì thôi, chờ lần
+    // hồi sinh sau (đằng nào cũng có RESPAWN_DELAY). Chỉ NGƯỜI chơi mới cần câu trả lời chắc
+    // chắn "còn chỗ không" (cho nút Hồi sinh) → mới quét toàn bộ.
+    if (e.isBot) return null;
     // 2) Quét xác định toàn bộ ô đủ sâu → khẳng định CÒN chỗ hợp lệ hay KHÔNG (null).
     for (const k of this.playable) {
       const a = keyToAxial(k);
@@ -697,8 +762,9 @@ export class GameState {
       return;
     }
 
-    // Quay đầu mượt về targetHeading (cả khi chuẩn bị).
-    const maxTurn = CONFIG.TURN_RATE * dt;
+    // Quay đầu mượt về targetHeading (cả khi chuẩn bị). Bot dùng TURN_RATE RIÊNG (tách
+    // khỏi người chơi) để nhanh nhẹn hơn mà không đổi cảm giác lái của người.
+    const maxTurn = (e.isBot ? CONFIG.BOT.TURN_RATE : CONFIG.TURN_RATE) * dt;
     let diff = normalizeAngle(e.targetHeading - e.heading);
     if (diff > maxTurn) diff = maxTurn;
     else if (diff < -maxTurn) diff = -maxTurn;
@@ -715,28 +781,18 @@ export class GameState {
     }
 
     const dist = CONFIG.SPEED * dt;
-    const vx = Math.cos(e.heading);
-    const vy = Math.sin(e.heading);
 
-    // Va chạm tường kiểu "ĐẨY rồi KÉO về trong sân" (move-then-clamp): dịch theo hướng
-    // đang nhìn rồi clamp điểm đích về trong lục giác lồi. Cách này TỰ trượt dọc tường
-    // và DỪNG HẲN ở góc, và QUAN TRỌNG: không bao giờ sinh vận tốc LÙI. Cách chiếu pháp
-    // tuyến tường thủ công trước đây, tại GÓC lồi (2 tường), để lại vận tốc dư hướng
-    // NGƯỢC vào trong → đầu bị đẩy lùi vào ô đuôi của chính mình → chết oan "tự đâm đuôi".
-    const c = clampInside(e.pos.x + vx * dist, e.pos.y + vy * dist);
+    // Va chạm tường: dịch theo hướng nhìn rồi TRƯỢT dọc biên ở TỐC ĐỘ ĐẦY ĐỦ (slideMove).
+    // Không sinh vận tốc LÙI (tránh đầu bị đẩy ngược vào ô đuôi của chính mình → chết oan).
+    const c = slideMove(e.pos.x, e.pos.y, e.heading, dist);
     const mdx = c.x - e.pos.x;
     const mdy = c.y - e.pos.y;
     const moved = Math.hypot(mdx, mdy);
     if (moved > 1e-7) {
-      // Bị TƯỜNG chặn phần lớn bước đi (moved < nửa bước dự định) và ô kế tiếp lại là ĐUÔI
-      // CỦA CHÍNH MÌNH → KHÔNG bước vào: chỉ đứng/trượt sát tường. Tránh cái chết "tự đâm
-      // đuôi" OAN khi đầu bị GHIM ở góc/tường (clamp làm đầu giật lùi vào ô đuôi vừa vẽ).
-      const wallBlocked = moved < dist - 1e-6;
-      const intoOwnTrail =
-        this.cellTrail.get(keyOf(pixelToAxial(c.x, c.y, CONFIG.HEX_SIZE))) === e.id;
-      if (!(wallBlocked && intoOwnTrail)) {
-        this.stepEntity(e, c.x, c.y);
-      }
+      // slideMove KHÔNG bao giờ sinh vận tốc LÙI (chỉ tiến/trượt tiếp tuyến) → an toàn bước
+      // thẳng: nếu ô đích đúng là đuôi CỦA CHÍNH MÌNH thì đó là tự cắt đuôi THẬT (enterHex
+      // xử lý chết), không còn phải chặn "chết oan" như thời clamp đẩy lùi.
+      this.stepEntity(e, c.x, c.y);
       // Xoay đầu theo hướng DI CHUYỂN THỰC (trượt dọc tường); xa tường thì trùng heading.
       e.heading = Math.atan2(mdy, mdx);
     }
@@ -783,7 +839,15 @@ export class GameState {
     const trailOwner = this.cellTrail.get(hk);
     if (trailOwner !== undefined) {
       if (trailOwner === e.id) {
-        this.kill(e, undefined, "self"); // tự cắt đuôi → chết
+        // MIỄN tự-cắt cho vài ô đuôi MỚI NHẤT (sát đầu): tránh chết oan khi làm tròn hex
+        // dao động lúc đi dọc đúng ranh giới cột hex / men theo tường (đầu bật qua-lại
+        // giữa 2 ô kề). Cắt vào đoạn đuôi CŨ hơn → vẫn tự cắt đuôi = chết.
+        const tail = e.trailHexes;
+        const graceFrom = Math.max(0, tail.length - CONFIG.SELF_TRAIL_GRACE);
+        for (let i = graceFrom; i < tail.length; i++) {
+          if (tail[i] === hk) return false; // ô đuôi sát đầu → bỏ qua, không chết
+        }
+        this.kill(e, undefined, "self"); // tự cắt đuôi (đoạn cũ) → chết
         return true;
       }
       // Cắt đuôi đối thủ → đối thủ chết & MẤT ĐẤT về tay e; kill() dọn cellTrail của họ.
@@ -935,10 +999,14 @@ export class GameState {
   /** Chọn hướng gần `desired` nhất mà phía trước KHÔNG bị chặn (né đuôi mình + tường).
    *  Bot kỹ năng cao nhìn xa hơn và quét nhiều hướng hơn. */
   private steerAvoiding(e: Entity, desired: number, skill: number): number {
-    const dist = CONFIG.BOT.AVOID_DIST * (0.7 + skill * 0.8);
+    // CHẶN chi phí: skill lớn (hồ sơ "Khó" đặt cao) từng làm dist vượt xa bán kính sân →
+    // điểm quét luôn NGOÀI sân ⇒ né vô nghĩa mà vẫn lặp cả nghìn lần/​bot/​tick ⇒ tốn CPU
+    // khi đông bot. Kẹp dist ≤ ~1/3 sân và maxK ≤ 18 (đủ quét ±180° ở bước 0.35 rad).
+    const sk = Math.min(Math.max(skill, 0), 1.5);
+    const dist = Math.min(CONFIG.BOT.AVOID_DIST * (0.7 + sk * 0.8), ARENA_R * 0.33);
     if (!this.aheadBlocked(e, desired, dist)) return desired;
     const step = 0.35;
-    const maxK = Math.round(3 + skill * 6);
+    const maxK = Math.min(18, Math.round(3 + sk * 6));
     for (let k = 1; k <= maxK; k++) {
       for (const s of [1, -1]) {
         const hd = desired + s * step * k;

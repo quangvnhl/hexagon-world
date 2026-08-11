@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { CONFIG, PLAYER_COLORS } from "@hexagon/shared";
 import type { DeathCause, Phase } from "@hexagon/shared";
 import { ARENA_R, ARENA_INRADIUS } from "@hexagon/shared";
@@ -33,6 +33,8 @@ export interface Stats {
   canRevive: boolean;
   /** Người chơi đã chọn XEM (khán giả) — chờ hết ván. */
   spectating: boolean;
+  /** Tên thực thể ĐANG XEM (khán giả) — hiển thị cạnh nút chuyển. Rỗng nếu chưa xác định. */
+  spectateName?: string;
   /** Lý do chết lần gần nhất (cho popup). */
   deathCause: DeathCause;
   /** Tên kẻ đã hạ (rỗng nếu tự chết / cả hai chết). */
@@ -42,6 +44,24 @@ export interface Stats {
   /** Toạ độ world các ô lãnh thổ NGAY TRƯỚC khi chết — vẽ bản đồ trong popup. */
   deathCells: { x: number; y: number }[];
 }
+
+/** Nút tròn nhỏ ◀ ▶ để chuyển người đang xem (khán giả). */
+const spectateBtnStyle: CSSProperties = {
+  width: 30,
+  height: 30,
+  borderRadius: "50%",
+  border: "1px solid rgba(120,140,180,0.4)",
+  background: "rgba(30,40,60,0.9)",
+  color: "#e8eefc",
+  fontSize: 13,
+  fontWeight: 800,
+  cursor: "pointer",
+  lineHeight: 1,
+  display: "flex",
+  alignItems: "center",
+  justifyContent: "center",
+  pointerEvents: "auto",
+};
 
 /** Câu mô tả lý do chết (tiếng Việt) cho popup. */
 function deathReason(cause: DeathCause, killerName: string): string {
@@ -145,6 +165,8 @@ export function HUD({
   onRevive,
   onRestart,
   onSpectate,
+  onSpectatePrev,
+  onSpectateNext,
   localId = 0,
   playerName,
 }: {
@@ -152,6 +174,9 @@ export function HUD({
   onRevive: () => void;
   onRestart: () => void;
   onSpectate: () => void;
+  /** Chuyển thực thể đang XEM (khán giả) sang người trước/sau. Bỏ trống = không hiện nút. */
+  onSpectatePrev?: () => void;
+  onSpectateNext?: () => void;
   /** Id thực thể của NGƯỜI CHƠI CỤC BỘ (0 khi chơi đơn; = playerId khi online). */
   localId?: number;
   /** Tên hiển thị của người chơi cục bộ (thay cho tên màu mặc định). */
@@ -343,6 +368,57 @@ export function HUD({
         </div>
       )}
 
+      {/* Banner CẢNH BÁO: NGƯỜI/BOT KHÁC đang là Vua → báo cho MỌI người biết ai đang là Vua
+          và còn bao lâu nữa thì họ THẮNG (kingName/kingHold có sẵn cho cả chơi đơn & online). */}
+      {!stats.king && stats.kingName && !stats.won && (
+        <div
+          style={{
+            position: "absolute",
+            top: 16,
+            left: "50%",
+            transform: `translateX(-50%)${uiScale !== 1 ? ` scale(${uiScale})` : ""}`,
+            transformOrigin: "top center",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 6,
+            pointerEvents: "none",
+          }}
+        >
+          <div
+            style={{
+              padding: "9px 20px",
+              borderRadius: 999,
+              background: "rgba(10,14,22,0.82)",
+              border: "1px solid rgba(255,180,46,0.55)",
+              color: "#ffd23f",
+              fontFamily: "system-ui, sans-serif",
+              fontWeight: 800,
+              letterSpacing: 1,
+              boxShadow: "0 6px 24px rgba(255,180,46,0.25)",
+              backdropFilter: "blur(6px)",
+            }}
+          >
+            👑 {stats.kingName} ĐANG LÀ NHÀ VUA
+          </div>
+          <div
+            style={{
+              padding: "5px 16px",
+              borderRadius: 999,
+              background: "rgba(10,14,22,0.72)",
+              color: "#ff9d5c",
+              fontFamily: "system-ui, sans-serif",
+              fontSize: 14,
+              fontWeight: 700,
+              letterSpacing: 1,
+              backdropFilter: "blur(6px)",
+            }}
+          >
+            Sẽ thắng sau: {fmtTime(stats.kingHold)}
+          </div>
+        </div>
+      )}
+
       {/* Hướng dẫn góc dưới — ẩn trên điện thoại (dài, che màn hình; đã có joystick) */}
       {!isMobile && (
         <div
@@ -525,7 +601,7 @@ export function HUD({
         </div>
       )}
 
-      {/* Chế độ KHÁN GIẢ (đã chọn Xem): banner nhẹ, không chặn tầm nhìn */}
+      {/* Chế độ KHÁN GIẢ (đã chọn Xem): banner + nút chuyển người xem (◀ ▶). */}
       {stats.phase === "dead" && stats.spectating && !stats.won && (
         <div
           style={{
@@ -533,18 +609,40 @@ export function HUD({
             top: 16,
             left: "50%",
             transform: "translateX(-50%)",
-            padding: "8px 18px",
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "6px 10px",
             borderRadius: 999,
             background: "rgba(10,14,22,0.8)",
             color: "#cdd7ea",
             fontFamily: "system-ui, sans-serif",
             fontSize: 13,
             fontWeight: 600,
-            pointerEvents: "none",
             backdropFilter: "blur(6px)",
           }}
         >
-          👁 Đang xem · chờ hết ván để chơi lại
+          {onSpectatePrev && (
+            <button
+              onClick={onSpectatePrev}
+              title="Xem người trước"
+              style={spectateBtnStyle}
+            >
+              ◀
+            </button>
+          )}
+          <span style={{ pointerEvents: "none", whiteSpace: "nowrap" }}>
+            👁 Đang xem{stats.spectateName ? `: ${stats.spectateName}` : ""}
+          </span>
+          {onSpectateNext && (
+            <button
+              onClick={onSpectateNext}
+              title="Xem người sau"
+              style={spectateBtnStyle}
+            >
+              ▶
+            </button>
+          )}
         </div>
       )}
 
