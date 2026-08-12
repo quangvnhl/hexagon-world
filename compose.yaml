@@ -12,7 +12,9 @@ services:
       NODE_ENV: production
       PORT: "8910"
     ports:
-      - "${SERVER_PORT:-8910}:8910"
+      # Chỉ publish trên localhost của máy host; server trong container vẫn
+      # phải lắng nghe mọi interface để Docker chuyển tiếp được lưu lượng.
+      - "127.0.0.1:${SERVER_PORT:-8910}:8910"
     healthcheck:
       test:
         - CMD
@@ -38,9 +40,9 @@ services:
     environment:
       NODE_ENV: production
       PORT: "3890"
-      HOSTNAME: 0.0.0.0
+      HOSTNAME: "0.0.0.0"
     ports:
-      - "${CLIENT_PORT:-3890}:3890"
+      - "127.0.0.1:${CLIENT_PORT:-3890}:3890"
     depends_on:
       server:
         condition: service_healthy

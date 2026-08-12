@@ -36,11 +36,15 @@ ENV PORT=3890
 ENV HOSTNAME=0.0.0.0
 WORKDIR /app/packages/client
 
-# Includes the built shared package and workspace dependencies resolved by pnpm.
-COPY --from=client-build /app /app
+# Với outputFileTracingRoot là gốc monorepo, Next đặt server standalone của
+# package client tại packages/client/server.js trong cây standalone.
+COPY --from=client-build --chown=node:node /app/packages/client/.next/standalone /app
+COPY --from=client-build --chown=node:node /app/packages/client/.next/static ./.next/static
+COPY --from=client-build --chown=node:node /app/packages/client/public ./public
 
 EXPOSE 3890
-CMD ["node", "../../node_modules/next/dist/bin/next", "start", "-p", "3890"]
+USER node
+CMD ["node", "server.js"]
 
 
 FROM dependencies AS server-build
