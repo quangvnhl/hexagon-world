@@ -3,9 +3,9 @@
   "version": "0.1.0",
   "private": true,
   "scripts": {
-    "dev": "pnpm --filter @hexagon/shared build && next dev",
+    "dev": "pnpm --filter @hexagon/shared build && next dev -p 3890",
     "build": "pnpm --filter @hexagon/shared build && next build",
-    "start": "next start",
+    "start": "next start -p 3890",
     "lint": "next lint",
     "typecheck": "tsc --noEmit",
     "test": "vitest run --config vitest.net.config.mts"

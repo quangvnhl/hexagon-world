@@ -23,7 +23,7 @@ COPY packages ./packages
 FROM dependencies AS client-build
 
 # NEXT_PUBLIC_* is embedded into the browser bundle at build time.
-ARG NEXT_PUBLIC_SERVER_URL=ws://localhost:8787
+ARG NEXT_PUBLIC_SERVER_URL=ws://localhost:8910
 ENV NEXT_PUBLIC_SERVER_URL=$NEXT_PUBLIC_SERVER_URL
 
 RUN pnpm --filter @hexagon/client build
@@ -32,15 +32,15 @@ RUN pnpm --filter @hexagon/client build
 FROM node:22-alpine AS client
 
 ENV NODE_ENV=production
-ENV PORT=3000
+ENV PORT=3890
 ENV HOSTNAME=0.0.0.0
 WORKDIR /app/packages/client
 
 # Includes the built shared package and workspace dependencies resolved by pnpm.
 COPY --from=client-build /app /app
 
-EXPOSE 3000
-CMD ["node", "../../node_modules/next/dist/bin/next", "start", "-p", "3000"]
+EXPOSE 3890
+CMD ["node", "../../node_modules/next/dist/bin/next", "start", "-p", "3890"]
 
 
 FROM dependencies AS server-build
@@ -51,12 +51,12 @@ RUN pnpm --filter @hexagon/server build
 FROM node:22-alpine AS server
 
 ENV NODE_ENV=production
-ENV PORT=8787
+ENV PORT=8910
 WORKDIR /app
 
 # @hexagon/shared remains a workspace dependency at runtime, so keep its dist
 # together with the server output and the installed workspace dependencies.
 COPY --from=server-build /app /app
 
-EXPOSE 8787
+EXPOSE 8910
 CMD ["node", "packages/server/dist/main.js"]

@@ -25,7 +25,7 @@ type AppearanceTab = "color" | "shape" | "trail";
 type ServerPingStatus = "connecting" | "online" | "error";
 
 const DEFAULT_URL =
-  process.env.NEXT_PUBLIC_SERVER_URL ?? "ws://localhost:8787";
+  process.env.NEXT_PUBLIC_SERVER_URL ?? "ws://localhost:8910";
 
 const SHAPE_LABEL: Record<PlayerShape, string> = {
   cube: "Cube",
@@ -552,7 +552,7 @@ export function StartPanel({
             <input
               value={serverUrl}
               onChange={(e) => setServerUrl(e.target.value)}
-              placeholder="ws://localhost:8787"
+              placeholder="ws://localhost:8910"
               style={{
                 width: "100%",
                 marginTop: 5,

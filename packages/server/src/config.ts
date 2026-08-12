@@ -28,4 +28,4 @@ export const ONLINE_BOTS = 2;
 export const MIN_PLAYERS = 2;
 
 /** Cổng WebSocket mặc định nếu không đặt biến môi trường PORT. */
-export const DEFAULT_PORT = 8787;
+export const DEFAULT_PORT = 8910;

@@ -33,7 +33,7 @@ import { HeadState } from "./stepHead";
 
 /** URL server mặc định (override qua biến môi trường build-time của Next). */
 export const DEFAULT_SERVER_URL =
-  process.env.NEXT_PUBLIC_SERVER_URL ?? "ws://localhost:8787";
+  process.env.NEXT_PUBLIC_SERVER_URL ?? "ws://localhost:8910";
 
 export type ConnStatus = "idle" | "connecting" | "open" | "closed" | "error";
 

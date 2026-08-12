@@ -11,7 +11,7 @@ npm install
 npm run dev
 ```
 
-Mở http://localhost:3000 → bấm **Chơi**.
+Mở http://localhost:3890 → bấm **Chơi**.
 
 - **Điều khiển:** di chuột để đổi hướng. Nhân vật đi từng ô theo hướng con trỏ.
 - **Chiếm đất:** đi ra ngoài vùng của mình (hiện đuôi vàng = biên), rồi vòng về chạm

@@ -5,7 +5,7 @@
       "name": "hexagon-client",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@hexagon/client", "dev"],
-      "port": 3000,
+      "port": 3890,
       "autoPort": true
     }
   ]

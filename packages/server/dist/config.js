@@ -8,5 +8,5 @@ exports.MAX_PLAYERS = 8;
 exports.BOT_COUNT = shared_1.CONFIG.BOT_COUNT;
 exports.ONLINE_BOTS = 2;
 exports.MIN_PLAYERS = 2;
-exports.DEFAULT_PORT = 8787;
+exports.DEFAULT_PORT = 8910;
 //# sourceMappingURL=config.js.map

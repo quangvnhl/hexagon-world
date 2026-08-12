@@ -10,16 +10,16 @@ services:
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      PORT: "8787"
+      PORT: "8910"
     ports:
-      - "${SERVER_PORT:-8787}:8787"
+      - "${SERVER_PORT:-8910}:8910"
     healthcheck:
       test:
         - CMD
         - node
         - -e
         - >-
-          const net=require('net');const s=net.connect(8787,'127.0.0.1',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1));
+          const net=require('net');const s=net.connect(8910,'127.0.0.1',()=>{s.end();process.exit(0)});s.on('error',()=>process.exit(1));
       interval: 10s
       timeout: 3s
       retries: 5
@@ -33,14 +33,14 @@ services:
       target: client
       args:
         # This URL is used by the user's browser, not by the client container.
-        NEXT_PUBLIC_SERVER_URL: "${NEXT_PUBLIC_SERVER_URL:-ws://localhost:8787}"
+        NEXT_PUBLIC_SERVER_URL: "${NEXT_PUBLIC_SERVER_URL:-ws://localhost:8910}"
     restart: unless-stopped
     environment:
       NODE_ENV: production
-      PORT: "3000"
+      PORT: "3890"
       HOSTNAME: 0.0.0.0
     ports:
-      - "${CLIENT_PORT:-3000}:3000"
+      - "${CLIENT_PORT:-3890}:3890"
     depends_on:
       server:
         condition: service_healthy
@@ -50,7 +50,7 @@ services:
         - node
         - -e
         - >-
-          fetch('http://127.0.0.1:3000').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1));
+          fetch('http://127.0.0.1:3890').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1));
       interval: 10s
       timeout: 5s
       retries: 5

@@ -46,7 +46,7 @@ Stack: Next.js (App Router) + React 19 + React Three Fiber v9 + Three.js + TypeS
 ## Lệnh chạy
 ```bash
 npm install
-npm run dev   # http://localhost:3000  → bấm Chơi
+npm run dev   # http://localhost:3890  → bấm Chơi
 ```
 
 ## Ranh giới & quy ước

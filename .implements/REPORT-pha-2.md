@@ -160,7 +160,7 @@ sống trong sân (minimap có chấm trắng), console sạch.
    gian nội suy đứng yên → thực thể từ xa nhảy theo 24Hz. Sửa: `NetClient.getRenderState`
    lấy mẫu tại `now() - INTERP_DELAY_MS` → nội suy tiến LIÊN TỤC ở 60fps. Thêm **ping (RTT)**:
    client PING mỗi 1s, server PONG; hiện `id · Nms` ở chip (cập nhật qua interval độc lập rAF).
-2. **EADDRINUSE :::8787:** do tiến trình server nền còn giữ cổng (từ phiên trước). Không có
+2. **EADDRINUSE :::8910:** do tiến trình server nền còn giữ cổng (từ phiên trước). Không có
    lỗi code; đã dọn tiến trình. (Chạy lại: `pnpm --filter @hexagon/server start:dev`.)
 3. **Đổi BOT_COUNT ở shared không nhận:** client/server dùng `@hexagon/shared` từ `dist` →
    phải **rebuild shared** thì mới đổi. Sửa DX: `start:dev`/`dev`/`build` nay **tự build
@@ -195,7 +195,7 @@ sống trong sân (minimap có chấm trắng), console sạch.
 `verify-lobby.ts` PASS toàn bộ: chờ→đủ 2 người mới `started`, 0 bot, keyframe TERRITORY có
 ô đuôi (kind=1) để vẽ đường đuôi, còn 1 người sau khi bắt đầu phòng vẫn chạy, hết người thì
 đóng. Trình duyệt: card "Nhiều người" + nút "🔍 Tìm phòng chơi" hiển thị đúng.
-*Lưu ý: đã sửa `shared`+`server` → cần khởi động lại server (8787) và refresh client.*
+*Lưu ý: đã sửa `shared`+`server` → cần khởi động lại server (8910) và refresh client.*
 
 ## Sửa lỗi vòng 4: đuôi mượt (theo đầu) + hồi sinh 1 mình → về matching
 
@@ -242,7 +242,7 @@ server (nest --watch) đã tự rebuild+restart theo thay đổi.
 `verify-names-win` (roster đúng tên; đối thủ rời, mình còn sống → event win, không về
 matching), `verify-revert` (mình đang CHẾT + đối thủ rời → về matching), `verify-lobby` —
 đều PASS. Sim vật lý: 12 hướng đâm tường/đỉnh đều trượt (không chết). Client build + render
-sạch (localhost:3000).
+sạch (localhost:3890).
 
 ## Ngoài phạm vi / để Pha 3
 
