@@ -7,7 +7,14 @@ export class ControlBootstrapService implements OnModuleInit, OnApplicationShutd
   private readonly logger = new Logger(ControlBootstrapService.name);
   private retentionTimer: NodeJS.Timeout | null = null;
   constructor(private readonly db: SupabaseService) {}
-  async onModuleInit(): Promise<void> {
+  onModuleInit(): void {
+    // Không chặn HTTP/WebSocket startup bởi kết nối Supabase. Container phải lên để
+    // /health/live và game local hoạt động; /health/ready mới phản ánh trạng thái DB.
+    const startupTimer = setTimeout(() => void this.bootstrapPersistence(), 0);
+    startupTimer.unref();
+  }
+
+  private async bootstrapPersistence(): Promise<void> {
     const defaults = runtimeConfig().defaultAssets;
     try {
       await this.db.rpc("configure_default_shop_items", { p_color_asset_key: defaults.color, p_shape_asset_key: defaults.shape, p_trail_asset_key: defaults.trail });

@@ -20,7 +20,11 @@ let ControlBootstrapService = ControlBootstrapService_1 = class ControlBootstrap
         this.logger = new common_1.Logger(ControlBootstrapService_1.name);
         this.retentionTimer = null;
     }
-    async onModuleInit() {
+    onModuleInit() {
+        const startupTimer = setTimeout(() => void this.bootstrapPersistence(), 0);
+        startupTimer.unref();
+    }
+    async bootstrapPersistence() {
         const defaults = (0, runtime_config_1.runtimeConfig)().defaultAssets;
         try {
             await this.db.rpc("configure_default_shop_items", { p_color_asset_key: defaults.color, p_shape_asset_key: defaults.shape, p_trail_asset_key: defaults.trail });
