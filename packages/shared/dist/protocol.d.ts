@@ -25,6 +25,8 @@ export declare const TAG: {
 export type C2SControl = {
     t: "join";
     name: string;
+    /** Regional ticket do control plane ký. Bắt buộc trên game server production. */
+    ticket?: string;
     colorIndex?: number;
     trailPattern?: TrailPattern;
     shape?: PlayerShape;

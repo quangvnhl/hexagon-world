@@ -16,6 +16,9 @@ phải đọc và tuân thủ các tài liệu này trước khi code.**
 | [05-roadmap.md](05-roadmap.md) | Lộ trình sau MVP (multiplayer, totem, DB) | PM + Tech lead |
 | [06-multiplayer-netcode.md](06-multiplayer-netcode.md) | Thiết kế netcode, tick, binary protocol | Backend |
 | [07-them-model-glb.md](07-them-model-glb.md) | Hướng dẫn chuẩn bị, đăng ký và kiểm thử model GLB mới | Frontend |
+| [10-player-backend-supabase.md](10-player-backend-supabase.md) | Kế hoạch backend người chơi, đa nguồn, shop và tài sản trên Supabase | Backend + Product |
+| [11-player-backend-runbook.md](11-player-backend-runbook.md) | Runbook migration, OAuth, Telegram Stars, admin và multi-region | Backend + DevOps |
+| [12-player-backend-implementation-report.md](12-player-backend-implementation-report.md) | Phạm vi đã triển khai, kiểm thử và blocker hạ tầng | Backend + Product |
 
 ## Nguyên tắc làm việc cho agents
 

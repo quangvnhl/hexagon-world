@@ -55,8 +55,10 @@ export const FpsMeter = memo(function FpsMeter({
       ref={ref}
       style={{
         position: "absolute",
-        left: "max(10px, env(safe-area-inset-left))",
-        top: "max(8px, env(safe-area-inset-top))",
+        left:
+          "max(10px, env(safe-area-inset-left, 0px), var(--tg-safe-area-inset-left, 0px), var(--tg-content-safe-area-inset-left, 0px), var(--telegram-safe-left, 0px))",
+        top:
+          "calc(max(env(safe-area-inset-top, 0px), var(--tg-safe-area-inset-top, 0px), var(--tg-content-safe-area-inset-top, 0px), var(--telegram-safe-top, 0px)) + 8px + var(--telegram-hud-portrait-offset, 0px))",
         padding: "4px 8px",
         borderRadius: 999,
         background: "rgba(10,14,22,0.72)",

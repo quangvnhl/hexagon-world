@@ -149,7 +149,8 @@ export class NetClient {
   connect(
     url: string = DEFAULT_SERVER_URL,
     name = "Bạn",
-    appearance: PlayerAppearance = DEFAULT_PLAYER_APPEARANCE
+    appearance: PlayerAppearance = DEFAULT_PLAYER_APPEARANCE,
+    ticket?: string
   ): void {
     this.disconnect();
     this.setStatus("connecting");
@@ -160,7 +161,7 @@ export class NetClient {
     ws.onopen = () => {
       this.setStatus("open");
       const look = sanitizePlayerAppearance(appearance);
-      ws.send(encodeControl({ t: "join", name, ...look }));
+      ws.send(encodeControl({ t: "join", name, ticket, ...look }));
       // Đo ping định kỳ (mỗi 1s) để hiển thị độ trễ mạng.
       this.sendPing();
       this.pingTimer = setInterval(() => this.sendPing(), 1000);

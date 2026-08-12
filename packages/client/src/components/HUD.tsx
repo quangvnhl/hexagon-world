@@ -158,6 +158,13 @@ const fmtTime = (secs: number) => {
   return `${m}:${ss.toString().padStart(2, "0")}`;
 };
 
+const hudSafeTop =
+  "max(env(safe-area-inset-top, 0px), var(--tg-safe-area-inset-top, 0px), var(--tg-content-safe-area-inset-top, 0px), var(--telegram-safe-top, 0px))";
+const hudSafeRight =
+  "max(env(safe-area-inset-right, 0px), var(--tg-safe-area-inset-right, 0px), var(--tg-content-safe-area-inset-right, 0px), var(--telegram-safe-right, 0px))";
+const hudSafeLeft =
+  "max(env(safe-area-inset-left, 0px), var(--tg-safe-area-inset-left, 0px), var(--tg-content-safe-area-inset-left, 0px), var(--telegram-safe-left, 0px))";
+
 /** true khi màn hình hẹp (điện thoại) → thu nhỏ các bảng thông số cho đỡ che màn hình. */
 function useIsMobile(): boolean {
   const [mobile, setMobile] = useState(false);
@@ -197,6 +204,19 @@ export function HUD({
   // Trên điện thoại: thu nhỏ 2 bảng thông số về góc để không đè lên vùng chơi.
   const uiScale = isMobile ? 0.78 : 1;
   const [deathPopupReady, setDeathPopupReady] = useState(false);
+  const [showInstructions, setShowInstructions] = useState(true);
+
+  // Hiện hướng dẫn ở đầu mỗi ván, giữ đủ 5 giây rồi mới bắt đầu fade out.
+  // `won` đổi từ true về false khi chơi lại, nên timer cũng được khởi động lại.
+  useEffect(() => {
+    if (stats.won) {
+      setShowInstructions(false);
+      return;
+    }
+    setShowInstructions(true);
+    const timer = window.setTimeout(() => setShowInstructions(false), 5000);
+    return () => window.clearTimeout(timer);
+  }, [stats.won]);
 
   // Giữ nguyên khung cảnh chết để người chơi nhìn trọn hiệu ứng trước khi popup che Canvas.
   // `deaths` nằm trong dependency để mỗi lần chết sau hồi sinh đều bắt đầu một timer mới.
@@ -263,8 +283,8 @@ export function HUD({
       <div
         style={{
           position: "absolute",
-          top: "max(36px, calc(env(safe-area-inset-top) + 30px))",
-          left: "max(10px, env(safe-area-inset-left))",
+          top: `calc(${hudSafeTop} + 36px + var(--telegram-hud-portrait-offset, 0px))`,
+          left: `max(10px, ${hudSafeLeft})`,
           padding: "8px 11px",
           borderRadius: 12,
           background: "rgba(10,14,22,0.72)",
@@ -311,8 +331,8 @@ export function HUD({
       <div
         style={{
           position: "absolute",
-          top: 16,
-          right: 16,
+          top: `calc(${hudSafeTop} + 16px + var(--telegram-hud-portrait-offset, 0px))`,
+          right: `max(16px, ${hudSafeRight})`,
           padding: "10px 12px",
           borderRadius: 12,
           background: "rgba(10,14,22,0.72)",
@@ -354,7 +374,7 @@ export function HUD({
         <div
           style={{
             position: "absolute",
-            top: 16,
+            top: `calc(${hudSafeTop} + 16px)`,
             left: "50%",
             transform: `translateX(-50%)${uiScale !== 1 ? ` scale(${uiScale})` : ""}`,
             transformOrigin: "top center",
@@ -404,7 +424,7 @@ export function HUD({
         <div
           style={{
             position: "absolute",
-            top: 16,
+            top: `calc(${hudSafeTop} + 16px)`,
             left: "50%",
             transform: `translateX(-50%)${uiScale !== 1 ? ` scale(${uiScale})` : ""}`,
             transformOrigin: "top center",
@@ -450,27 +470,33 @@ export function HUD({
         </div>
       )}
 
-      {/* Hướng dẫn góc dưới — ẩn trên điện thoại (dài, che màn hình; đã có joystick) */}
-      {!isMobile && (
-        <div
-          style={{
-            position: "absolute",
-            bottom: 16,
-            left: "50%",
-            transform: "translateX(-50%)",
-            padding: "8px 16px",
-            borderRadius: 10,
-            background: "rgba(10,14,22,0.6)",
-            color: "#cdd7ea",
-            fontFamily: "system-ui, sans-serif",
-            fontSize: 13,
-            pointerEvents: "none",
-          }}
-        >
-          Di chuột để đổi hướng · Đi ra ngoài rồi khép vòng về vùng của mình để
-          chiếm đất · Đừng cắt đuôi chính mình
-        </div>
-      )}
+      {/* Hướng dẫn đầu ván: giữ 5 giây, sau đó fade out. */}
+      <div
+        aria-hidden={!showInstructions}
+        style={{
+          position: "absolute",
+          bottom:
+            "calc(max(16px, env(safe-area-inset-bottom, 0px), var(--tg-safe-area-inset-bottom, 0px), var(--tg-content-safe-area-inset-bottom, 0px), var(--telegram-safe-bottom, 0px)) + 4px)",
+          left: "50%",
+          width: isMobile ? "min(78vw, 420px)" : "auto",
+          transform: "translateX(-50%)",
+          padding: isMobile ? "7px 12px" : "8px 16px",
+          borderRadius: 10,
+          background: "rgba(10,14,22,0.6)",
+          color: "#cdd7ea",
+          fontFamily: "system-ui, sans-serif",
+          fontSize: isMobile ? 11 : 13,
+          lineHeight: 1.4,
+          textAlign: "center",
+          opacity: showInstructions ? 1 : 0,
+          transition: "opacity 600ms ease",
+          pointerEvents: "none",
+        }}
+      >
+        {isMobile
+          ? "Chạm và kéo để đổi hướng · Khép vòng về vùng của mình để chiếm đất · Đừng cắt đuôi chính mình"
+          : "Di chuột để đổi hướng · Đi ra ngoài rồi khép vòng về vùng của mình để chiếm đất · Đừng cắt đuôi chính mình"}
+      </div>
 
       {/* Đếm ngược CHUẨN BỊ (đứng yên, xoay hướng) */}
       {stats.phase === "prep" && (
@@ -643,7 +669,7 @@ export function HUD({
         <div
           style={{
             position: "absolute",
-            top: 16,
+            top: `calc(${hudSafeTop} + 16px)`,
             left: "50%",
             transform: "translateX(-50%)",
             display: "flex",

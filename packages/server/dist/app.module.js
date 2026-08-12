@@ -9,12 +9,17 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AppModule = void 0;
 const common_1 = require("@nestjs/common");
 const game_module_1 = require("./game/game.module");
+const control_module_1 = require("./control/control.module");
+const database_module_1 = require("./database/database.module");
+const health_controller_1 = require("./health.controller");
+const role = process.env.SERVER_ROLE ?? "all";
 let AppModule = class AppModule {
 };
 exports.AppModule = AppModule;
 exports.AppModule = AppModule = __decorate([
     (0, common_1.Module)({
-        imports: [game_module_1.GameModule],
+        imports: [database_module_1.DatabaseModule, ...(role === "game" ? [] : [control_module_1.ControlModule]), ...(role === "control" ? [] : [game_module_1.GameModule])],
+        controllers: [health_controller_1.HealthController],
     })
 ], AppModule);
 //# sourceMappingURL=app.module.js.map

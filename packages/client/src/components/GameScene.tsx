@@ -20,6 +20,7 @@ import { MiniMap } from "./MiniMap";
 import { Joystick } from "./Joystick";
 import { HUD, Stats } from "./HUD";
 import { FpsMeterIfEnabled } from "./FpsMeter";
+import { TelegramGameHaptics } from "./TelegramGameHaptics";
 
 interface PointerRef {
   x: number;
@@ -337,6 +338,7 @@ export default function GameScene({
         <TrailLine game={game} />
         <PlayerCube game={game} />
         {CONFIG.DISPLAY.PARTICLES && <Effects game={game} />}
+        <TelegramGameHaptics game={game} playerId={0} />
         {CONFIG.DEBUG.COLLISION_VECTORS && (
           <>
             <ArenaCollider />

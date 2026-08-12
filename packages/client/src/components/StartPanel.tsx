@@ -19,6 +19,9 @@ import {
   type TrailPattern,
 } from "@hexagon/shared";
 import { PlayerPreview3D } from "./PlayerPreview3D";
+import { getTelegramUserName } from "@/lib/telegram";
+import { ensureTelegramSession, getMe, startGoogleLogin, type BackendMe } from "@/lib/backend";
+import { ShopPanel } from "./ShopPanel";
 
 export type GameMode = "solo" | "online";
 type AppearanceTab = "color" | "shape" | "trail";
@@ -26,6 +29,14 @@ type ServerPingStatus = "connecting" | "online" | "error";
 
 const DEFAULT_URL =
   process.env.NEXT_PUBLIC_SERVER_URL ?? "ws://localhost:8910";
+
+function accountAppearance(me: BackendMe): PlayerAppearance {
+  return sanitizePlayerAppearance({
+    colorIndex: Number(me.profile?.selected_color?.split(":")[1] ?? 0),
+    shape: me.profile?.selected_shape?.replace("shape:", "") as PlayerShape,
+    trailPattern: me.profile?.selected_trail_pattern?.replace("trail:", "") as TrailPattern,
+  });
+}
 
 const SHAPE_LABEL: Record<PlayerShape, string> = {
   cube: "Cube",
@@ -96,7 +107,7 @@ export function StartPanel({
     name: string,
     serverUrl: string,
     appearance: PlayerAppearance
-  ) => void;
+  ) => void | Promise<void>;
 }) {
   const [name, setName] = useState("");
   const [mode, setMode] = useState<GameMode>("solo");
@@ -108,11 +119,18 @@ export function StartPanel({
   const [serverPing, setServerPing] = useState<number | null>(null);
   const [serverPingStatus, setServerPingStatus] =
     useState<ServerPingStatus>("connecting");
+  const [account, setAccount] = useState<BackendMe | null>(null);
+  const [accountReady, setAccountReady] = useState(false);
+  const [starting, setStarting] = useState(false);
+  const [startError, setStartError] = useState("");
+  const [showShop, setShowShop] = useState(false);
 
   // Nhớ tên đã nhập giữa các lần chơi.
   useEffect(() => {
+    const telegramName = getTelegramUserName();
     const saved = window.localStorage.getItem("hexagon.name");
-    if (saved) setName(saved);
+    if (telegramName) setName(telegramName.slice(0, 16));
+    else if (saved) setName(saved);
     const savedAppearance = window.localStorage.getItem("hexagon.appearance");
     if (savedAppearance) {
       try {
@@ -121,6 +139,24 @@ export function StartPanel({
         // Dữ liệu cũ/hỏng → dùng mặc định an toàn.
       }
     }
+  }, []);
+
+  useEffect(() => {
+    let active = true;
+    void (async () => {
+      let me = await getMe();
+      if (!me && getTelegramUserName()) {
+        try { await ensureTelegramSession(); me = await getMe(); } catch { /* vẫn cho chơi guest */ }
+      }
+      if (!active) return;
+      setAccount(me);
+      if (me?.player.displayName) {
+        setName(me.player.displayName.slice(0, 16));
+        setAppearance(accountAppearance(me));
+      }
+      setAccountReady(true);
+    })();
+    return () => { active = false; };
   }, []);
 
   // Đo RTT ngay trên màn Welcome mà chưa JOIN phòng. Server hỗ trợ PING/PONG
@@ -207,7 +243,8 @@ export function StartPanel({
     };
   }, [mode, serverUrl]);
 
-  const start = () => {
+  const start = async () => {
+    if (starting) return;
     const finalName = name.trim() || "Bạn";
     window.localStorage.setItem("hexagon.name", finalName);
     const finalAppearance = sanitizePlayerAppearance(appearance);
@@ -215,7 +252,11 @@ export function StartPanel({
       "hexagon.appearance",
       JSON.stringify(finalAppearance)
     );
-    onStart(mode, finalName, serverUrl.trim() || DEFAULT_URL, finalAppearance);
+    setStarting(true);
+    setStartError("");
+    try { await onStart(mode, finalName, serverUrl.trim() || DEFAULT_URL, finalAppearance); }
+    catch (error) { setStartError(error instanceof Error ? error.message : "Không thể vào game"); }
+    finally { setStarting(false); }
   };
 
   const card = (
@@ -313,6 +354,18 @@ export function StartPanel({
           Chiếm {">"} {`${20}`}% bản đồ để thành Nhà Vua.
         </p>
 
+        <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 10, marginBottom: 10, padding: "8px 10px", borderRadius: 11, background: "rgba(255,255,255,.04)", fontSize: 11 }}>
+          <span style={{ opacity: 0.72 }}>
+            {!accountReady ? "Đang kiểm tra tài khoản…" : account ? `✓ ${account.player.displayName} · ${account.player.platform}` : "Guest · chơi được, không lưu tài sản"}
+          </span>
+          {accountReady && !account && !getTelegramUserName() && (
+            <button type="button" onClick={startGoogleLogin} style={{ border: "1px solid rgba(255,255,255,.18)", borderRadius: 9, padding: "6px 10px", color: "#e8eefc", background: "rgba(255,255,255,.07)", cursor: "pointer", whiteSpace: "nowrap" }}>
+              Đăng nhập Google
+            </button>
+          )}
+          {account && <button type="button" onClick={() => setShowShop(true)} style={{ border: "1px solid rgba(255,210,63,.35)", borderRadius: 9, padding: "6px 10px", color: "#ffe27a", background: "rgba(255,210,63,.08)", cursor: "pointer", whiteSpace: "nowrap" }}>Shop</button>}
+        </div>
+
         {/* Tên */}
         <label style={{ fontSize: 12, opacity: 0.7, letterSpacing: 1 }}>
           TÊN CỦA BẠN
@@ -320,7 +373,7 @@ export function StartPanel({
         <input
           value={name}
           onChange={(e) => setName(e.target.value)}
-          onKeyDown={(e) => e.key === "Enter" && start()}
+          onKeyDown={(e) => e.key === "Enter" && void start()}
           placeholder="Nhập tên…"
           maxLength={16}
           style={{
@@ -509,7 +562,8 @@ export function StartPanel({
         {/* Địa chỉ server (chỉ khi online) */}
         {/* Bắt đầu */}
         <button
-          onClick={start}
+          onClick={() => void start()}
+          disabled={starting}
           style={{
             width: "100%",
             marginTop: 12,
@@ -517,7 +571,8 @@ export function StartPanel({
             padding: "12px 24px",
             borderRadius: 999,
             border: "none",
-            cursor: "pointer",
+            cursor: starting ? "wait" : "pointer",
+            opacity: starting ? 0.7 : 1,
             fontSize: 17,
             fontWeight: 800,
             letterSpacing: 1,
@@ -526,8 +581,9 @@ export function StartPanel({
             boxShadow: "0 10px 32px rgba(49,176,255,0.42)",
           }}
         >
-          {mode === "online" ? "🔍 Tìm phòng chơi" : "▶ Bắt đầu chơi"}
+          {starting ? "Đang kết nối…" : mode === "online" ? "🔍 Tìm phòng chơi" : "▶ Bắt đầu chơi"}
         </button>
+        {startError && <div role="alert" style={{ color: "#ff8b9a", fontSize: 11, marginTop: 7, textAlign: "center" }}>{startError}</div>}
 
         {/* Địa chỉ server nằm sau hành động tìm phòng để giao diện chính gọn hơn. */}
         {mode === "online" && (
@@ -763,6 +819,7 @@ export function StartPanel({
             }
           }
         `}</style>
+        {showShop && account && <ShopPanel account={account} onClose={() => setShowShop(false)} onChanged={async () => { const next = await getMe(); if (next) { setAccount(next); setAppearance(accountAppearance(next)); } }} />}
       </div>
     </main>
   );

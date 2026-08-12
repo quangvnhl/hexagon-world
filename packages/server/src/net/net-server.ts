@@ -1,5 +1,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { AddressInfo } from "node:net";
+import type { Server as HttpServer } from "node:http";
+import { randomUUID } from "node:crypto";
 import {
   CONFIG,
   decodeControl,
@@ -8,6 +10,7 @@ import {
   encodeSnapshot,
   encodeTerritory,
   type C2SControl,
+  type PlayerAppearance,
   type S2CControl,
 } from "@hexagon/shared";
 import { GameRoom } from "../game/game-room";
@@ -41,16 +44,51 @@ interface Room {
   prevAlive: boolean[];
   prevWon: boolean;
   prevKingId: number;
+  matchId: string | null;
+  startedAt: string | null;
+  reported: boolean;
+  participants: Map<number, AuthenticatedJoin>;
+  matchStats: Map<number, { kills: number; deaths: number; deathCause: string }>;
+}
+
+export interface MatchResultEnvelope {
+  eventId: string;
+  matchId: string;
+  roomId: string;
+  region: string;
+  mode: "online";
+  startedAt: string;
+  endedAt: string;
+  winnerPlayerId: string;
+  serverVersion: string;
+  players: Array<{ participantKey: string; playerId: string; platform: string; isGuest: boolean; seatId: number; kills: number; deaths: number; territoryCaptured: number; deathCause: string; finalScore: number; placement: number }>;
+}
+
+interface AuthenticatedJoin {
+  playerId: string | null;
+  guestId: string | null;
+  isGuest: boolean;
+  platform: string;
+  displayName: string;
+  appearance: PlayerAppearance;
 }
 
 interface ConnState {
   entityId: number | null;
   room: Room | null;
+  identity: AuthenticatedJoin | null;
 }
 
 interface NetOpts {
   port?: number;
   tickRate?: number;
+  httpServer?: HttpServer;
+  path?: string;
+  requireTicket?: boolean;
+  authenticateTicket?: (ticket: string) => AuthenticatedJoin;
+  region?: string;
+  serverVersion?: string;
+  onMatchResult?: (result: MatchResultEnvelope) => void | Promise<void>;
 }
 
 /**
@@ -72,6 +110,12 @@ export class NetServer {
   private readonly tickRate: number;
   private readonly dt: number;
   private readonly tickMs: number;
+  private readonly attachedToHttp: boolean;
+  private readonly requireTicket: boolean;
+  private readonly authenticateTicket?: (ticket: string) => AuthenticatedJoin;
+  private readonly region: string;
+  private readonly serverVersion: string;
+  private readonly onMatchResult?: (result: MatchResultEnvelope) => void | Promise<void>;
 
   /** Bật vòng lặp thời gian thực (start()); false ở chế độ test (listen() + tickOnce()). */
   private autoLoop = false;
@@ -86,7 +130,15 @@ export class NetServer {
     this.tickRate = opts.tickRate ?? TICK_RATE;
     this.dt = this.tickRate === TICK_RATE ? DT : 1 / this.tickRate;
     this.tickMs = 1000 / this.tickRate;
-    this.wss = new WebSocketServer({ port: opts.port ?? 0 });
+    this.attachedToHttp = Boolean(opts.httpServer);
+    this.requireTicket = opts.requireTicket ?? false;
+    this.authenticateTicket = opts.authenticateTicket;
+    this.region = opts.region ?? "local";
+    this.serverVersion = opts.serverVersion ?? "dev";
+    this.onMatchResult = opts.onMatchResult;
+    this.wss = opts.httpServer
+      ? new WebSocketServer({ server: opts.httpServer, ...(opts.path ? { path: opts.path } : {}) })
+      : new WebSocketServer({ port: opts.port ?? 0 });
     this.wss.on("connection", (ws) => this.onConnection(ws));
   }
 
@@ -104,8 +156,9 @@ export class NetServer {
 
   /** Khởi động đầy đủ: mở socket; phòng + vòng lặp tạo khi có người JOIN. */
   async start(): Promise<void> {
-    await this.whenListening();
     this.autoLoop = true;
+    if (this.attachedToHttp) return;
+    await this.whenListening();
   }
 
   // ---- Trợ giúp test ----
@@ -153,6 +206,11 @@ export class NetServer {
         prevAlive: [],
         prevWon: false,
         prevKingId: -1,
+        matchId: null,
+        startedAt: null,
+        reported: false,
+        participants: new Map(),
+        matchStats: new Map(),
       };
       r.prevAlive = r.room.gameState.snapshotEntities().map((e) => e.alive);
       this.rooms.add(r);
@@ -170,6 +228,18 @@ export class NetServer {
     r.prevAlive = r.room.gameState.snapshotEntities().map((e) => e.alive);
     r.prevWon = false;
     r.prevKingId = -1;
+    r.matchId = randomUUID();
+    r.startedAt = new Date().toISOString();
+    r.reported = false;
+    r.participants.clear();
+    r.matchStats.clear();
+    for (const ws of r.conns) {
+      const conn = this.conns.get(ws);
+      if (!conn || conn.entityId === null) continue;
+      const identity = conn.identity ?? { playerId: null, guestId: `legacy-${r.id}-${conn.entityId}`, isGuest: true, platform: "web", displayName: r.room.gameState.nameOf(conn.entityId), appearance: { colorIndex: 0, shape: "cube", trailPattern: "solid" } };
+      r.participants.set(conn.entityId, identity);
+      r.matchStats.set(conn.entityId, { kills: 0, deaths: 0, deathCause: "" });
+    }
     this.broadcastLobby(r);
     if (this.autoLoop) this.startLoop(r);
   }
@@ -237,6 +307,25 @@ export class NetServer {
     r.ended = true;
     r.endedAt = Date.now();
     if (this.active === r) this.active = null; // người mới sẽ vào phòng fresh khác.
+    this.reportMatch(r);
+  }
+
+  private reportMatch(r: Room): void {
+    if (r.reported || !r.matchId || !r.startedAt || !this.onMatchResult) return;
+    r.reported = true;
+    const scores = [...r.participants.keys()].map((id) => ({ id, score: r.room.gameState.players[id]?.owned.size ?? 0 })).sort((a, b) => b.score - a.score);
+    const placement = new Map(scores.map((entry, index) => [entry.id, index + 1]));
+    const winner = r.room.gameState.winnerId;
+    const winnerIdentity = r.participants.get(winner);
+    const result: MatchResultEnvelope = {
+      eventId: randomUUID(), matchId: r.matchId, roomId: String(r.id), region: this.region, mode: "online", startedAt: r.startedAt, endedAt: new Date().toISOString(), winnerPlayerId: winnerIdentity?.playerId ?? "", serverVersion: this.serverVersion,
+      players: [...r.participants.entries()].map(([seatId, identity]) => {
+        const stats = r.matchStats.get(seatId) ?? { kills: 0, deaths: 0, deathCause: "" };
+        const finalScore = r.room.gameState.players[seatId]?.owned.size ?? 0;
+        return { participantKey: identity.playerId ?? identity.guestId ?? `seat-${seatId}`, playerId: identity.playerId ?? "", platform: identity.platform, isGuest: identity.isGuest, seatId, kills: stats.kills, deaths: stats.deaths, territoryCaptured: finalScore, deathCause: stats.deathCause, finalScore, placement: placement.get(seatId) ?? scores.length };
+      }),
+    };
+    void Promise.resolve(this.onMatchResult(result)).catch(() => { r.reported = false; });
   }
 
   private closeRoom(r: Room): void {
@@ -302,7 +391,7 @@ export class NetServer {
 
   // ---- Kết nối ----
   private onConnection(ws: WebSocket): void {
-    this.conns.set(ws, { entityId: null, room: null });
+    this.conns.set(ws, { entityId: null, room: null, identity: null });
     ws.on("message", (data: Buffer, isBinary: boolean) => {
       if (isBinary) this.onBinary(ws, data);
       else this.onText(ws, data.toString());
@@ -327,11 +416,20 @@ export class NetServer {
 
     if (msg.t === "join") {
       if (conn.entityId !== null) return; // đã có ghế.
+      let identity: AuthenticatedJoin | null = null;
+      if (msg.ticket && this.authenticateTicket) {
+        try { identity = this.authenticateTicket(msg.ticket); }
+        catch { ws.close(4003, "ticket khong hop le"); return; }
+      } else if (this.requireTicket) {
+        ws.close(4003, "can regional ticket");
+        return;
+      }
+      conn.identity = identity;
       const r = this.ensureActiveRoom();
-      const id = r.room.join(msg.name, {
-        colorIndex: msg.colorIndex,
-        trailPattern: msg.trailPattern,
-        shape: msg.shape,
+      const id = r.room.join(identity?.displayName ?? msg.name, {
+        colorIndex: identity?.appearance.colorIndex ?? msg.colorIndex,
+        trailPattern: identity?.appearance.trailPattern ?? msg.trailPattern,
+        shape: identity?.appearance.shape ?? msg.shape,
       });
       if (id === null) {
         ws.close(4001, "phong day");
@@ -448,6 +546,12 @@ export class NetServer {
           cause: ent ? ent.deathCause : "",
           killerId: ent ? ent.killerId : -1,
         });
+        const victim = r.matchStats.get(snap[i].id);
+        if (victim) { victim.deaths++; victim.deathCause = ent ? ent.deathCause : ""; }
+        if (ent && ent.killerId >= 0) {
+          const killer = r.matchStats.get(ent.killerId);
+          if (killer) killer.kills++;
+        }
       }
       r.prevAlive[i] = nowAlive;
     }

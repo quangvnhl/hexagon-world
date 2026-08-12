@@ -6,13 +6,74 @@ html,
 body {
   margin: 0;
   padding: 0;
+  width: 100%;
+  min-width: 100%;
   height: 100%;
+  min-height: 100%;
   background: #0a0e16;
   color: #e8eefc;
   font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
   overflow: hidden;
+  overscroll-behavior: none;
+}
+
+body {
+  position: fixed;
+  inset: 0;
+  width: 100vw;
+  height: 100vh;
+  height: 100dvh;
 }
 
 a {
   color: inherit;
+}
+
+.app-loading {
+  position: fixed;
+  inset: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 14px;
+  background: #0a0e16;
+  color: #e8eefc;
+}
+
+.app-loading img {
+  filter: drop-shadow(0 0 26px rgba(49, 176, 255, 0.42));
+}
+
+.app-loading__title {
+  font-size: 13px;
+  font-weight: 800;
+  letter-spacing: 4px;
+}
+
+.app-loading__pulse {
+  width: 76px;
+  height: 3px;
+  overflow: hidden;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.1);
+}
+
+.app-loading__pulse::after {
+  display: block;
+  width: 45%;
+  height: 100%;
+  border-radius: inherit;
+  background: #31b0ff;
+  content: "";
+  animation: app-loading-pulse 1s ease-in-out infinite alternate;
+}
+
+@keyframes app-loading-pulse {
+  from { transform: translateX(0); }
+  to { transform: translateX(122%); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .app-loading__pulse::after { animation: none; }
 }

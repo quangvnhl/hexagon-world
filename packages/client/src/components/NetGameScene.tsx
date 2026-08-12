@@ -33,6 +33,8 @@ import { Joystick } from "./Joystick";
 import { HUD, Stats } from "./HUD";
 import { FpsMeterIfEnabled } from "./FpsMeter";
 import { GameCamera, MenuButton } from "./GameScene";
+import { notifyTelegramHaptic } from "@/lib/telegram";
+import { TelegramGameHaptics } from "./TelegramGameHaptics";
 import {
   NetClient,
   DEFAULT_SERVER_URL,
@@ -244,11 +246,13 @@ export default function NetGameScene({
   playerName,
   appearance,
   serverUrl,
+  gameTicket,
   onExit,
 }: {
   playerName?: string;
   appearance?: PlayerAppearance;
   serverUrl?: string;
+  gameTicket?: string;
   onExit?: () => void;
 }) {
   const client = useMemo(() => new NetClient(), []);
@@ -414,19 +418,24 @@ export default function NetGameScene({
         setLobby({ present: l.present, needed: l.needed });
       },
       onEvent: (ev) => {
-        if (ev.kind === "death" && ev.id === localIdRef.current) {
-          deathInfoRef.current = {
-            ...deathInfoRef.current,
-            cause: ev.cause,
-            killerName:
-              ev.killerId >= 0 ? gameRef.current?.nameOf(ev.killerId) ?? "" : "",
-          };
+        if (ev.kind === "death") {
+          if (ev.id === localIdRef.current) {
+            notifyTelegramHaptic("error");
+            deathInfoRef.current = {
+              ...deathInfoRef.current,
+              cause: ev.cause,
+              killerName:
+                ev.killerId >= 0 ? gameRef.current?.nameOf(ev.killerId) ?? "" : "",
+            };
+          } else if (ev.killerId === localIdRef.current) {
+            notifyTelegramHaptic("success");
+          }
         } else if (ev.kind === "win") {
           wonRef.current = { won: true, winnerId: ev.winnerId };
         }
       },
     };
-    client.connect(url, playerName || "Bạn", appearance);
+    client.connect(url, playerName || "Bạn", appearance, gameTicket);
     return () => client.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -467,8 +476,8 @@ export default function NetGameScene({
   const onRestart = useCallback(() => {
     // Online: chơi lại = kết nối lại (nhận ghế mới, spawn mới).
     wonRef.current = { won: false, winnerId: -1 };
-    client.connect(url, playerName || "Bạn", appearance);
-  }, [appearance, client, url, playerName]);
+    client.connect(url, playerName || "Bạn", appearance, gameTicket);
+  }, [appearance, client, url, playerName, gameTicket]);
 
   const connected = status === "open" && playerId >= 0;
 
@@ -509,6 +518,11 @@ export default function NetGameScene({
             <TrailLine game={game} />
             <PlayerCube game={game} />
             {CONFIG.DISPLAY.PARTICLES && <Effects game={game} />}
+            <TelegramGameHaptics
+              game={game}
+              playerId={playerId}
+              trackDeaths={false}
+            />
             {CONFIG.DEBUG.COLLISION_VECTORS && (
               <>
                 <ArenaCollider />

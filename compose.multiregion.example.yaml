@@ -1,0 +1,47 @@
+name: hexagon-world-multiregion
+
+services:
+  control:
+    image: hexagon-world-server:release
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "8910"
+      SERVER_ROLE: control
+      SUPABASE_URL: "${SUPABASE_URL}"
+      SUPABASE_SECRET_KEY: "${SUPABASE_SECRET_KEY}"
+      PLAYER_SESSION_SECRET: "${PLAYER_SESSION_SECRET}"
+      PLAYER_SESSION_TTL_SECONDS: "86400"
+      GOOGLE_OAUTH_CLIENT_ID: "${GOOGLE_OAUTH_CLIENT_ID}"
+      GOOGLE_OAUTH_CLIENT_SECRET: "${GOOGLE_OAUTH_CLIENT_SECRET}"
+      GOOGLE_OAUTH_REDIRECT_URI: "${GOOGLE_OAUTH_REDIRECT_URI}"
+      GOOGLE_OAUTH_POST_LOGIN_REDIRECT_URI: "${GOOGLE_OAUTH_POST_LOGIN_REDIRECT_URI}"
+      GOOGLE_OAUTH_STATE_SECRET: "${GOOGLE_OAUTH_STATE_SECRET}"
+      TELEGRAM_BOT_TOKEN: "${TELEGRAM_BOT_TOKEN}"
+      TELEGRAM_WEBHOOK_SECRET: "${TELEGRAM_WEBHOOK_SECRET}"
+      REGION_TICKET_PRIVATE_KEY_BASE64: "${REGION_TICKET_PRIVATE_KEY_BASE64}"
+      GAME_RESULT_SECRET: "${GAME_RESULT_SECRET}"
+      GAME_REGIONS_JSON: >-
+        [{"id":"sg","name":"Singapore","wsUrl":"wss://sg.game.example.com/game","pingUrl":"https://sg.game.example.com/health/ping"}]
+    ports:
+      - "127.0.0.1:8910:8910"
+
+  game-sg:
+    image: hexagon-world-server:release
+    restart: unless-stopped
+    environment:
+      NODE_ENV: production
+      PORT: "8910"
+      SERVER_ROLE: game
+      GAME_REGION: sg
+      CONTROL_PLANE_URL: "https://api.example.com"
+      REGION_TICKET_PUBLIC_KEY_BASE64: "${REGION_TICKET_PUBLIC_KEY_BASE64}"
+      GAME_RESULT_SECRET: "${GAME_RESULT_SECRET}"
+      GAME_RESULT_SPOOL_DIR: /app/data/match-results
+    ports:
+      - "127.0.0.1:8911:8910"
+    volumes:
+      - game-sg-results:/app/data
+
+volumes:
+  game-sg-results:

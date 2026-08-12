@@ -25,6 +25,8 @@ FROM dependencies AS client-build
 # NEXT_PUBLIC_* is embedded into the browser bundle at build time.
 ARG NEXT_PUBLIC_SERVER_URL=ws://localhost:8910
 ENV NEXT_PUBLIC_SERVER_URL=$NEXT_PUBLIC_SERVER_URL
+ARG NEXT_PUBLIC_API_URL=http://localhost:8910
+ENV NEXT_PUBLIC_API_URL=$NEXT_PUBLIC_API_URL
 
 RUN pnpm --filter @hexagon/client build
 
