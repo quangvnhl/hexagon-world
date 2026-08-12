@@ -6,6 +6,7 @@
 import { useState } from "react";
 import dynamic from "next/dynamic";
 import { StartPanel, type GameMode } from "@/components/StartPanel";
+import type { PlayerAppearance } from "@hexagon/shared";
 
 // R3F chỉ chạy phía client → tắt SSR cho các scene.
 const GameScene = dynamic(() => import("@/components/GameScene"), { ssr: false });
@@ -17,6 +18,7 @@ interface Session {
   mode: GameMode;
   name: string;
   serverUrl: string;
+  appearance: PlayerAppearance;
 }
 
 export default function Home() {
@@ -25,8 +27,8 @@ export default function Home() {
   if (!session) {
     return (
       <StartPanel
-        onStart={(mode, name, serverUrl) =>
-          setSession({ mode, name, serverUrl })
+        onStart={(mode, name, serverUrl, appearance) =>
+          setSession({ mode, name, serverUrl, appearance })
         }
       />
     );
@@ -38,10 +40,17 @@ export default function Home() {
     return (
       <NetGameScene
         playerName={session.name}
+        appearance={session.appearance}
         serverUrl={session.serverUrl}
         onExit={back}
       />
     );
   }
-  return <GameScene playerName={session.name} onExit={back} />;
+  return (
+    <GameScene
+      playerName={session.name}
+      appearance={session.appearance}
+      onExit={back}
+    />
+  );
 }

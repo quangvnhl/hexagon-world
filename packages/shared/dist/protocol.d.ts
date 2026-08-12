@@ -15,6 +15,7 @@
  * (delta compression + AoI, xem 06-multiplayer-netcode).
  */
 import type { DeathCause } from "./state";
+import type { PlayerShape, TrailPattern } from "./config";
 /** Byte tag đầu tiên của mỗi *binary frame*. */
 export declare const TAG: {
     readonly INPUT: 2;
@@ -24,6 +25,9 @@ export declare const TAG: {
 export type C2SControl = {
     t: "join";
     name: string;
+    colorIndex?: number;
+    trailPattern?: TrailPattern;
+    shape?: PlayerShape;
 } | {
     t: "ping";
     time: number;
@@ -93,6 +97,10 @@ export interface EntitySnap {
     alive: boolean;
     hasTrail: boolean;
     colorIndex: number;
+    /** Chỉ số pattern texture đuôi trong TRAIL_PATTERNS. */
+    trailPatternIndex: number;
+    /** Chỉ số hình trong PLAYER_SHAPES. */
+    shapeIndex: number;
     x: number;
     y: number;
     heading: number;

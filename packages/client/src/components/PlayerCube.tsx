@@ -1,27 +1,131 @@
 "use client";
 
-import { memo, useRef } from "react";
+import { memo, useEffect, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
+import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
-import { GameState } from "@hexagon/shared";
-import { CONFIG } from "@hexagon/shared";
+import { CONFIG, GameState, type PlayerShape } from "@hexagon/shared";
+import { getCameraGroundView, isInGroundView, type GroundView } from "./cameraVisibility";
 
-/** Cube 3D cho MỌI thực thể (người + bot), màu theo chủ; ẩn khi chết. */
-export const PlayerCube = memo(function PlayerCube({
-  game,
-}: {
-  game: GameState;
-}) {
+const MODEL_URLS = {
+  fly: "/models/low_poly_house_fly_diptera.glb",
+  bee: "/models/bee.glb",
+  ladybug: "/models/ladybug.glb",
+} as const satisfies Partial<Record<PlayerShape, string>>;
+
+type ModelShape = keyof typeof MODEL_URLS;
+
+/** Clone material, convert Y-up models to the game's Z-up plane, then fit them to one cell. */
+function makeModelObject(
+  source: THREE.Object3D,
+  shape: ModelShape
+): THREE.Group {
+  const wrapper = new THREE.Group();
+  wrapper.name = shape;
+  const model = source.clone(true);
+
+  model.traverse((obj) => {
+    if (!(obj instanceof THREE.Mesh)) return;
+    const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+    const cloned = materials.map((material) => {
+      const next = material.clone();
+      if ("color" in next && next.color instanceof THREE.Color) {
+        next.userData.hexBaseColor = next.color.clone();
+      }
+      return next;
+    });
+    obj.material = Array.isArray(obj.material) ? cloned : cloned[0];
+    obj.userData.hexModelMesh = true;
+  });
+
+  model.rotation.x = Math.PI / 2;
+  model.updateMatrixWorld(true);
+  const box = new THREE.Box3().setFromObject(model);
+  const size = box.getSize(new THREE.Vector3());
+  const maxSize = Math.max(size.x, size.y, size.z) || 1;
+  model.scale.setScalar((CONFIG.CUBE_SIZE * 1.35) / maxSize);
+  model.updateMatrixWorld(true);
+
+  const fitted = new THREE.Box3().setFromObject(model);
+  const center = fitted.getCenter(new THREE.Vector3());
+  model.position.set(-center.x, -center.y, -fitted.min.z);
+  wrapper.add(model);
+  return wrapper;
+}
+
+/** 3D object for every entity (the legacy component name remains for existing imports). */
+export const PlayerCube = memo(function PlayerCube({ game }: { game: GameState }) {
+  const { scene: flySource } = useGLTF(MODEL_URLS.fly);
+  const { scene: beeSource } = useGLTF(MODEL_URLS.bee);
+  const { scene: ladybugSource } = useGLTF(MODEL_URLS.ladybug);
+  const modelSources: Record<ModelShape, THREE.Object3D> = {
+    fly: flySource,
+    bee: beeSource,
+    ladybug: ladybugSource,
+  };
   const refs = useRef<(THREE.Group | null)[]>([]);
+  const appearanceSig = useRef<string[]>([]);
+  const modelObjects = useRef<(THREE.Group | null)[]>([]);
+  const view = useRef<GroundView>({ x: 0, y: 0, radius: 0 });
 
-  useFrame(() => {
+  useEffect(
+    () => () => {
+      for (const root of modelObjects.current) {
+        root?.traverse((obj) => {
+          if (!(obj instanceof THREE.Mesh)) return;
+          const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+          for (const material of materials) material.dispose();
+        });
+      }
+    },
+    []
+  );
+
+  useFrame(({ camera, size }) => {
+    getCameraGroundView(camera, size.width, size.height, view.current, 3);
     for (let i = 0; i < game.players.length; i++) {
       const g = refs.current[i];
       const e = game.players[i];
       if (!g) continue;
-      g.visible = e.alive;
-      g.position.set(e.pos.x, e.pos.y, CONFIG.CUBE_SIZE / 2); // đáy cube chạm mặt sân
+
+      g.visible =
+        e.alive && isInGroundView(view.current, e.pos.x, e.pos.y, 2);
+      g.position.set(e.pos.x, e.pos.y, 0);
       g.rotation.z = e.heading;
+      if (!g.visible) continue;
+
+      if (e.shape in MODEL_URLS && !modelObjects.current[i]) {
+        const shape = e.shape as ModelShape;
+        const model = makeModelObject(modelSources[shape], shape);
+        modelObjects.current[i] = model;
+        g.add(model);
+        appearanceSig.current[i] = "";
+      }
+
+      for (const child of g.children) child.visible = child.name === e.shape;
+
+      const sig = `${e.colorIndex}:${e.shape}`;
+      if (appearanceSig.current[i] !== sig) {
+        appearanceSig.current[i] = sig;
+        const tint = new THREE.Color(e.color.glow);
+        g.traverse((obj) => {
+          if (!(obj instanceof THREE.Mesh)) return;
+          const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+          for (const mat of materials) {
+            if (!("color" in mat) || !(mat.color instanceof THREE.Color)) continue;
+            const base = mat.userData.hexBaseColor;
+            if (obj.userData.hexModelMesh && base instanceof THREE.Color) {
+              mat.color.copy(base).lerp(tint, 0.58);
+            } else {
+              mat.color.copy(tint);
+            }
+            if (mat instanceof THREE.MeshStandardMaterial) {
+              mat.emissive.copy(tint);
+              mat.emissiveIntensity = obj.userData.hexModelMesh ? 0.12 : 0.35;
+            }
+          }
+        });
+      }
     }
   });
 
@@ -34,20 +138,26 @@ export const PlayerCube = memo(function PlayerCube({
             refs.current[i] = el;
           }}
         >
-          <mesh>
-            <boxGeometry
-              args={[CONFIG.CUBE_SIZE, CONFIG.CUBE_SIZE, CONFIG.CUBE_SIZE]}
-            />
-            <meshStandardMaterial
-              color={e.color.cube}
-              emissive={e.color.glow}
-              emissiveIntensity={0.35}
-              metalness={0.35}
-              roughness={0.3}
-            />
+          <mesh name="cube" position={[0, 0, CONFIG.CUBE_SIZE / 2]}>
+            <boxGeometry args={[CONFIG.CUBE_SIZE, CONFIG.CUBE_SIZE, CONFIG.CUBE_SIZE]} />
+            <meshStandardMaterial color={e.color.glow} emissive={e.color.glow} emissiveIntensity={0.35} metalness={0.35} roughness={0.3} />
+          </mesh>
+          <mesh name="cylinder" position={[0, 0, CONFIG.CUBE_SIZE / 2]} rotation={[Math.PI / 2, 0, 0]}>
+            <cylinderGeometry args={[CONFIG.CUBE_SIZE * 0.48, CONFIG.CUBE_SIZE * 0.48, CONFIG.CUBE_SIZE, 16]} />
+            <meshStandardMaterial color={e.color.glow} emissive={e.color.glow} emissiveIntensity={0.35} metalness={0.35} roughness={0.3} />
+          </mesh>
+          <mesh name="sphere" position={[0, 0, CONFIG.CUBE_SIZE / 2]}>
+            <sphereGeometry args={[CONFIG.CUBE_SIZE * 0.52, 18, 12]} />
+            <meshStandardMaterial color={e.color.glow} emissive={e.color.glow} emissiveIntensity={0.35} metalness={0.35} roughness={0.3} />
+          </mesh>
+          <mesh name="cone" position={[0, 0, CONFIG.CUBE_SIZE / 2]} rotation={[Math.PI / 2, 0, 0]}>
+            <coneGeometry args={[CONFIG.CUBE_SIZE * 0.56, CONFIG.CUBE_SIZE, 12]} />
+            <meshStandardMaterial color={e.color.glow} emissive={e.color.glow} emissiveIntensity={0.35} metalness={0.35} roughness={0.3} />
           </mesh>
         </group>
       ))}
     </>
   );
 });
+
+for (const url of Object.values(MODEL_URLS)) useGLTF.preload(url);

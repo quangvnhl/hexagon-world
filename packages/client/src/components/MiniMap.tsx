@@ -17,7 +17,7 @@ const rgb = (c: readonly [number, number, number]) =>
  * Bản đồ con (minimap) góc dưới-phải. Vẽ toàn sân thu nhỏ: lãnh thổ đã chiếm, đuôi
  * đang vẽ, và chấm người chơi kèm hướng. Đọc trực tiếp từ `GameState` (không đưa
  * logic vào đây). Lớp lãnh thổ/đuôi chỉ vẽ lại khi `gridRevision` đổi (cache
- * offscreen); chấm người chơi vẽ mỗi frame cho mượt.
+ * offscreen); toàn bộ minimap chỉ đồng bộ mỗi 200ms để không cạnh tranh CPU/GPU với scene 3D.
  */
 export const MiniMap = memo(function MiniMap({
   game,
@@ -34,7 +34,8 @@ export const MiniMap = memo(function MiniMap({
     // bán kính nội tiếp (trục y).
     const halfW = ARENA_R;
     const halfH = ARENA_INRADIUS;
-    const W = 190;
+    const mobile = window.matchMedia("(max-width: 620px), (pointer: coarse)").matches;
+    const W = mobile ? 128 : 190;
     const H = Math.round((W * halfH) / halfW);
     const dpr = Math.min(window.devicePixelRatio || 1, 2);
 
@@ -95,7 +96,7 @@ export const MiniMap = memo(function MiniMap({
     };
 
     let lastGrid = -1;
-    let raf = 0;
+    let timer = 0;
     const render = () => {
       if (game.gridRevision !== lastGrid) {
         lastGrid = game.gridRevision;
@@ -146,18 +147,18 @@ export const MiniMap = memo(function MiniMap({
         ctx.stroke();
       }
 
-      raf = requestAnimationFrame(render);
     };
-    raf = requestAnimationFrame(render);
-    return () => cancelAnimationFrame(raf);
+    render();
+    timer = window.setInterval(render, 200);
+    return () => window.clearInterval(timer);
   }, [game, localId]);
 
   return (
     <div
       style={{
         position: "absolute",
-        right: 16,
-        bottom: 16,
+        right: "max(10px, env(safe-area-inset-right))",
+        bottom: "max(10px, env(safe-area-inset-bottom))",
         pointerEvents: "none",
       }}
     >

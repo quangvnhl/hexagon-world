@@ -14,14 +14,16 @@
 ## Thông điệp (message types)
 
 Client → Server:
-- `JOIN {name, skin}`
+- `JOIN {name, colorIndex, trailPattern, shape}`
 - `INPUT {seq, dirIndex}`  // hướng mong muốn (0..5) + số thứ tự để reconcile
 - `USE_ITEM {itemId}`
 - `PING {t}`
 
 Server → Client:
 - `WELCOME {playerId, mapRadius, seed}`
-- `SNAPSHOT {tick, ackSeq, selfPrep, kingHold, entities[]}`  // nhị phân; `kingHold` =
+- `SNAPSHOT {tick, ackSeq, selfPrep, kingHold, entities[]}`  // mỗi entity gồm cả
+  `colorIndex`, `trailPatternIndex`, `shapeIndex`; tận dụng byte padding nên vẫn 20 byte/entity.
+  `kingHold` =
   giây còn phải giữ ngôi KING để thắng (server tính; wire = deciseconds u16) → client
   đếm ngược đồng hồ 3 phút ở HUD (client KHÔNG chạy mô phỏng nên phải nhận số này).
 - `EVENT {type: DEATH|KING|WIN, ...}`

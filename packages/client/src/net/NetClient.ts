@@ -21,6 +21,9 @@ import {
   encodeInput,
   peekTag,
   TAG,
+  DEFAULT_PLAYER_APPEARANCE,
+  sanitizePlayerAppearance,
+  type PlayerAppearance,
   type S2CControl,
   type TerritoryCell,
 } from "@hexagon/shared";
@@ -52,6 +55,8 @@ export interface RenderEntity {
   y: number;
   heading: number;
   colorIndex: number;
+  trailPatternIndex: number;
+  shapeIndex: number;
   alive: boolean;
   hasTrail: boolean;
   score: number;
@@ -141,7 +146,11 @@ export class NetClient {
   }
 
   /** Mở kết nối và gửi JOIN. */
-  connect(url: string = DEFAULT_SERVER_URL, name = "Bạn"): void {
+  connect(
+    url: string = DEFAULT_SERVER_URL,
+    name = "Bạn",
+    appearance: PlayerAppearance = DEFAULT_PLAYER_APPEARANCE
+  ): void {
     this.disconnect();
     this.setStatus("connecting");
     const ws = new WebSocket(url);
@@ -150,7 +159,8 @@ export class NetClient {
 
     ws.onopen = () => {
       this.setStatus("open");
-      ws.send(encodeControl({ t: "join", name }));
+      const look = sanitizePlayerAppearance(appearance);
+      ws.send(encodeControl({ t: "join", name, ...look }));
       // Đo ping định kỳ (mỗi 1s) để hiển thị độ trễ mạng.
       this.sendPing();
       this.pingTimer = setInterval(() => this.sendPing(), 1000);
@@ -340,6 +350,8 @@ export class NetClient {
         y: p.y,
         heading: p.heading,
         colorIndex: m.colorIndex,
+        trailPatternIndex: m.trailPatternIndex,
+        shapeIndex: m.shapeIndex,
         alive: m.alive,
         hasTrail: m.hasTrail,
         score: m.score,
@@ -359,6 +371,8 @@ export class NetClient {
         y: s.y,
         heading: s.heading,
         colorIndex: m?.colorIndex ?? 0,
+        trailPatternIndex: m?.trailPatternIndex ?? 0,
+        shapeIndex: m?.shapeIndex ?? 0,
         alive: m?.alive ?? true,
         hasTrail: m?.hasTrail ?? false,
         score: m?.score ?? 0,

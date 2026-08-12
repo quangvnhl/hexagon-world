@@ -15,6 +15,7 @@ phải đọc và tuân thủ các tài liệu này trước khi code.**
 | [04-mvp-tasks.md](04-mvp-tasks.md) | **Chia việc MVP local (single-player)** | Sub-agents |
 | [05-roadmap.md](05-roadmap.md) | Lộ trình sau MVP (multiplayer, totem, DB) | PM + Tech lead |
 | [06-multiplayer-netcode.md](06-multiplayer-netcode.md) | Thiết kế netcode, tick, binary protocol | Backend |
+| [07-them-model-glb.md](07-them-model-glb.md) | Hướng dẫn chuẩn bị, đăng ký và kiểm thử model GLB mới | Frontend |
 
 ## Nguyên tắc làm việc cho agents
 

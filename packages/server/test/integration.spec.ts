@@ -50,8 +50,11 @@ class TestClient {
     });
   }
 
-  join(name: string): void {
-    this.ws.send(encodeControl({ t: "join", name }));
+  join(
+    name: string,
+    look?: { colorIndex: number; trailPattern: "solid" | "stripes" | "dots" | "chevrons"; shape: "cube" | "cylinder" | "sphere" | "cone" | "fly" | "bee" | "ladybug" },
+  ): void {
+    this.ws.send(encodeControl({ t: "join", name, ...look }));
   }
 
   input(seq: number, heading: number): void {
@@ -125,7 +128,7 @@ describe("NetServer integration (real ws, deterministic ticks)", () => {
     await Promise.all([a.open(), b.open()]);
 
     // JOIN → WELCOME với playerId phân biệt.
-    a.join("An");
+    a.join("An", { colorIndex: 4, trailPattern: "dots", shape: "fly" });
     b.join("Binh");
     await Promise.all([a.waitWelcome(), b.waitWelcome()]);
     expect(a.welcome).not.toBeNull();
@@ -186,6 +189,9 @@ describe("NetServer integration (real ws, deterministic ticks)", () => {
     const moved = Math.hypot(ownLast.x - ownFirst.x, ownLast.y - ownFirst.y);
     expect(moved).toBeGreaterThan(0.5);
     expect(ownLast.alive).toBe(true);
+    expect(ownLast.colorIndex).toBe(4);
+    expect(ownLast.trailPatternIndex).toBe(2);
+    expect(ownLast.shapeIndex).toBe(4);
 
     // Entity của A cũng xuất hiện trong snapshot của B (thế giới dùng chung).
     const bSeesA = b.snapshots[b.snapshots.length - 1].entities.find(

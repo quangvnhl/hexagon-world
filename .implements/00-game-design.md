@@ -122,6 +122,11 @@ Tham chiếu: hexanaut.io, paper.io, splix.io.
 
 ## Điều khiển
 
+- **Cá nhân hoá ở Welcome:** người chơi chọn màu nhân vật/lãnh thổ và một trong các hình
+  3D `Cube` / `Cylinder` / `Sphere` / `Cone` / model GLB `Fly` / `Bee` / `Ladybug`.
+  Vệt đuôi luôn đồng bộ
+  màu nhân vật, chỉ cho đổi pattern `Solid` / `Stripes` / `Dots` / `Chevron`. Lựa chọn
+  được lưu trên trình duyệt, áp dụng cho chơi đơn và đồng bộ cho mọi client khi online.
 - **Web (PC):** chuột điều hướng — hướng di chuyển = hướng từ nhân vật tới con trỏ.
 - **Mobile:** joystick ảo + nút kỹ năng dùng vật phẩm. Trên màn hình hẹp
   (`max-width: 640px`) các **bảng thông số thu nhỏ về góc** (transform scale) và **ẩn

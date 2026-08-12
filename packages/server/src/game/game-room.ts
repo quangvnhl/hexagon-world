@@ -1,4 +1,8 @@
-import { GameState, type Snapshot } from "@hexagon/shared";
+import {
+  GameState,
+  type PlayerAppearance,
+  type Snapshot,
+} from "@hexagon/shared";
 import { BOT_COUNT, MAX_PLAYERS } from "../config";
 
 /**
@@ -58,13 +62,14 @@ export class GameRoom {
   }
 
   /** Cấp một ghế người trống → trả entityId, hoặc null nếu phòng đầy. Lưu TÊN hiển thị. */
-  join(name = ""): number | null {
+  join(name = "", appearance?: Partial<PlayerAppearance>): number | null {
     for (let id = 0; id < this.maxHumans; id++) {
       if (!this.seats[id]) {
         this.seats[id] = true;
         this.lastSeq[id] = 0;
         this.pending[id] = null;
         this.gs.setName(id, name.trim() || `Người ${id + 1}`);
+        this.gs.setAppearance(id, appearance);
         // Ghế có thể đang ở trạng thái CHẾT (người trước để lại) → hồi sinh cho người mới.
         if (this.gs.players[id]?.phase === "dead") this.gs.respawn(id);
         return id;

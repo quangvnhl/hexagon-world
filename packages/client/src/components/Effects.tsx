@@ -1,124 +1,249 @@
 "use client";
 
-import { memo, useMemo, useRef } from "react";
+import { memo, useLayoutEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
-import { GameState } from "@hexagon/shared";
-import { CONFIG } from "@hexagon/shared";
+import { CONFIG, GameState } from "@hexagon/shared";
+
+const SPARK_POOL_SIZE = 300;
+const DROP_POOL_SIZE = 240;
+const FLOOR_Z = 0.08;
 
 /**
- * Hiệu ứng "juice" bằng MỘT hệ hạt gộp (pooled THREE.Points), rẻ & không cấp phát
- * geometry mỗi frame:
- *  - Nổ hạt khi 1 thực thể CHẾT (deaths tăng) — màu glow, bay ra & mờ dần.
- *  - Lóe hạt khi CHIẾM đất (owned.size tăng) — màu owned. Đây là bản MVP thay cho
- *    animation tô từng ô: chỉ 1 nhúm hạt nhỏ, không animate từng cell.
- * Dùng AdditiveBlending: màu tiến về đen = trong suốt → fade thật trên nền tối.
+ * Hiệu ứng dùng pool cố định để không cấp phát object trong vòng lặp render:
+ * - Giọt 3D cùng màu nhân vật bắn ra khi alive chuyển từ true sang false.
+ * - Tia sáng nhỏ khi chiếm thêm đất.
  */
 export const Effects = memo(function Effects({ game }: { game: GameState }) {
-  const MAX = 300; // trần số hạt sống đồng thời (bounded pool)
-  const LIFE = CONFIG.EFFECTS.LIFE;
-  const COUNT = CONFIG.EFFECTS.PARTICLES;
-  const Z = 0.6; // ngang tầm cao cube
+  const sparkLifeTime = CONFIG.EFFECTS.LIFE;
+  const sparkCount = CONFIG.EFFECTS.PARTICLES;
+  const dropLifeTime = CONFIG.EFFECTS.DEATH_LIFE;
+  const dropCount = CONFIG.EFFECTS.DEATH_DROPS;
 
-  // Bộ đệm cố định cho pool.
-  const { geometry, positions, colors } = useMemo(() => {
-    const positions = new Float32Array(MAX * 3);
-    const colors = new Float32Array(MAX * 3);
+  const { sparkGeometry, sparkPositions, sparkColors } = useMemo(() => {
+    const positions = new Float32Array(SPARK_POOL_SIZE * 3);
+    const colors = new Float32Array(SPARK_POOL_SIZE * 3);
     const geometry = new THREE.BufferGeometry();
     geometry.setAttribute("position", new THREE.BufferAttribute(positions, 3));
     geometry.setAttribute("color", new THREE.BufferAttribute(colors, 3));
-    return { geometry, positions, colors };
+    return {
+      sparkGeometry: geometry,
+      sparkPositions: positions,
+      sparkColors: colors,
+    };
   }, []);
 
-  // Trạng thái mỗi hạt (không phải React state → không re-render).
-  const vel = useMemo(() => new Float32Array(MAX * 3), []);
-  const life = useMemo(() => new Float32Array(MAX), []); // >0 = còn sống
-  const base = useMemo(() => new Float32Array(MAX * 3), []); // màu gốc để scale theo life
-  const cursor = useRef(0); // con trỏ vòng để tái dùng slot
+  const sparkVelocity = useMemo(
+    () => new Float32Array(SPARK_POOL_SIZE * 3),
+    []
+  );
+  const sparkLife = useMemo(() => new Float32Array(SPARK_POOL_SIZE), []);
+  const sparkBaseColor = useMemo(
+    () => new Float32Array(SPARK_POOL_SIZE * 3),
+    []
+  );
+  const sparkCursor = useRef(0);
 
-  // Theo dõi mốc trước để phát hiện sự kiện chết/chiếm.
-  const lastDeaths = useRef<number[]>([]);
-  const lastOwned = useRef<number[]>([]);
+  const dropsRef = useRef<THREE.InstancedMesh>(null);
+  const dropPosition = useMemo(
+    () => new Float32Array(DROP_POOL_SIZE * 3),
+    []
+  );
+  const dropVelocity = useMemo(
+    () => new Float32Array(DROP_POOL_SIZE * 3),
+    []
+  );
+  const dropLife = useMemo(() => new Float32Array(DROP_POOL_SIZE), []);
+  const dropSize = useMemo(() => new Float32Array(DROP_POOL_SIZE), []);
+  const dropCursor = useRef(0);
+
+  const lastAlive = useRef(new Map<number, boolean>());
+  const lastOwned = useRef(new Map<number, number>());
+  const initialized = useRef(false);
+
   const tmpColor = useMemo(() => new THREE.Color(), []);
+  const tmpMatrix = useMemo(() => new THREE.Matrix4(), []);
+  const tmpPosition = useMemo(() => new THREE.Vector3(), []);
+  const tmpVelocity = useMemo(() => new THREE.Vector3(), []);
+  const tmpScale = useMemo(() => new THREE.Vector3(), []);
+  const tmpQuaternion = useMemo(() => new THREE.Quaternion(), []);
+  const up = useMemo(() => new THREE.Vector3(0, 0, 1), []);
 
-  // Bắn 1 nhúm hạt tại (x,y) với màu rgb (0..1) cho trước.
-  const burst = (x: number, y: number, r: number, g: number, b: number) => {
-    for (let n = 0; n < COUNT; n++) {
-      const i = cursor.current;
-      cursor.current = (cursor.current + 1) % MAX;
-      const a = Math.random() * Math.PI * 2;
-      const sp = 2 + Math.random() * 4;
-      vel[i * 3] = Math.cos(a) * sp;
-      vel[i * 3 + 1] = Math.sin(a) * sp;
-      vel[i * 3 + 2] = (Math.random() - 0.2) * 3;
-      positions[i * 3] = x;
-      positions[i * 3 + 1] = y;
-      positions[i * 3 + 2] = Z;
-      base[i * 3] = r;
-      base[i * 3 + 1] = g;
-      base[i * 3 + 2] = b;
-      life[i] = LIFE;
+  useLayoutEffect(() => {
+    const mesh = dropsRef.current;
+    if (!mesh) return;
+    const hidden = new THREE.Matrix4().makeScale(0, 0, 0);
+    for (let i = 0; i < DROP_POOL_SIZE; i++) mesh.setMatrixAt(i, hidden);
+    mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
+    mesh.instanceMatrix.needsUpdate = true;
+  }, []);
+
+  const sparkBurst = (x: number, y: number, r: number, g: number, b: number) => {
+    for (let n = 0; n < sparkCount; n++) {
+      const i = sparkCursor.current;
+      sparkCursor.current = (sparkCursor.current + 1) % SPARK_POOL_SIZE;
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 2 + Math.random() * 4;
+      sparkVelocity[i * 3] = Math.cos(angle) * speed;
+      sparkVelocity[i * 3 + 1] = Math.sin(angle) * speed;
+      sparkVelocity[i * 3 + 2] = (Math.random() - 0.2) * 3;
+      sparkPositions[i * 3] = x;
+      sparkPositions[i * 3 + 1] = y;
+      sparkPositions[i * 3 + 2] = 0.6;
+      sparkBaseColor[i * 3] = r;
+      sparkBaseColor[i * 3 + 1] = g;
+      sparkBaseColor[i * 3 + 2] = b;
+      sparkLife[i] = sparkLifeTime;
     }
   };
 
-  useFrame((_, dtRaw) => {
-    const dt = Math.min(dtRaw, 0.05);
+  const deathBurst = (x: number, y: number, color: THREE.Color) => {
+    const mesh = dropsRef.current;
+    if (!mesh) return;
 
-    // Khởi tạo mốc ở frame đầu (tránh nổ giả khi mount).
-    if (lastDeaths.current.length !== game.players.length) {
-      lastDeaths.current = game.players.map((e) => e.deaths);
-      lastOwned.current = game.players.map((e) => e.owned.size);
+    for (let n = 0; n < dropCount; n++) {
+      const i = dropCursor.current;
+      dropCursor.current = (dropCursor.current + 1) % DROP_POOL_SIZE;
+      const angle = Math.random() * Math.PI * 2;
+      const speed = 2.8 + Math.random() * 4.2;
+      const radialBias = 0.75 + Math.random() * 0.25;
+
+      dropPosition[i * 3] = x + Math.cos(angle) * Math.random() * 0.18;
+      dropPosition[i * 3 + 1] = y + Math.sin(angle) * Math.random() * 0.18;
+      dropPosition[i * 3 + 2] = CONFIG.CUBE_SIZE * (0.35 + Math.random() * 0.45);
+      dropVelocity[i * 3] = Math.cos(angle) * speed * radialBias;
+      dropVelocity[i * 3 + 1] = Math.sin(angle) * speed * radialBias;
+      dropVelocity[i * 3 + 2] = 2.4 + Math.random() * 4.4;
+      dropLife[i] = dropLifeTime * (0.72 + Math.random() * 0.28);
+      dropSize[i] = 0.65 + Math.random() * 0.75;
+      mesh.setColorAt(i, color);
+    }
+    if (mesh.instanceColor) mesh.instanceColor.needsUpdate = true;
+  };
+
+  useFrame((_, rawDt) => {
+    const dt = Math.min(rawDt, 0.05);
+
+    if (!initialized.current) {
+      for (const entity of game.players) {
+        lastAlive.current.set(entity.id, entity.alive);
+        lastOwned.current.set(entity.id, entity.owned.size);
+      }
+      initialized.current = true;
+    } else {
+      for (const entity of game.players) {
+        const wasAlive = lastAlive.current.get(entity.id);
+        if (wasAlive === true && !entity.alive) {
+          tmpColor.set(entity.color.glow);
+          deathBurst(entity.pos.x, entity.pos.y, tmpColor);
+        }
+        lastAlive.current.set(entity.id, entity.alive);
+
+        const owned = entity.owned.size;
+        const previousOwned = lastOwned.current.get(entity.id) ?? owned;
+        if (owned > previousOwned) {
+          const [r, g, b] = entity.color.owned;
+          sparkBurst(entity.pos.x, entity.pos.y, r, g, b);
+        }
+        lastOwned.current.set(entity.id, owned);
+      }
     }
 
-    // Phát hiện sự kiện theo từng thực thể.
-    for (let i = 0; i < game.players.length; i++) {
-      const e = game.players[i];
-      if (e.deaths > lastDeaths.current[i]) {
-        tmpColor.set(e.color.glow);
-        burst(e.pos.x, e.pos.y, tmpColor.r, tmpColor.g, tmpColor.b);
-      }
-      lastDeaths.current[i] = e.deaths;
-
-      const sz = e.owned.size;
-      if (sz > lastOwned.current[i]) {
-        // MVP: lóe nhỏ báo hiệu vừa chiếm đất (không animate từng ô).
-        const [r, g, b] = e.color.owned;
-        burst(e.pos.x, e.pos.y, r, g, b);
-      }
-      lastOwned.current[i] = sz;
-    }
-
-    // Tiến hoá hạt: bay ra, rơi nhẹ, mờ dần (màu → đen).
-    for (let i = 0; i < MAX; i++) {
-      if (life[i] <= 0) {
-        colors[i * 3] = colors[i * 3 + 1] = colors[i * 3 + 2] = 0;
+    for (let i = 0; i < SPARK_POOL_SIZE; i++) {
+      if (sparkLife[i] <= 0) {
+        sparkColors[i * 3] = 0;
+        sparkColors[i * 3 + 1] = 0;
+        sparkColors[i * 3 + 2] = 0;
         continue;
       }
-      life[i] -= dt;
-      positions[i * 3] += vel[i * 3] * dt;
-      positions[i * 3 + 1] += vel[i * 3 + 1] * dt;
-      positions[i * 3 + 2] += vel[i * 3 + 2] * dt;
-      vel[i * 3 + 2] -= 6 * dt; // trọng lực nhẹ
-      const f = Math.max(life[i] / LIFE, 0);
-      colors[i * 3] = base[i * 3] * f;
-      colors[i * 3 + 1] = base[i * 3 + 1] * f;
-      colors[i * 3 + 2] = base[i * 3 + 2] * f;
+      sparkLife[i] -= dt;
+      sparkPositions[i * 3] += sparkVelocity[i * 3] * dt;
+      sparkPositions[i * 3 + 1] += sparkVelocity[i * 3 + 1] * dt;
+      sparkPositions[i * 3 + 2] += sparkVelocity[i * 3 + 2] * dt;
+      sparkVelocity[i * 3 + 2] -= 6 * dt;
+      const fade = Math.max(sparkLife[i] / sparkLifeTime, 0);
+      sparkColors[i * 3] = sparkBaseColor[i * 3] * fade;
+      sparkColors[i * 3 + 1] = sparkBaseColor[i * 3 + 1] * fade;
+      sparkColors[i * 3 + 2] = sparkBaseColor[i * 3 + 2] * fade;
     }
+    (sparkGeometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
+    (sparkGeometry.attributes.color as THREE.BufferAttribute).needsUpdate = true;
 
-    (geometry.attributes.position as THREE.BufferAttribute).needsUpdate = true;
-    (geometry.attributes.color as THREE.BufferAttribute).needsUpdate = true;
+    const mesh = dropsRef.current;
+    if (!mesh) return;
+    for (let i = 0; i < DROP_POOL_SIZE; i++) {
+      if (dropLife[i] <= 0) {
+        tmpMatrix.makeScale(0, 0, 0);
+        mesh.setMatrixAt(i, tmpMatrix);
+        continue;
+      }
+
+      dropLife[i] -= dt;
+      dropVelocity[i * 3 + 2] -= CONFIG.EFFECTS.DEATH_GRAVITY * dt;
+      dropPosition[i * 3] += dropVelocity[i * 3] * dt;
+      dropPosition[i * 3 + 1] += dropVelocity[i * 3 + 1] * dt;
+      dropPosition[i * 3 + 2] += dropVelocity[i * 3 + 2] * dt;
+
+      if (dropPosition[i * 3 + 2] < FLOOR_Z) {
+        dropPosition[i * 3 + 2] = FLOOR_Z;
+        dropVelocity[i * 3 + 2] = Math.abs(dropVelocity[i * 3 + 2]) * 0.24;
+        dropVelocity[i * 3] *= 0.72;
+        dropVelocity[i * 3 + 1] *= 0.72;
+      }
+
+      tmpVelocity.set(
+        dropVelocity[i * 3],
+        dropVelocity[i * 3 + 1],
+        dropVelocity[i * 3 + 2]
+      );
+      const speed = tmpVelocity.length();
+      if (speed > 0.001) {
+        tmpVelocity.multiplyScalar(1 / speed);
+        tmpQuaternion.setFromUnitVectors(up, tmpVelocity);
+      } else {
+        tmpQuaternion.identity();
+      }
+
+      const remaining = Math.max(dropLife[i] / dropLifeTime, 0);
+      const shrink = Math.min(1, remaining * 4);
+      const width = dropSize[i] * shrink;
+      const stretch = 1 + Math.min(speed * 0.12, 1.25);
+      tmpPosition.set(
+        dropPosition[i * 3],
+        dropPosition[i * 3 + 1],
+        dropPosition[i * 3 + 2]
+      );
+      tmpScale.set(width, width, width * stretch);
+      tmpMatrix.compose(tmpPosition, tmpQuaternion, tmpScale);
+      mesh.setMatrixAt(i, tmpMatrix);
+    }
+    mesh.instanceMatrix.needsUpdate = true;
   });
 
   return (
-    <points geometry={geometry}>
-      <pointsMaterial
-        vertexColors
-        size={0.5}
-        sizeAttenuation
-        transparent
-        depthWrite={false}
-        blending={THREE.AdditiveBlending}
-      />
-    </points>
+    <>
+      <points geometry={sparkGeometry}>
+        <pointsMaterial
+          vertexColors
+          size={0.5}
+          sizeAttenuation
+          transparent
+          depthWrite={false}
+          blending={THREE.AdditiveBlending}
+        />
+      </points>
+      <instancedMesh
+        ref={dropsRef}
+        args={[undefined, undefined, DROP_POOL_SIZE]}
+        frustumCulled={false}
+      >
+        <sphereGeometry args={[0.14, 8, 6]} />
+        <meshStandardMaterial
+          roughness={0.28}
+          metalness={0.08}
+          emissiveIntensity={0.12}
+        />
+      </instancedMesh>
+    </>
   );
 });

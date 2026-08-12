@@ -1,4 +1,4 @@
-import { PlayerColor } from "./config";
+import { PlayerColor, PlayerAppearance, PlayerShape, TrailPattern } from "./config";
 import { Axial, HexKey } from "./hex";
 import type { EntitySnap, TerritoryCell } from "./protocol";
 export interface Vec2 {
@@ -18,7 +18,10 @@ export type DeathCause = "" | "self" | "cut" | "headIntruder" | "headMutual";
 export declare class Entity {
     readonly id: number;
     readonly isBot: boolean;
-    readonly color: PlayerColor;
+    color: PlayerColor;
+    colorIndex: number;
+    trailPattern: TrailPattern;
+    shape: PlayerShape;
     /** Tên hiển thị (người chơi nhập ở màn hình đầu; rỗng → dùng `color.name`). */
     name: string;
     pos: Vec2;
@@ -135,6 +138,8 @@ export declare class GameState {
     pctOf(id: number): number;
     /** [ONLINE] Gán TÊN hiển thị cho một ghế (từ JOIN / roster server). */
     setName(id: number, name: string): void;
+    /** Gán ngoại hình đã chuẩn hoá; render local và snapshot online cùng đọc một nguồn này. */
+    setAppearance(id: number, appearance?: Partial<PlayerAppearance> | null): void;
     /** Tên hiển thị của thực thể: ưu tiên tên người chơi, fallback tên màu. */
     nameOf(id: number): string;
     /** [ONLINE] Chốt NGƯỜI THẮNG (dùng khi phòng chỉ còn 1 người còn sống). */
@@ -162,6 +167,7 @@ export declare class GameState {
         name: string;
         pct: number;
         alive: boolean;
+        colorIndex: number;
     }[];
     private ownedPlayable;
     /** Id chủ sở hữu ô (owned), hoặc -1 nếu trung lập. */

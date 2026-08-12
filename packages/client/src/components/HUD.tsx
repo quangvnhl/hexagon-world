@@ -10,6 +10,7 @@ export interface Score {
   name: string;
   pct: number;
   alive: boolean;
+  colorIndex: number;
 }
 
 export interface Stats {
@@ -19,6 +20,8 @@ export interface Stats {
   phase: Phase;
   prep: number;
   scores: Score[];
+  /** Màu chính của người chơi cục bộ (cho popup/minimap sau khi chết). */
+  colorIndex: number;
   won: boolean;
   kingHold: number;
   /** Phòng đang bị KING khoá (không cho hồi sinh cho tới khi mất ngôi). */
@@ -80,7 +83,13 @@ function deathReason(cause: DeathCause, killerName: string): string {
 }
 
 /** Bản đồ nhỏ trong popup chết: vẽ viền sân + các ô đất người chơi từng chiếm. */
-function DeathMiniMap({ cells }: { cells: { x: number; y: number }[] }) {
+function DeathMiniMap({
+  cells,
+  colorIndex,
+}: {
+  cells: { x: number; y: number }[];
+  colorIndex: number;
+}) {
   const ref = useRef<HTMLCanvasElement>(null);
   useEffect(() => {
     const canvas = ref.current;
@@ -111,7 +120,9 @@ function DeathMiniMap({ cells }: { cells: { x: number; y: number }[] }) {
     // Các ô đất người chơi từng chiếm (màu người chơi).
     const cw = Math.sqrt(3) * sx * 1.2;
     const ch = 1.5 * sy * 1.2;
-    ctx.fillStyle = rgbCss(PLAYER_COLORS[0].owned);
+    ctx.fillStyle = rgbCss(
+      PLAYER_COLORS[colorIndex % PLAYER_COLORS.length].owned
+    );
     for (const c of cells) {
       const [px, py] = toPx(c.x, c.y);
       ctx.fillRect(px - cw / 2, py - ch / 2, cw, ch);
@@ -129,7 +140,7 @@ function DeathMiniMap({ cells }: { cells: { x: number; y: number }[] }) {
     ctx.strokeStyle = "rgba(150,170,210,0.6)";
     ctx.lineWidth = 1 * dpr;
     ctx.stroke();
-  }, [cells]);
+  }, [cells, colorIndex]);
 
   return <canvas ref={ref} style={{ display: "block", borderRadius: 8 }} />;
 }
@@ -185,6 +196,22 @@ export function HUD({
   const isMobile = useIsMobile();
   // Trên điện thoại: thu nhỏ 2 bảng thông số về góc để không đè lên vùng chơi.
   const uiScale = isMobile ? 0.78 : 1;
+  const [deathPopupReady, setDeathPopupReady] = useState(false);
+
+  // Giữ nguyên khung cảnh chết để người chơi nhìn trọn hiệu ứng trước khi popup che Canvas.
+  // `deaths` nằm trong dependency để mỗi lần chết sau hồi sinh đều bắt đầu một timer mới.
+  useEffect(() => {
+    if (stats.phase !== "dead" || stats.spectating || stats.won) {
+      setDeathPopupReady(false);
+      return;
+    }
+    setDeathPopupReady(false);
+    const timer = window.setTimeout(
+      () => setDeathPopupReady(true),
+      CONFIG.EFFECTS.DEATH_POPUP_DELAY * 1000
+    );
+    return () => window.clearTimeout(timer);
+  }, [stats.phase, stats.deaths, stats.spectating, stats.won]);
 
   // Bảng xếp hạng: chỉ TOP 5; nếu người chơi cục bộ hạng > 5 thì thêm 1 dòng dưới cùng.
   const sorted = [...stats.scores].sort((a, b) => b.pct - a.pct);
@@ -216,7 +243,9 @@ export function HUD({
           width: 10,
           height: 10,
           borderRadius: 3,
-          background: rgbCss(PLAYER_COLORS[s.id % PLAYER_COLORS.length].owned),
+          background: rgbCss(
+            PLAYER_COLORS[s.colorIndex % PLAYER_COLORS.length].owned
+          ),
           flex: "0 0 auto",
         }}
       />
@@ -234,31 +263,31 @@ export function HUD({
       <div
         style={{
           position: "absolute",
-          top: 16,
-          left: 16,
-          padding: "12px 16px",
+          top: "max(36px, calc(env(safe-area-inset-top) + 30px))",
+          left: "max(10px, env(safe-area-inset-left))",
+          padding: "8px 11px",
           borderRadius: 12,
           background: "rgba(10,14,22,0.72)",
           color: "#e8eefc",
           fontFamily: "system-ui, sans-serif",
-          minWidth: 180,
+          minWidth: 150,
           pointerEvents: "none",
           backdropFilter: "blur(6px)",
           transform: uiScale !== 1 ? `scale(${uiScale})` : undefined,
           transformOrigin: "top left",
         }}
       >
-        <div style={{ fontSize: 12, opacity: 0.7, letterSpacing: 1 }}>
+        <div style={{ fontSize: 9, opacity: 0.7, letterSpacing: 0.8 }}>
           DIỆN TÍCH
         </div>
-        <div style={{ fontSize: 32, fontWeight: 700, lineHeight: 1.1 }}>
+        <div style={{ fontSize: 23, fontWeight: 700, lineHeight: 1.1 }}>
           {stats.pct.toFixed(1)}%
         </div>
         {/* Thanh tiến trình tới ngưỡng King */}
         <div
           style={{
-            marginTop: 8,
-            height: 8,
+            marginTop: 5,
+            height: 6,
             borderRadius: 4,
             background: "rgba(255,255,255,0.12)",
             overflow: "hidden",
@@ -273,7 +302,7 @@ export function HUD({
             }}
           />
         </div>
-        <div style={{ fontSize: 12, opacity: 0.6, marginTop: 6 }}>
+        <div style={{ fontSize: 9, opacity: 0.6, marginTop: 4 }}>
           Mục tiêu King: {CONFIG.KING_PCT}% · Chết: {stats.deaths}
         </div>
       </div>
@@ -338,13 +367,14 @@ export function HUD({
         >
           <div
             style={{
-              padding: "10px 22px",
+              padding: "7px 14px",
               borderRadius: 999,
               background: "linear-gradient(90deg,#ffb02e,#ffd23f)",
               color: "#3a2400",
               fontFamily: "system-ui, sans-serif",
+              fontSize: 12,
               fontWeight: 800,
-              letterSpacing: 2,
+              letterSpacing: 1,
               boxShadow: "0 6px 24px rgba(255,180,46,0.4)",
             }}
           >
@@ -352,12 +382,12 @@ export function HUD({
           </div>
           <div
             style={{
-              padding: "5px 16px",
+              padding: "4px 11px",
               borderRadius: 999,
               background: "rgba(10,14,22,0.72)",
               color: "#ffd23f",
               fontFamily: "system-ui, sans-serif",
-              fontSize: 15,
+              fontSize: 11,
               fontWeight: 700,
               letterSpacing: 1,
               backdropFilter: "blur(6px)",
@@ -387,12 +417,13 @@ export function HUD({
         >
           <div
             style={{
-              padding: "9px 20px",
+              padding: "7px 13px",
               borderRadius: 999,
               background: "rgba(10,14,22,0.82)",
               border: "1px solid rgba(255,180,46,0.55)",
               color: "#ffd23f",
               fontFamily: "system-ui, sans-serif",
+              fontSize: 11,
               fontWeight: 800,
               letterSpacing: 1,
               boxShadow: "0 6px 24px rgba(255,180,46,0.25)",
@@ -403,12 +434,12 @@ export function HUD({
           </div>
           <div
             style={{
-              padding: "5px 16px",
+              padding: "4px 11px",
               borderRadius: 999,
               background: "rgba(10,14,22,0.72)",
               color: "#ff9d5c",
               fontFamily: "system-ui, sans-serif",
-              fontSize: 14,
+              fontSize: 10,
               fontWeight: 700,
               letterSpacing: 1,
               backdropFilter: "blur(6px)",
@@ -466,7 +497,10 @@ export function HUD({
       )}
 
       {/* Popup CHẾT: chọn Hồi sinh hoặc Xem (chưa xem & chưa hết ván) */}
-      {stats.phase === "dead" && !stats.spectating && !stats.won && (
+      {stats.phase === "dead" &&
+        deathPopupReady &&
+        !stats.spectating &&
+        !stats.won && (
         <div
           style={{
             position: "absolute",
@@ -522,7 +556,10 @@ export function HUD({
                 LÃNH THỔ ĐÃ CHIẾM · {stats.lastPct.toFixed(1)}%
               </div>
               <div style={{ display: "flex", justifyContent: "center" }}>
-                <DeathMiniMap cells={stats.deathCells} />
+                <DeathMiniMap
+                  cells={stats.deathCells}
+                  colorIndex={stats.colorIndex}
+                />
               </div>
             </div>
             <div style={{ fontSize: 13, opacity: 0.6, marginTop: 10 }}>

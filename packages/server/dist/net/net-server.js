@@ -235,7 +235,11 @@ class NetServer {
             if (conn.entityId !== null)
                 return;
             const r = this.ensureActiveRoom();
-            const id = r.room.join(msg.name);
+            const id = r.room.join(msg.name, {
+                colorIndex: msg.colorIndex,
+                trailPattern: msg.trailPattern,
+                shape: msg.shape,
+            });
             if (id === null) {
                 ws.close(4001, "phong day");
                 return;

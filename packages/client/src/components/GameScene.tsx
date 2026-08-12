@@ -1,11 +1,12 @@
 "use client";
 
-import { useMemo, useRef, useState, useCallback } from "react";
+import { useMemo, useRef, useState, useCallback, useEffect } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { PerspectiveCamera } from "@react-three/drei";
 import * as THREE from "three";
 import { GameState } from "@hexagon/shared";
 import { CONFIG } from "@hexagon/shared";
+import type { PlayerAppearance } from "@hexagon/shared";
 import { axialToPixel, parseKey } from "@hexagon/shared";
 import { HexGridView } from "./HexGridView";
 import { PlayerCube } from "./PlayerCube";
@@ -28,6 +29,43 @@ interface PointerRef {
   active: boolean;
 }
 
+/** Mobile landscape lấy bản dọc làm chuẩn rồi mở rộng theo hệ số trong CONFIG.CAMERA. */
+export function GameCamera() {
+  const { width, height } = useThree((state) => state.size);
+  const [coarse, setCoarse] = useState(false);
+
+  useEffect(() => {
+    const media = window.matchMedia("(pointer: coarse)");
+    const sync = () => setCoarse(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
+  }, []);
+
+  const aspect = width / Math.max(height, 1);
+  let fov: number = CONFIG.CAMERA.FOV;
+  if (coarse && aspect > 1) {
+    const portraitAspect = 1 / aspect;
+    const portraitHalfWidth =
+      Math.tan(THREE.MathUtils.degToRad(CONFIG.CAMERA.FOV) / 2) *
+      portraitAspect *
+      CONFIG.CAMERA.MOBILE_LANDSCAPE_VIEW_SCALE;
+    fov = THREE.MathUtils.radToDeg(
+      2 * Math.atan(portraitHalfWidth / aspect)
+    );
+  }
+
+  return (
+    <PerspectiveCamera
+      makeDefault
+      position={CONFIG.CAMERA.OFFSET}
+      fov={fov}
+      near={0.1}
+      far={1000}
+    />
+  );
+}
+
 /** Nút quay lại menu (góc dưới-trái). Dùng chung cho scene chơi đơn & online. */
 export function MenuButton({ onExit }: { onExit: () => void }) {
   return (
@@ -35,8 +73,8 @@ export function MenuButton({ onExit }: { onExit: () => void }) {
       onClick={onExit}
       style={{
         position: "absolute",
-        left: 16,
-        bottom: 16,
+        left: "max(16px, env(safe-area-inset-left))",
+        bottom: "max(16px, env(safe-area-inset-bottom))",
         padding: "8px 16px",
         borderRadius: 999,
         border: "1px solid rgba(255,255,255,0.2)",
@@ -163,6 +201,7 @@ function GameLoop({
         phase: game.phase,
         prep: game.prepRemaining,
         scores: game.scores(),
+        colorIndex: game.human.colorIndex,
         won: game.won,
         kingHold: game.kingHoldRemaining,
         locked: game.roomLocked(),
@@ -198,16 +237,19 @@ function GameLoop({
 
 export default function GameScene({
   playerName,
+  appearance,
   onExit,
 }: {
   playerName?: string;
+  appearance?: PlayerAppearance;
   onExit?: () => void;
 } = {}) {
   const game = useMemo(() => new GameState(), []);
   // Gán tên người chơi vào ghế 0 (hiển thị ở xếp hạng / KING / thắng).
   useMemo(() => {
     if (playerName) game.setName(0, playerName);
-  }, [game, playerName]);
+    game.setAppearance(0, appearance);
+  }, [appearance, game, playerName]);
   const pointer = useRef<PointerRef>({ x: 0, y: 0, w: 1, h: 1, active: false });
   // Hướng từ joystick ảo (chạm) — cập nhật trực tiếp qua ref, không re-render.
   const joystick = useRef<{ active: boolean; angle: number }>({
@@ -221,6 +263,7 @@ export default function GameScene({
     phase: "prep",
     prep: CONFIG.PREP_TIME,
     scores: [],
+    colorIndex: appearance?.colorIndex ?? 0,
     won: false,
     kingHold: CONFIG.WIN_HOLD_TIME,
     locked: false,
@@ -252,6 +295,8 @@ export default function GameScene({
   );
 
   const handlePointer = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    // Touch do joystick nổi quản lý; không lưu điểm thả tay thành hướng chuột.
+    if (e.pointerType !== "mouse") return;
     const rect = e.currentTarget.getBoundingClientRect();
     pointer.current = {
       x: e.clientX - rect.left,
@@ -273,14 +318,8 @@ export default function GameScene({
         touchAction: "none",
       }}
     >
-      <Canvas>
-        <PerspectiveCamera
-          makeDefault
-          position={CONFIG.CAMERA.OFFSET}
-          fov={CONFIG.CAMERA.FOV}
-          near={0.1}
-          far={1000}
-        />
+      <Canvas dpr={[1, 1.5]}>
+        <GameCamera />
         <color attach="background" args={["#0a0e16"]} />
         <ambientLight intensity={0.8} />
         <directionalLight position={[4, 6, 12]} intensity={1.15} />
@@ -318,7 +357,7 @@ export default function GameScene({
       )}
       {onExit && <MenuButton onExit={onExit} />}
       {CONFIG.DISPLAY.MINIMAP && <MiniMap game={game} />}
-      <FpsMeterIfEnabled />
+      <FpsMeterIfEnabled statusText={`Local · ${game.players.length} người`} />
       <Joystick dir={joystick} />
       {CONFIG.DEBUG.COLLISION_VECTORS && (
         <div

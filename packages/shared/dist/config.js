@@ -1,7 +1,8 @@
 "use strict";
 // Cấu hình tập trung cho MVP. Chỉnh gameplay/hiển thị tại đây.
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.PLAYER_COLORS = exports.COLORS = exports.CONFIG = void 0;
+exports.DEFAULT_PLAYER_APPEARANCE = exports.TRAIL_PATTERNS = exports.PLAYER_SHAPES = exports.PLAYER_COLORS = exports.COLORS = exports.CONFIG = void 0;
+exports.sanitizePlayerAppearance = sanitizePlayerAppearance;
 exports.CONFIG = {
     /** Bán kính NGOẠI TIẾP (tâm → đỉnh) của SÂN CHƠI hình LỤC GIÁC (flat-top), world
      *  units. Biên là 6 tường nghiêng 120° → không còn góc vuông gây kẹt. */
@@ -16,7 +17,7 @@ exports.CONFIG = {
      *  nên không "thò ra" ngoài tường. */
     MAP_MARGIN: 0.6,
     /** Số bot đối kháng. */
-    BOT_COUNT: 45,
+    BOT_COUNT: 24,
     /** Bán kính cụm khởi đầu (cube distance). 1 = ô hiện tại + 6 ô kề = 7 ô. */
     START_RADIUS: 1,
     /** Khoảng trống tối thiểu quanh điểm spawn (cube distance): không được có ô đất của
@@ -26,6 +27,18 @@ exports.CONFIG = {
     PREP_TIME: 3,
     /** Kích thước 1 hex (tâm → đỉnh), đơn vị world. */
     HEX_SIZE: 1,
+    /** Hình thức viên lát lục giác và hiệu ứng nhấn khi người chơi bước sang ô mới. */
+    GRID: {
+        /** Tỉ lệ bán kính phần nhìn thấy. Nhỏ hơn → khe giữa các ô trông dày hơn. */
+        TILE_SCALE: 0.9,
+        /** Độ dày thật của khối lục giác (world units); mặt trên luôn nằm tại z = 0. */
+        THICKNESS: 0.2,
+        /** Độ sâu tối đa và độ co ngang tại điểm nhún thấp nhất. */
+        PRESS_DEPTH: 0.4,
+        PRESS_SCALE: 0.95,
+        /** Tổng thời gian nhún xuống rồi trở lại vị trí ban đầu (giây). */
+        PRESS_DURATION: 0.28,
+    },
     /** Cạnh cube nhân vật (người + bot), đơn vị world. Chỉnh to/nhỏ nhân vật ở đây. */
     CUBE_SIZE: 1,
     /** Tốc độ di chuyển liên tục (world units / giây). Nhỏ = chậm. */
@@ -51,6 +64,8 @@ exports.CONFIG = {
     },
     /** AI bot. */
     BOT: {
+        /** Giới hạn AI tối đa 20 lần/giây; hướng đã chốt vẫn được nội suy mỗi frame. */
+        THINK_INTERVAL_MIN: 0.05,
         /** Tốc độ quay đầu RIÊNG của bot (rad/giây) — TÁCH khỏi TURN_RATE của người chơi để
          *  chỉnh độ nhanh nhẹn của bot mà không đổi cảm giác lái của người. Cao hơn → bot
          *  khép được vòng LỚN (bành trướng nhanh) nhưng nếu quá cao dễ curl vào đuôi mình. */
@@ -73,13 +88,18 @@ exports.CONFIG = {
     BOT_DIFFICULTY: [
         // { label: "Dễ", aggression: 4.12, vision: 12, skill: 10.4, reaction: 0.3 },
         // { label: "Thường", aggression: 5.45, vision: 20, skill: 10.75, reaction: 0.2 },
-        { label: "Khó", aggression: 10, vision: 20, skill: 1, reaction: 0.01 },
+        { label: "Khó", aggression: 10, vision: 20, skill: 1, reaction: 0.1 },
     ],
     /** Camera perspective: vị trí lệch so với người chơi (x, sau, cao) + fov + độ mượt pan.
      *  Rotation KHOÁ cố định (chỉ pan theo người chơi, không xoay theo chuột). */
     CAMERA: {
-        OFFSET: [0, -8, 35],
-        FOV: 42,
+        OFFSET: [0, -2, 20],
+        FOV: 80,
+        /**
+         * Hệ số mở rộng vùng nhìn khi mobile xoay ngang.
+         * 1 = giữ đúng bề rộng tương đương bản dọc; >1 = camera xa/rộng hơn.
+         */
+        MOBILE_LANDSCAPE_VIEW_SCALE: 2.5,
         LERP: 0.15,
         /** Hệ số phóng lớn camera theo diện tích — 1 = gần nhất, MAX = xa nhất khi đạt
          *  ngưỡng King (giống agar.io: càng lớn càng thấy rộng sân). */
@@ -89,6 +109,12 @@ exports.CONFIG = {
     EFFECTS: {
         PARTICLES: 14,
         LIFE: 0.8,
+        /** Số giọt 3D và thời gian tồn tại của vụ nổ khi một nhân vật chết. */
+        DEATH_DROPS: 28,
+        DEATH_LIFE: 1.25,
+        DEATH_GRAVITY: 12,
+        /** Chờ hiệu ứng chết kết thúc rồi mới phủ popup hồi sinh/xem (giây). */
+        DEATH_POPUP_DELAY: 2,
     },
     /** Vạch vàng ngăn cách hai vùng ĐẤT cùng màu khác chủ: bề rộng (world units), màu, và
      *  độ phát sáng (dùng blending cộng dồn) — WIDTH lớn = vạch dày, GLOW lớn = sáng hơn. */
@@ -166,3 +192,33 @@ exports.PLAYER_COLORS = [
     { owned: [0.72, 0.46, 0.96], trail: [0.36, 0.22, 0.5], cube: "#f6ecff", glow: "#a06be8", name: "Bot Tím" },
     { owned: [0.25, 0.78, 0.82], trail: [0.1, 0.38, 0.42], cube: "#e6ffff", glow: "#2fc6d0", name: "Bot Ngọc" },
 ];
+/** Các hình 3D người chơi được phép chọn ở màn Welcome. Thứ tự là contract trên wire. */
+exports.PLAYER_SHAPES = [
+    "cube",
+    "cylinder",
+    "sphere",
+    "cone",
+    "fly",
+    "bee",
+    "ladybug",
+];
+/** Pattern texture của ống đuôi. Thứ tự là contract trên wire. */
+exports.TRAIL_PATTERNS = ["solid", "stripes", "dots", "chevrons"];
+exports.DEFAULT_PLAYER_APPEARANCE = {
+    colorIndex: 0,
+    trailPattern: "solid",
+    shape: "cube",
+};
+/** Chuẩn hoá dữ liệu từ localStorage/network về đúng palette và danh sách hình cho phép. */
+function sanitizePlayerAppearance(value) {
+    const colorIndex = Number.isInteger(value?.colorIndex)
+        ? Math.max(0, Math.min(exports.PLAYER_COLORS.length - 1, value.colorIndex))
+        : exports.DEFAULT_PLAYER_APPEARANCE.colorIndex;
+    const trailPattern = exports.TRAIL_PATTERNS.includes(value?.trailPattern)
+        ? value.trailPattern
+        : exports.DEFAULT_PLAYER_APPEARANCE.trailPattern;
+    const shape = exports.PLAYER_SHAPES.includes(value?.shape)
+        ? value.shape
+        : exports.DEFAULT_PLAYER_APPEARANCE.shape;
+    return { colorIndex, trailPattern, shape };
+}

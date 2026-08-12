@@ -1,4 +1,15 @@
-import { CONFIG, COLORS, PLAYER_COLORS, PlayerColor } from "./config";
+import {
+  CONFIG,
+  COLORS,
+  PLAYER_COLORS,
+  PLAYER_SHAPES,
+  TRAIL_PATTERNS,
+  PlayerColor,
+  PlayerAppearance,
+  PlayerShape,
+  TrailPattern,
+  sanitizePlayerAppearance,
+} from "./config";
 import {
   Axial,
   HexKey,
@@ -40,7 +51,10 @@ export type DeathCause = "" | "self" | "cut" | "headIntruder" | "headMutual";
 export class Entity {
   readonly id: number;
   readonly isBot: boolean;
-  readonly color: PlayerColor;
+  color: PlayerColor;
+  colorIndex: number;
+  trailPattern: TrailPattern = "solid";
+  shape: PlayerShape = "cube";
 
   /** Tên hiển thị (người chơi nhập ở màn hình đầu; rỗng → dùng `color.name`). */
   name = "";
@@ -87,6 +101,7 @@ export class Entity {
     this.id = id;
     this.isBot = isBot;
     this.color = color;
+    this.colorIndex = Math.max(0, PLAYER_COLORS.indexOf(color));
   }
 
   get alive(): boolean {
@@ -357,6 +372,26 @@ export class GameState {
     if (e) e.name = name;
   }
 
+  /** Gán ngoại hình đã chuẩn hoá; render local và snapshot online cùng đọc một nguồn này. */
+  setAppearance(id: number, appearance?: Partial<PlayerAppearance> | null): void {
+    const e = this.players[id];
+    if (!e) return;
+    const next = sanitizePlayerAppearance(appearance);
+    if (
+      e.colorIndex === next.colorIndex &&
+      e.trailPattern === next.trailPattern &&
+      e.shape === next.shape
+    )
+      return;
+    e.colorIndex = next.colorIndex;
+    e.trailPattern = next.trailPattern;
+    e.shape = next.shape;
+    e.color = PLAYER_COLORS[next.colorIndex];
+    // Màu đất/đuôi đang hiển thị có thể đổi dù ownership không đổi.
+    this.gridRevision++;
+    this.revision++;
+  }
+
   /** Tên hiển thị của thực thể: ưu tiên tên người chơi, fallback tên màu. */
   nameOf(id: number): string {
     const e = this.players[id];
@@ -377,7 +412,9 @@ export class GameState {
       id: e.id,
       alive: e.alive,
       hasTrail: e.trailHexes.length > 0,
-      colorIndex: e.id % PLAYER_COLORS.length,
+      colorIndex: e.colorIndex,
+      trailPatternIndex: Math.max(0, TRAIL_PATTERNS.indexOf(e.trailPattern)),
+      shapeIndex: Math.max(0, PLAYER_SHAPES.indexOf(e.shape)),
       x: e.pos.x,
       y: e.pos.y,
       heading: e.heading,
@@ -449,12 +486,13 @@ export class GameState {
   }
 
   /** % lãnh thổ của mọi thực thể (cho bảng xếp hạng). */
-  scores(): { id: number; name: string; pct: number; alive: boolean }[] {
+  scores(): { id: number; name: string; pct: number; alive: boolean; colorIndex: number }[] {
     return this.players.map((e) => ({
       id: e.id,
       name: e.name || e.color.name,
       pct: (this.ownedPlayable(e) / this.playable.size) * 100,
       alive: e.alive,
+      colorIndex: e.colorIndex,
     }));
   }
 
@@ -1022,6 +1060,10 @@ export class GameState {
     const homeDist = Math.hypot(e.pos.x - e.home.x, e.pos.y - e.home.y);
     const outside = e.trailHexes.length > 0;
     e.botDecisionTimer -= dt;
+    // Giữ chuyển động/va chạm ở nhịp render nhưng giới hạn phần AI tốn CPU (quét đối thủ,
+    // quét đuôi và né chướng ngại) ở tối đa 20 Hz. 20 bot không còn chạy khối này mỗi frame.
+    if (e.botDecisionTimer > 0) return;
+    e.botDecisionTimer = Math.max(prof.reaction, CONFIG.BOT.THINK_INTERVAL_MIN);
 
     // FLEE tức thời: đang ở ngoài (dễ tổn thương) mà có đối thủ áp sát → rút lui.
     if (outside && this.nearestEntity(e, prof.vision * 0.55, false)) {
@@ -1029,18 +1071,15 @@ export class GameState {
     }
 
     // Ra quyết định định kỳ (nhịp theo reaction; bot giỏi phản ứng nhanh hơn).
-    if (e.botDecisionTimer <= 0) {
-      e.botDecisionTimer = prof.reaction;
-      if (e.botState === "flee") {
-        if (!outside) e.botState = "expand"; // đã về đất an toàn
-      } else {
-        const prey = this.nearestEntity(e, prof.vision, true);
-        if (prey && this.rng() < prof.aggression) {
-          e.botState = "hunt";
-          e.huntId = prey.id;
-        } else if (e.botState === "hunt") {
-          e.botState = "expand"; // hết mục tiêu / không còn máu liều → bành trướng lại
-        }
+    if (e.botState === "flee") {
+      if (!outside) e.botState = "expand"; // đã về đất an toàn
+    } else {
+      const prey = this.nearestEntity(e, prof.vision, true);
+      if (prey && this.rng() < prof.aggression) {
+        e.botState = "hunt";
+        e.huntId = prey.id;
+      } else if (e.botState === "hunt") {
+        e.botState = "expand"; // hết mục tiêu / không còn máu liều → bành trướng lại
       }
     }
 

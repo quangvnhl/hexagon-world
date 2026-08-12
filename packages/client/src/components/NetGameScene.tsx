@@ -10,21 +10,29 @@
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { PerspectiveCamera } from "@react-three/drei";
 import * as THREE from "three";
-import { GameState, CONFIG, axialToPixel, parseKey } from "@hexagon/shared";
+import {
+  GameState,
+  CONFIG,
+  PLAYER_SHAPES,
+  TRAIL_PATTERNS,
+  axialToPixel,
+  parseKey,
+  type PlayerAppearance,
+} from "@hexagon/shared";
 import { HexGridView } from "./HexGridView";
 import { TerritoryBorders } from "./TerritoryBorders";
 import { BorderRim } from "./BorderRim";
 import { TrailLine } from "./TrailLine";
 import { PlayerCube } from "./PlayerCube";
+import { Effects } from "./Effects";
 import { CollisionDebug } from "./CollisionDebug";
 import { ArenaCollider } from "./ArenaCollider";
 import { MiniMap } from "./MiniMap";
 import { Joystick } from "./Joystick";
 import { HUD, Stats } from "./HUD";
 import { FpsMeterIfEnabled } from "./FpsMeter";
-import { MenuButton } from "./GameScene";
+import { GameCamera, MenuButton } from "./GameScene";
 import {
   NetClient,
   DEFAULT_SERVER_URL,
@@ -74,6 +82,7 @@ function NetLoop({
   spectateTargetRef,
   onStats,
   onPing,
+  onPlayerCount,
 }: {
   client: NetClient;
   game: GameState;
@@ -90,6 +99,7 @@ function NetLoop({
     kingHold: number
   ) => void;
   onPing: (ms: number) => void;
+  onPlayerCount: (count: number) => void;
 }) {
   const camera = useThree((s) => s.camera);
   const statAcc = useRef(0);
@@ -126,6 +136,11 @@ function NetLoop({
 
     // 2) Đẩy trạng thái thực thể: self (dự đoán) + others (nội suy).
     if (rs.self) {
+      game.setAppearance(rs.self.id, {
+        colorIndex: rs.self.colorIndex,
+        trailPattern: TRAIL_PATTERNS[rs.self.trailPatternIndex] ?? "solid",
+        shape: PLAYER_SHAPES[rs.self.shapeIndex] ?? "cube",
+      });
       game.applyEntity(
         rs.self.id,
         rs.self.x,
@@ -138,8 +153,14 @@ function NetLoop({
       // SAU applyTerritory (bước 1) + applyEntity nên frame vừa reconcile cũng không nhấp nháy.
       if (rs.self.alive && rs.self.hasTrail) game.predictTrailCell(rs.self.id);
     }
-    for (const o of rs.others)
+    for (const o of rs.others) {
+      game.setAppearance(o.id, {
+        colorIndex: o.colorIndex,
+        trailPattern: TRAIL_PATTERNS[o.trailPatternIndex] ?? "solid",
+        shape: PLAYER_SHAPES[o.shapeIndex] ?? "cube",
+      });
       game.applyEntity(o.id, o.x, o.y, o.heading, o.alive, o.hasTrail);
+    }
 
     const self = rs.self;
     const alive = self?.alive ?? false;
@@ -184,7 +205,8 @@ function NetLoop({
     // 4) Camera: bám self; nếu chết/xem thì bám thực thể dẫn đầu.
     let fx = self?.x ?? 0;
     let fy = self?.y ?? 0;
-    if (!alive || spectatingRef.current) {
+    // Khi vừa chết vẫn bám tọa độ self để xem hiệu ứng; chỉ đổi mục tiêu sau khi bấm Xem.
+    if (spectatingRef.current) {
       // Bám thực thể ĐANG CHỌN xem nếu còn sống; nếu chưa chọn / đã chết → bám thực thể dẫn đầu.
       const want = spectateTargetRef.current;
       const tid =
@@ -211,6 +233,7 @@ function NetLoop({
       statAcc.current = 0;
       onStats(game, localId, alive, rs.selfPrep, rs.kingHold);
       onPing(client.getPing());
+      onPlayerCount(rs.playerCount);
     }
   });
 
@@ -219,16 +242,19 @@ function NetLoop({
 
 export default function NetGameScene({
   playerName,
+  appearance,
   serverUrl,
   onExit,
 }: {
   playerName?: string;
+  appearance?: PlayerAppearance;
   serverUrl?: string;
   onExit?: () => void;
 }) {
   const client = useMemo(() => new NetClient(), []);
   // View-state dựng theo WELCOME (số ghế/bot của server). Tạo khi nhận WELCOME.
   const [game, setGame] = useState<GameState | null>(null);
+  const [playerCount, setPlayerCount] = useState(0);
   const gameRef = useRef<GameState | null>(null);
 
   const pointer = useRef<PointerRef>({ x: 0, y: 0, w: 1, h: 1, active: false });
@@ -272,6 +298,7 @@ export default function NetGameScene({
     phase: "playing",
     prep: 0,
     scores: [],
+    colorIndex: appearance?.colorIndex ?? 0,
     won: false,
     kingHold: CONFIG.WIN_HOLD_TIME,
     locked: false,
@@ -327,6 +354,7 @@ export default function NetGameScene({
         phase: inPrep ? "prep" : alive ? "playing" : "dead",
         prep: prepMs / 1000,
         scores: g.scores(),
+        colorIndex: g.players[localId]?.colorIndex ?? 0,
         won,
         kingHold, // đồng hồ giữ ngôi do server tính (đếm ngược 3 phút)
         locked: kid !== -1,
@@ -398,7 +426,7 @@ export default function NetGameScene({
         }
       },
     };
-    client.connect(url, playerName || "Bạn");
+    client.connect(url, playerName || "Bạn", appearance);
     return () => client.disconnect();
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, []);
@@ -410,6 +438,8 @@ export default function NetGameScene({
   }, [client]);
 
   const handlePointer = useCallback((e: React.PointerEvent<HTMLDivElement>) => {
+    // Touch do joystick nổi quản lý; không lưu điểm thả tay thành hướng chuột.
+    if (e.pointerType !== "mouse") return;
     const rect = e.currentTarget.getBoundingClientRect();
     pointer.current = {
       x: e.clientX - rect.left,
@@ -437,8 +467,8 @@ export default function NetGameScene({
   const onRestart = useCallback(() => {
     // Online: chơi lại = kết nối lại (nhận ghế mới, spawn mới).
     wonRef.current = { won: false, winnerId: -1 };
-    client.connect(url, playerName || "Bạn");
-  }, [client, url, playerName]);
+    client.connect(url, playerName || "Bạn", appearance);
+  }, [appearance, client, url, playerName]);
 
   const connected = status === "open" && playerId >= 0;
 
@@ -453,14 +483,8 @@ export default function NetGameScene({
         touchAction: "none",
       }}
     >
-      <Canvas>
-        <PerspectiveCamera
-          makeDefault
-          position={CONFIG.CAMERA.OFFSET}
-          fov={CONFIG.CAMERA.FOV}
-          near={0.1}
-          far={1000}
-        />
+      <Canvas dpr={[1, 1.5]}>
+        <GameCamera />
         <color attach="background" args={["#0a0e16"]} />
         <ambientLight intensity={0.8} />
         <directionalLight position={[4, 6, 12]} intensity={1.15} />
@@ -477,12 +501,14 @@ export default function NetGameScene({
               spectateTargetRef={spectateTargetRef}
               onStats={buildStats}
               onPing={setPing}
+              onPlayerCount={setPlayerCount}
             />
-            <HexGridView game={game} />
+            <HexGridView game={game} activeEntityId={playerId} />
             {CONFIG.DISPLAY.TERRITORY_BORDERS && <TerritoryBorders game={game} />}
             <BorderRim game={game} />
             <TrailLine game={game} />
             <PlayerCube game={game} />
+            {CONFIG.DISPLAY.PARTICLES && <Effects game={game} />}
             {CONFIG.DEBUG.COLLISION_VECTORS && (
               <>
                 <ArenaCollider />
@@ -511,37 +537,21 @@ export default function NetGameScene({
           <Joystick dir={joystick} />
         </>
       )}
-      {connected && game && started && <FpsMeterIfEnabled />}
+      <FpsMeterIfEnabled
+        statusText={
+          connected
+            ? `Online · ${ping} ms · ${playerCount || lobby.present} người`
+            : status === "connecting"
+              ? "Đang kết nối"
+              : status === "error"
+                ? "Lỗi kết nối"
+                : status === "closed"
+                  ? "Mất kết nối"
+                  : "Offline"
+        }
+      />
 
       {onExit && <MenuButton onExit={onExit} />}
-
-      {/* Chip trạng thái kết nối (góc dưới-phải) */}
-      <div
-        style={{
-          position: "absolute",
-          right: 16,
-          bottom: 16,
-          padding: "6px 14px",
-          borderRadius: 999,
-          background: "rgba(10,14,22,0.72)",
-          color: connected ? "#7CFFB0" : "#ffd23f",
-          fontFamily: "system-ui, sans-serif",
-          fontSize: 12,
-          fontWeight: 700,
-          pointerEvents: "none",
-          backdropFilter: "blur(6px)",
-        }}
-      >
-        {connected
-          ? `● Online · id ${playerId} · ${ping}ms`
-          : status === "connecting"
-          ? "Đang kết nối…"
-          : status === "error"
-          ? "Lỗi kết nối server"
-          : status === "closed"
-          ? "Mất kết nối"
-          : "…"}
-      </div>
 
       {/* Phòng chờ: đã kết nối, đã có ghế, nhưng chưa đủ người để bắt đầu. */}
       {connected && game && !started && (

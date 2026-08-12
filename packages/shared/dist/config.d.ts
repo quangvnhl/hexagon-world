@@ -12,7 +12,7 @@ export declare const CONFIG: {
      *  nên không "thò ra" ngoài tường. */
     readonly MAP_MARGIN: 0.6;
     /** Số bot đối kháng. */
-    readonly BOT_COUNT: 45;
+    readonly BOT_COUNT: 24;
     /** Bán kính cụm khởi đầu (cube distance). 1 = ô hiện tại + 6 ô kề = 7 ô. */
     readonly START_RADIUS: 1;
     /** Khoảng trống tối thiểu quanh điểm spawn (cube distance): không được có ô đất của
@@ -22,6 +22,18 @@ export declare const CONFIG: {
     readonly PREP_TIME: 3;
     /** Kích thước 1 hex (tâm → đỉnh), đơn vị world. */
     readonly HEX_SIZE: 1;
+    /** Hình thức viên lát lục giác và hiệu ứng nhấn khi người chơi bước sang ô mới. */
+    readonly GRID: {
+        /** Tỉ lệ bán kính phần nhìn thấy. Nhỏ hơn → khe giữa các ô trông dày hơn. */
+        readonly TILE_SCALE: 0.9;
+        /** Độ dày thật của khối lục giác (world units); mặt trên luôn nằm tại z = 0. */
+        readonly THICKNESS: 0.2;
+        /** Độ sâu tối đa và độ co ngang tại điểm nhún thấp nhất. */
+        readonly PRESS_DEPTH: 0.4;
+        readonly PRESS_SCALE: 0.95;
+        /** Tổng thời gian nhún xuống rồi trở lại vị trí ban đầu (giây). */
+        readonly PRESS_DURATION: 0.28;
+    };
     /** Cạnh cube nhân vật (người + bot), đơn vị world. Chỉnh to/nhỏ nhân vật ở đây. */
     readonly CUBE_SIZE: 1;
     /** Tốc độ di chuyển liên tục (world units / giây). Nhỏ = chậm. */
@@ -47,6 +59,8 @@ export declare const CONFIG: {
     };
     /** AI bot. */
     readonly BOT: {
+        /** Giới hạn AI tối đa 20 lần/giây; hướng đã chốt vẫn được nội suy mỗi frame. */
+        readonly THINK_INTERVAL_MIN: 0.05;
         /** Tốc độ quay đầu RIÊNG của bot (rad/giây) — TÁCH khỏi TURN_RATE của người chơi để
          *  chỉnh độ nhanh nhẹn của bot mà không đổi cảm giác lái của người. Cao hơn → bot
          *  khép được vòng LỚN (bành trướng nhanh) nhưng nếu quá cao dễ curl vào đuôi mình. */
@@ -71,13 +85,18 @@ export declare const CONFIG: {
         readonly aggression: 10;
         readonly vision: 20;
         readonly skill: 1;
-        readonly reaction: 0.01;
+        readonly reaction: 0.1;
     }];
     /** Camera perspective: vị trí lệch so với người chơi (x, sau, cao) + fov + độ mượt pan.
      *  Rotation KHOÁ cố định (chỉ pan theo người chơi, không xoay theo chuột). */
     readonly CAMERA: {
         readonly OFFSET: [number, number, number];
-        readonly FOV: 42;
+        readonly FOV: 80;
+        /**
+         * Hệ số mở rộng vùng nhìn khi mobile xoay ngang.
+         * 1 = giữ đúng bề rộng tương đương bản dọc; >1 = camera xa/rộng hơn.
+         */
+        readonly MOBILE_LANDSCAPE_VIEW_SCALE: 2.5;
         readonly LERP: 0.15;
         /** Hệ số phóng lớn camera theo diện tích — 1 = gần nhất, MAX = xa nhất khi đạt
          *  ngưỡng King (giống agar.io: càng lớn càng thấy rộng sân). */
@@ -90,6 +109,12 @@ export declare const CONFIG: {
     readonly EFFECTS: {
         readonly PARTICLES: 14;
         readonly LIFE: 0.8;
+        /** Số giọt 3D và thời gian tồn tại của vụ nổ khi một nhân vật chết. */
+        readonly DEATH_DROPS: 28;
+        readonly DEATH_LIFE: 1.25;
+        readonly DEATH_GRAVITY: 12;
+        /** Chờ hiệu ứng chết kết thúc rồi mới phủ popup hồi sinh/xem (giây). */
+        readonly DEATH_POPUP_DELAY: 2;
     };
     /** Vạch vàng ngăn cách hai vùng ĐẤT cùng màu khác chủ: bề rộng (world units), màu, và
      *  độ phát sáng (dùng blending cộng dồn) — WIDTH lớn = vạch dày, GLOW lớn = sáng hơn. */
@@ -172,3 +197,18 @@ export interface PlayerColor {
 }
 /** players[0] = người chơi (xanh dương). Còn lại cho bot. */
 export declare const PLAYER_COLORS: PlayerColor[];
+/** Các hình 3D người chơi được phép chọn ở màn Welcome. Thứ tự là contract trên wire. */
+export declare const PLAYER_SHAPES: readonly ["cube", "cylinder", "sphere", "cone", "fly", "bee", "ladybug"];
+export type PlayerShape = (typeof PLAYER_SHAPES)[number];
+/** Pattern texture của ống đuôi. Thứ tự là contract trên wire. */
+export declare const TRAIL_PATTERNS: readonly ["solid", "stripes", "dots", "chevrons"];
+export type TrailPattern = (typeof TRAIL_PATTERNS)[number];
+/** Ngoại hình được dùng chung giữa Welcome, mô phỏng local và JOIN multiplayer. */
+export interface PlayerAppearance {
+    colorIndex: number;
+    trailPattern: TrailPattern;
+    shape: PlayerShape;
+}
+export declare const DEFAULT_PLAYER_APPEARANCE: PlayerAppearance;
+/** Chuẩn hoá dữ liệu từ localStorage/network về đúng palette và danh sách hình cho phép. */
+export declare function sanitizePlayerAppearance(value?: Partial<PlayerAppearance> | null): PlayerAppearance;

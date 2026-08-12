@@ -3,155 +3,157 @@
 import { useEffect, useRef, useState } from "react";
 import { CONFIG } from "@hexagon/shared";
 
+type DirectionRef = React.MutableRefObject<{ active: boolean; angle: number }>;
+
 /**
- * Joystick ảo cho thiết bị cảm ứng.
- * - Base (vòng ngoài) cố định góc dưới-trái, knob (núm) kéo được bên trong.
- * - Dùng pointer events + setPointerCapture nên chạy cho cả chạm lẫn chuột.
- * - Báo hướng ra ngoài qua ref `dir` (không re-render mỗi frame): khi kéo quá
- *   vùng chết thì active=true & angle=<hướng world>; nhả tay/trong vùng chết → false.
+ * Joystick nổi cho mobile: chạm vào bất kỳ vùng trống nào của màn chơi để đặt tâm joystick.
+ * Touch không đi xuyên sang mouse steering và các control tương tác (Menu/HUD/button/input) được bỏ qua.
  */
-export function Joystick({
-  dir,
-}: {
-  dir: React.MutableRefObject<{ active: boolean; angle: number }>;
-}) {
-  // Chỉ hiện trên thiết bị con trỏ "thô" (chạm). Tính trong useEffect để né SSR.
+export function Joystick({ dir }: { dir: DirectionRef }) {
   const [coarse, setCoarse] = useState(false);
+  const [origin, setOrigin] = useState<{ x: number; y: number } | null>(null);
+  const [knob, setKnob] = useState({ x: 0, y: 0 });
+  const originRef = useRef<{ x: number; y: number } | null>(null);
+  const activePointer = useRef<number | null>(null);
+  const { SIZE, KNOB, DEADZONE } = CONFIG.JOYSTICK;
+  const radius = SIZE / 2;
+
   useEffect(() => {
-    setCoarse(
-      typeof window !== "undefined" &&
-        window.matchMedia("(pointer: coarse)").matches
-    );
+    const media = window.matchMedia("(pointer: coarse)");
+    const sync = () => setCoarse(media.matches);
+    sync();
+    media.addEventListener("change", sync);
+    return () => media.removeEventListener("change", sync);
   }, []);
 
-  const { SIZE, KNOB, DEADZONE } = CONFIG.JOYSTICK;
-  const R = SIZE / 2; // bán kính base (px)
-  const baseRef = useRef<HTMLDivElement>(null);
-  const activePointer = useRef<number | null>(null);
-  // Vị trí núm (px) so với tâm base — dùng state để vẽ, ref để tính trong handler.
-  const [knob, setKnob] = useState({ x: 0, y: 0 });
+  useEffect(() => {
+    if (!coarse) return;
 
-  const update = (clientX: number, clientY: number) => {
-    const el = baseRef.current;
-    if (!el) return;
-    const rect = el.getBoundingClientRect();
-    const cx = rect.left + rect.width / 2;
-    const cy = rect.top + rect.height / 2;
-    let ox = clientX - cx;
-    let oy = clientY - cy;
-    const len = Math.hypot(ox, oy);
-    // Kẹp offset về trong bán kính base để núm không văng ra ngoài.
-    if (len > R) {
-      ox = (ox / len) * R;
-      oy = (oy / len) * R;
-    }
-    setKnob({ x: ox, y: oy });
-
-    if (len < R * DEADZONE) {
-      // Trong vùng chết → coi như không điều khiển.
+    const reset = () => {
+      activePointer.current = null;
+      originRef.current = null;
       dir.current.active = false;
-      return;
-    }
-    // Quy đổi màn hình → world: DOM có trục y hướng XUỐNG, nên đảo dấu oy để
-    // "kéo LÊN" tương ứng world +y (giống di chuột ra xa). Xấp xỉ này đủ tốt cho
-    // camera top-down nghiêng của MVP (không cần chiếu raycast thực sự).
-    dir.current.angle = Math.atan2(-oy, ox);
-    dir.current.active = true;
-  };
+      setKnob({ x: 0, y: 0 });
+      setOrigin(null);
+    };
 
-  const onDown = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (activePointer.current !== null) return;
-    activePointer.current = e.pointerId;
-    e.currentTarget.setPointerCapture(e.pointerId);
-    update(e.clientX, e.clientY);
-  };
-  const onMove = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (activePointer.current !== e.pointerId) return;
-    update(e.clientX, e.clientY);
-  };
-  const onUp = (e: React.PointerEvent<HTMLDivElement>) => {
-    if (activePointer.current !== e.pointerId) return;
-    activePointer.current = null;
-    dir.current.active = false;
-    setKnob({ x: 0, y: 0 }); // núm bật về tâm (có transition)
-  };
+    const update = (clientX: number, clientY: number) => {
+      const center = originRef.current;
+      if (!center) return;
+      let ox = clientX - center.x;
+      let oy = clientY - center.y;
+      const length = Math.hypot(ox, oy);
+      if (length > radius) {
+        ox = (ox / length) * radius;
+        oy = (oy / length) * radius;
+      }
+      setKnob({ x: ox, y: oy });
+      if (length < radius * DEADZONE) {
+        dir.current.active = false;
+        return;
+      }
+      dir.current.angle = Math.atan2(-oy, ox);
+      dir.current.active = true;
+    };
 
-  // Không phải thiết bị chạm → không render gì, chuột desktop hoạt động như cũ.
-  if (!coarse) return null;
+    const isInteractive = (target: EventTarget | null) =>
+      target instanceof Element &&
+      target.closest("button,input,textarea,select,a,[role='button']") !== null;
+
+    const onPointerDown = (event: PointerEvent) => {
+      if (
+        event.pointerType === "mouse" ||
+        activePointer.current !== null ||
+        isInteractive(event.target)
+      )
+        return;
+      activePointer.current = event.pointerId;
+      const nextOrigin = { x: event.clientX, y: event.clientY };
+      originRef.current = nextOrigin;
+      setOrigin(nextOrigin);
+      setKnob({ x: 0, y: 0 });
+      dir.current.active = false;
+      event.preventDefault();
+    };
+
+    const onPointerMove = (event: PointerEvent) => {
+      if (activePointer.current !== event.pointerId) return;
+      update(event.clientX, event.clientY);
+      event.preventDefault();
+    };
+
+    const onPointerEnd = (event: PointerEvent) => {
+      if (activePointer.current !== event.pointerId) return;
+      reset();
+      event.preventDefault();
+    };
+
+    window.addEventListener("pointerdown", onPointerDown, {
+      capture: true,
+      passive: false,
+    });
+    window.addEventListener("pointermove", onPointerMove, {
+      capture: true,
+      passive: false,
+    });
+    window.addEventListener("pointerup", onPointerEnd, {
+      capture: true,
+      passive: false,
+    });
+    window.addEventListener("pointercancel", onPointerEnd, {
+      capture: true,
+      passive: false,
+    });
+    window.addEventListener("blur", reset);
+    return () => {
+      window.removeEventListener("pointerdown", onPointerDown, true);
+      window.removeEventListener("pointermove", onPointerMove, true);
+      window.removeEventListener("pointerup", onPointerEnd, true);
+      window.removeEventListener("pointercancel", onPointerEnd, true);
+      window.removeEventListener("blur", reset);
+      activePointer.current = null;
+      originRef.current = null;
+      dir.current.active = false;
+    };
+  }, [DEADZONE, coarse, dir, radius]);
+
+  if (!coarse || !origin) return null;
 
   return (
-    <>
-      {/* Base + knob góc dưới-trái */}
+    <div
+      aria-hidden
+      style={{
+        position: "fixed",
+        left: origin.x - radius,
+        top: origin.y - radius,
+        width: SIZE,
+        height: SIZE,
+        borderRadius: "50%",
+        background: "rgba(10,14,22,0.5)",
+        border: "1px solid rgba(120,140,180,0.4)",
+        boxShadow: "0 8px 28px rgba(0,0,0,0.28)",
+        backdropFilter: "blur(6px)",
+        WebkitBackdropFilter: "blur(6px)",
+        pointerEvents: "none",
+        userSelect: "none",
+        zIndex: 20,
+      }}
+    >
       <div
-        ref={baseRef}
-        onPointerDown={onDown}
-        onPointerMove={onMove}
-        onPointerUp={onUp}
-        onPointerCancel={onUp}
         style={{
-          position: "fixed",
-          left: "max(20px, env(safe-area-inset-left))",
-          bottom: "max(20px, env(safe-area-inset-bottom))",
-          width: SIZE,
-          height: SIZE,
+          position: "absolute",
+          left: "50%",
+          top: "50%",
+          width: KNOB,
+          height: KNOB,
+          marginLeft: -KNOB / 2,
+          marginTop: -KNOB / 2,
           borderRadius: "50%",
-          background: "rgba(10,14,22,0.5)",
-          border: "1px solid rgba(120,140,180,0.35)",
-          backdropFilter: "blur(6px)",
-          WebkitBackdropFilter: "blur(6px)",
-          touchAction: "none",
-          userSelect: "none",
-          zIndex: 20,
+          background: "rgba(120,160,230,0.62)",
+          border: "1px solid rgba(220,232,255,0.72)",
+          transform: `translate(${knob.x}px, ${knob.y}px)`,
         }}
-      >
-        {/* Núm */}
-        <div
-          style={{
-            position: "absolute",
-            left: "50%",
-            top: "50%",
-            width: KNOB,
-            height: KNOB,
-            marginLeft: -KNOB / 2,
-            marginTop: -KNOB / 2,
-            borderRadius: "50%",
-            background: "rgba(120,160,230,0.55)",
-            border: "1px solid rgba(200,220,255,0.6)",
-            transform: `translate(${knob.x}px, ${knob.y}px)`,
-            transition:
-              activePointer.current === null ? "transform 0.12s ease-out" : "none",
-            pointerEvents: "none",
-          }}
-        />
-      </div>
-
-      {/* Nút "kỹ năng" placeholder góc dưới-phải — CHƯA hoạt động.
-          Dùng vật phẩm/kỹ năng (totem) sẽ thêm ở phase sau (totem là Phase 4). */}
-      <div
-        aria-disabled
-        style={{
-          position: "fixed",
-          right: "max(20px, env(safe-area-inset-right))",
-          bottom: "max(20px, env(safe-area-inset-bottom))",
-          width: KNOB + 8,
-          height: KNOB + 8,
-          borderRadius: "50%",
-          display: "flex",
-          alignItems: "center",
-          justifyContent: "center",
-          fontSize: 24,
-          background: "rgba(10,14,22,0.5)",
-          border: "1px solid rgba(120,140,180,0.35)",
-          backdropFilter: "blur(6px)",
-          WebkitBackdropFilter: "blur(6px)",
-          color: "rgba(200,215,240,0.6)",
-          opacity: 0.6,
-          userSelect: "none",
-          zIndex: 20,
-        }}
-      >
-        🔒
-      </div>
-    </>
+      />
+    </div>
   );
 }

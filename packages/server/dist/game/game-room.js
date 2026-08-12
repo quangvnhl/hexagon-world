@@ -23,13 +23,14 @@ class GameRoom {
     get capacity() {
         return this.maxHumans;
     }
-    join(name = "") {
+    join(name = "", appearance) {
         for (let id = 0; id < this.maxHumans; id++) {
             if (!this.seats[id]) {
                 this.seats[id] = true;
                 this.lastSeq[id] = 0;
                 this.pending[id] = null;
                 this.gs.setName(id, name.trim() || `Người ${id + 1}`);
+                this.gs.setAppearance(id, appearance);
                 if (this.gs.players[id]?.phase === "dead")
                     this.gs.respawn(id);
                 return id;

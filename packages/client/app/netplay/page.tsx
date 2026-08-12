@@ -5,6 +5,11 @@
 
 import { useEffect, useState } from "react";
 import dynamic from "next/dynamic";
+import {
+  DEFAULT_PLAYER_APPEARANCE,
+  sanitizePlayerAppearance,
+  type PlayerAppearance,
+} from "@hexagon/shared";
 
 const NetGameScene = dynamic(() => import("@/components/NetGameScene"), {
   ssr: false,
@@ -12,9 +17,23 @@ const NetGameScene = dynamic(() => import("@/components/NetGameScene"), {
 
 export default function NetplayPage() {
   const [name, setName] = useState("Bạn");
+  const [ready, setReady] = useState(false);
+  const [appearance, setAppearance] = useState<PlayerAppearance>(
+    DEFAULT_PLAYER_APPEARANCE
+  );
   useEffect(() => {
     const saved = window.localStorage.getItem("hexagon.name");
     if (saved) setName(saved);
+    const savedAppearance = window.localStorage.getItem("hexagon.appearance");
+    if (savedAppearance) {
+      try {
+        setAppearance(sanitizePlayerAppearance(JSON.parse(savedAppearance)));
+      } catch {
+        // Giữ mặc định.
+      }
+    }
+    setReady(true);
   }, []);
-  return <NetGameScene playerName={name} />;
+  if (!ready) return null;
+  return <NetGameScene playerName={name} appearance={appearance} />;
 }

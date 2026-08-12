@@ -50,8 +50,8 @@ describe("protocol SNAPSHOT (nhị phân)", () => {
       ackSeq: 42,
       selfPrep: 1500,
       entities: [
-        { id: 0, alive: true, hasTrail: true, colorIndex: 3, x: 12.5, y: -7.25, heading: 0.75, score: 1234 },
-        { id: 5, alive: false, hasTrail: false, colorIndex: 1, x: -60.1, y: 33.3, heading: -2.9, score: 0 },
+        { id: 0, alive: true, hasTrail: true, colorIndex: 3, trailPatternIndex: 2, shapeIndex: 4, x: 12.5, y: -7.25, heading: 0.75, score: 1234 },
+        { id: 5, alive: false, hasTrail: false, colorIndex: 1, trailPatternIndex: 3, shapeIndex: 3, x: -60.1, y: 33.3, heading: -2.9, score: 0 },
       ],
     };
     const buf = encodeSnapshot(snap);
@@ -67,6 +67,8 @@ describe("protocol SNAPSHOT (nhị phân)", () => {
     expect(a.alive).toBe(true);
     expect(a.hasTrail).toBe(true);
     expect(a.colorIndex).toBe(3);
+    expect(a.trailPatternIndex).toBe(2);
+    expect(a.shapeIndex).toBe(4);
     expect(a.x).toBeCloseTo(12.5, 3);
     expect(a.y).toBeCloseTo(-7.25, 3);
     expect(a.heading).toBeCloseTo(0.75, 4);
@@ -75,6 +77,8 @@ describe("protocol SNAPSHOT (nhị phân)", () => {
     const b = d.entities[1];
     expect(b.alive).toBe(false);
     expect(b.hasTrail).toBe(false);
+    expect(b.trailPatternIndex).toBe(3);
+    expect(b.shapeIndex).toBe(3);
     expect(b.x).toBeCloseTo(-60.1, 2);
     expect(b.score).toBe(0);
   });

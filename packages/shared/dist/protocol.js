@@ -49,8 +49,9 @@ function decodeInput(buf) {
 //   client hiện đếm ngược "3,2,1" và biết vì sao chưa di chuyển được.
 //   kingHold = số 0.1-giây (deciseconds) còn phải giữ ngôi KING để thắng, do server tính
 //   (client không chạy mô phỏng nên phải nhận số này để đếm ngược đồng hồ 3 phút).
-// Mỗi entity (20 bytes): u8 id | u8 flags | u8 colorIndex | u8 _pad
-//                        | f32 x | f32 y | f32 heading | u16 score | u16 _pad
+// Mỗi entity (20 bytes): u8 id | u8 flags | u8 colorIndex | u8 shapeIndex
+//                        | f32 x | f32 y | f32 heading | u16 score
+//                        | u8 trailPatternIndex | u8 _pad
 exports.SNAPSHOT_HEADER = 15;
 exports.SNAPSHOT_ENTITY = 20;
 /** Bit cờ của mỗi entity trong snapshot. */
@@ -79,12 +80,13 @@ function encodeSnapshot(s) {
         dv.setUint8(o, e.id & 0xff);
         dv.setUint8(o + 1, flags);
         dv.setUint8(o + 2, e.colorIndex & 0xff);
-        dv.setUint8(o + 3, 0);
+        dv.setUint8(o + 3, e.shapeIndex & 0xff);
         dv.setFloat32(o + 4, e.x, true);
         dv.setFloat32(o + 8, e.y, true);
         dv.setFloat32(o + 12, e.heading, true);
         dv.setUint16(o + 16, Math.min(0xffff, Math.max(0, e.score | 0)), true);
-        dv.setUint16(o + 18, 0, true);
+        dv.setUint8(o + 18, e.trailPatternIndex & 0xff);
+        dv.setUint8(o + 19, 0);
         o += exports.SNAPSHOT_ENTITY;
     }
     return buf;
@@ -109,10 +111,12 @@ function decodeSnapshot(buf) {
             alive: (flags & exports.FLAG.ALIVE) !== 0,
             hasTrail: (flags & exports.FLAG.HAS_TRAIL) !== 0,
             colorIndex: dv.getUint8(o + 2),
+            shapeIndex: dv.getUint8(o + 3),
             x: dv.getFloat32(o + 4, true),
             y: dv.getFloat32(o + 8, true),
             heading: dv.getFloat32(o + 12, true),
             score: dv.getUint16(o + 16, true),
+            trailPatternIndex: dv.getUint8(o + 18),
         });
         o += exports.SNAPSHOT_ENTITY;
     }

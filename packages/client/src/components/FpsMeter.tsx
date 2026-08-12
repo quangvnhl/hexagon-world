@@ -8,8 +8,14 @@ import { CONFIG } from "@hexagon/shared";
  * (ghi thẳng textContent trong vòng rAF riêng). Dùng để đo tụt khung khi đông bot. Màu
  * đổi theo mức: ≥50 xanh, ≥30 vàng, <30 đỏ. Bật/tắt qua CONFIG.DISPLAY.FPS.
  */
-export const FpsMeter = memo(function FpsMeter() {
+export const FpsMeter = memo(function FpsMeter({
+  statusText = "Local",
+}: {
+  statusText?: string;
+}) {
   const ref = useRef<HTMLDivElement>(null);
+  const statusRef = useRef(statusText);
+  statusRef.current = statusText;
 
   useEffect(() => {
     let raf = 0;
@@ -32,7 +38,7 @@ export const FpsMeter = memo(function FpsMeter() {
         if (el) {
           const color = fps >= 50 ? "#7CFFB0" : fps >= 30 ? "#ffd23f" : "#ff6b6b";
           el.style.color = color;
-          el.textContent = `${fps} FPS · ${worst.toFixed(1)} ms`;
+          el.textContent = `${fps} FPS · ${worst.toFixed(1)} ms · ${statusRef.current}`;
         }
         frames = 0;
         acc = 0;
@@ -49,27 +55,27 @@ export const FpsMeter = memo(function FpsMeter() {
       ref={ref}
       style={{
         position: "absolute",
-        left: 16,
-        top: 16,
-        padding: "6px 12px",
+        left: "max(10px, env(safe-area-inset-left))",
+        top: "max(8px, env(safe-area-inset-top))",
+        padding: "4px 8px",
         borderRadius: 999,
         background: "rgba(10,14,22,0.72)",
         color: "#7CFFB0",
         fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-        fontSize: 12,
+        fontSize: 10,
         fontWeight: 700,
-        letterSpacing: 0.5,
+        letterSpacing: 0.2,
         pointerEvents: "none",
         backdropFilter: "blur(6px)",
         zIndex: 20,
       }}
     >
-      — FPS
+      — FPS · {statusText}
     </div>
   );
 });
 
 /** Tiện: chỉ render khi cờ bật (giữ JSX gọi gọn ở scene). */
-export function FpsMeterIfEnabled() {
-  return CONFIG.DISPLAY.FPS ? <FpsMeter /> : null;
+export function FpsMeterIfEnabled({ statusText }: { statusText?: string }) {
+  return CONFIG.DISPLAY.FPS ? <FpsMeter statusText={statusText} /> : null;
 }
