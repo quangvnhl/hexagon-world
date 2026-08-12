@@ -47,6 +47,19 @@ scripts/verify-logic.ts   # test logic độc lập
 Next.js 15 · React 19 · React Three Fiber 9 · Three.js · TypeScript.
 Chi tiết & lý do: [.implements/01-tech-stack.md](.implements/01-tech-stack.md).
 
+## Development
+
+### Tunnel
+
+```bash
+cloudflared tunnel --url http://localhost:3890
+```
+### Debug Server
+```bash
+docker compose logs --no-color --tail=200 server
+```
+
+
 ## Tiếp theo
 
 Xem lộ trình multiplayer (server authoritative, `ws`/WebRTC, binary protocol, totem,
