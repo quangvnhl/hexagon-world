@@ -19,6 +19,14 @@ let HealthController = class HealthController {
     }
     live() { return { ok: true, role: (0, runtime_config_1.runtimeConfig)().role, region: (0, runtime_config_1.runtimeConfig)().region }; }
     ping() { return { ok: true, region: (0, runtime_config_1.runtimeConfig)().region, time: Date.now() }; }
+    publicConfig() {
+        const cfg = (0, runtime_config_1.runtimeConfig)();
+        return {
+            googleRedirectUri: cfg.google.redirectUri,
+            postLoginRedirectUri: cfg.google.postLoginRedirectUri,
+            regions: cfg.regions,
+        };
+    }
     async ready() { const database = (0, runtime_config_1.runtimeConfig)().role === "game" ? true : await this.db.health(); return { ok: database, database }; }
 };
 exports.HealthController = HealthController;
@@ -34,6 +42,12 @@ __decorate([
     __metadata("design:paramtypes", []),
     __metadata("design:returntype", void 0)
 ], HealthController.prototype, "ping", null);
+__decorate([
+    (0, common_1.Get)("public-config"),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", []),
+    __metadata("design:returntype", void 0)
+], HealthController.prototype, "publicConfig", null);
 __decorate([
     (0, common_1.Get)("ready"),
     __metadata("design:type", Function),
