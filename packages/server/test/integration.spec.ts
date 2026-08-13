@@ -3,14 +3,18 @@ import { WebSocket } from "ws";
 import {
   decodeControl,
   decodeSnapshot,
+  decodeTerritory,
+  decodeTerritoryDelta,
   encodeControl,
   encodeInput,
   peekTag,
   TAG,
   type S2CControl,
   type Snapshot,
+  type WorldUiEntity,
 } from "@hexagon/shared";
 import { NetServer } from "../src/net/net-server";
+import { GameRoom } from "../src/game/game-room";
 import { MAX_PLAYERS, ONLINE_BOTS } from "../src/config";
 
 /**
@@ -26,6 +30,9 @@ class TestClient {
   readonly ws: WebSocket;
   welcome: Extract<S2CControl, { t: "welcome" }> | null = null;
   readonly snapshots: Snapshot[] = [];
+  territoryKeyframes = 0;
+  territoryDeltas = 0;
+  worldUi: WorldUiEntity[] = [];
 
   constructor(url: string) {
     this.ws = new WebSocket(url);
@@ -35,10 +42,15 @@ class TestClient {
         if (peekTag(data) === TAG.SNAPSHOT) {
           const s = decodeSnapshot(data);
           if (s) this.snapshots.push(s);
+        } else if (peekTag(data) === TAG.TERRITORY) {
+          if (decodeTerritory(data)) this.territoryKeyframes++;
+        } else if (peekTag(data) === TAG.TERRITORY_DELTA) {
+          if (decodeTerritoryDelta(data)) this.territoryDeltas++;
         }
       } else {
         const msg = decodeControl<S2CControl>(data.toString());
-        if (msg && msg.t === "welcome") this.welcome = msg;
+        if (msg?.t === "welcome") this.welcome = msg;
+        else if (msg?.t === "world_ui") this.worldUi = msg.entities;
       }
     });
   }
@@ -114,7 +126,7 @@ describe("NetServer integration (real ws, deterministic ticks)", () => {
   });
 
   it("cấp ghế riêng, di chuyển thực thể, ackSeq/tick tiến, liệt kê đủ thực thể", async () => {
-    server = new NetServer({ port: 0 });
+    server = new NetServer({ port: 0, entityAoiRadius: Number.POSITIVE_INFINITY });
     await server.listen();
     const port = server.port;
     expect(port).toBeGreaterThan(0);
@@ -138,6 +150,16 @@ describe("NetServer integration (real ws, deterministic ticks)", () => {
     expect(idA).not.toBe(idB);
     expect(a.welcome!.tickRate).toBe(24);
     expect(a.welcome!.arenaRadius).toBeGreaterThan(0);
+    await waitFor(() => a.worldUi.length > 0, 3000, "world ui roster");
+    const expectedWorldUiIds = [
+      idA,
+      idB,
+      ...Array.from({ length: ONLINE_BOTS }, (_, i) => MAX_PLAYERS + i),
+    ].sort((x, y) => x - y);
+    expect(a.worldUi.map((e) => e.id).sort((x, y) => x - y)).toEqual(
+      expectedWorldUiIds,
+    );
+    expect(a.worldUi.find((e) => e.id === idA)?.colorIndex).toBe(4);
 
     // JOIN đã TẠO một phòng đang hoạt động.
     expect(server.roomCount).toBe(1);
@@ -192,6 +214,8 @@ describe("NetServer integration (real ws, deterministic ticks)", () => {
     expect(ownLast.colorIndex).toBe(4);
     expect(ownLast.trailPatternIndex).toBe(2);
     expect(ownLast.shapeIndex).toBe(4);
+    expect(a.territoryKeyframes).toBeGreaterThanOrEqual(1);
+    expect(a.territoryDeltas).toBeGreaterThan(0);
 
     // Entity của A cũng xuất hiện trong snapshot của B (thế giới dùng chung).
     const bSeesA = b.snapshots[b.snapshots.length - 1].entities.find(
@@ -202,6 +226,44 @@ describe("NetServer integration (real ws, deterministic ticks)", () => {
     // selfPrep có mặt trong snapshot (số hợp lệ, đã hết prep sau 96 tick → 0).
     expect(typeof lastA.selfPrep).toBe("number");
     expect(lastA.selfPrep).toBe(0);
+  });
+
+  it("entity AoI lọc thực thể xa theo từng client nhưng luôn giữ self", () => {
+    const room = new GameRoom(3, 0);
+    const idA = room.join("A")!;
+    const idB = room.join("B")!;
+    const idC = room.join("C")!;
+
+    room.gameState.players[idA].pos = { x: 0, y: 0 };
+    room.gameState.players[idB].pos = { x: 6, y: 0 };
+    room.gameState.players[idC].pos = { x: 30, y: 0 };
+
+    const snapA = room.buildSnapshotFor(idA, 10);
+    expect(snapA.entities.map((entity) => entity.id)).toEqual([idA, idB]);
+    expect(snapA.entities.some((entity) => entity.id === idA)).toBe(true);
+
+    const snapC = room.buildSnapshotFor(idC, 10);
+    expect(snapC.entities.map((entity) => entity.id)).toEqual([idC]);
+    expect(snapC.entities.some((entity) => entity.id === idC)).toBe(true);
+
+    // UI toàn cục không theo AoI nhưng không bao giờ chứa ghế người đang trống.
+    expect(room.worldUiEntities().map((entity) => entity.id)).toEqual([idA, idB, idC]);
+    room.leave(idB);
+    expect(room.worldUiEntities().map((entity) => entity.id)).toEqual([idA, idC]);
+  });
+
+  it("giữ entity đang tham gia khi self chết để bảo toàn spectator", () => {
+    const room = new GameRoom(3, 0);
+    const idA = room.join("A")!;
+    const idB = room.join("B")!;
+    const idC = room.join("C")!;
+    room.gameState.players[idA].pos = { x: 0, y: 0 };
+    room.gameState.players[idB].pos = { x: 60, y: 0 };
+    room.gameState.players[idC].pos = { x: -60, y: 0 };
+    room.gameState.players[idA].phase = "dead";
+
+    const snap = room.buildSnapshotFor(idA, 10);
+    expect(snap.entities.map((entity) => entity.id)).toEqual([idA, idB, idC]);
   });
 
   it("VÒNG ĐỜI: phòng tạo khi JOIN, ĐÓNG khi hết người", async () => {

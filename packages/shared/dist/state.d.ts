@@ -227,6 +227,11 @@ export declare class GameState {
     /** Xử lý khi đầu e bước vào ô mới. Trả về true nếu e chết. */
     private enterHex;
     private captureFor;
+    /**
+     * Xử lý ngay một cụm đầu cùng nằm trên một ô trung lập. Không dùng khoảng cách vật lý:
+     * chỉ cần pixelToAxial của các đầu cho ra cùng HexKey thì toàn bộ cụm chết đồng thời.
+     */
+    private resolveNeutralSameHex;
     /** Chủ đất hạ KẺ XÂM NHẬP: nếu đầu đối thủ b đang đứng trên ĐẤT của a và sát đầu a
      *  (≤ KILL_RADIUS) → b chết. Chủ đất bất khả xâm phạm trên sân nhà. */
     private resolveHeadCollisions;

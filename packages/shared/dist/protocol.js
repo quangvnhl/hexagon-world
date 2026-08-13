@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.TERRITORY_CELL = exports.TERRITORY_HEADER = exports.FLAG = exports.SNAPSHOT_ENTITY = exports.SNAPSHOT_HEADER = exports.INPUT_BYTES = exports.encodeControl = exports.TAG = void 0;
+exports.TERRITORY_DELTA_OPERATION = exports.TERRITORY_DELTA_HEADER = exports.TERRITORY_CELL = exports.TERRITORY_HEADER = exports.FLAG = exports.SNAPSHOT_ENTITY = exports.SNAPSHOT_HEADER = exports.INPUT_BYTES = exports.encodeControl = exports.TAG = void 0;
 exports.decodeControl = decodeControl;
 exports.encodeInput = encodeInput;
 exports.decodeInput = decodeInput;
@@ -8,12 +8,15 @@ exports.encodeSnapshot = encodeSnapshot;
 exports.decodeSnapshot = decodeSnapshot;
 exports.encodeTerritory = encodeTerritory;
 exports.decodeTerritory = decodeTerritory;
+exports.encodeTerritoryDelta = encodeTerritoryDelta;
+exports.decodeTerritoryDelta = decodeTerritoryDelta;
 exports.peekTag = peekTag;
 /** Byte tag đầu tiên của mỗi *binary frame*. */
 exports.TAG = {
     INPUT: 2,
     SNAPSHOT: 102,
     TERRITORY: 103,
+    TERRITORY_DELTA: 104,
 };
 const encodeControl = (m) => JSON.stringify(m);
 exports.encodeControl = encodeControl;
@@ -169,6 +172,85 @@ function decodeTerritory(buf) {
     return { tick, cells };
 }
 /** Byte tag đầu của một *binary frame* (để phân loại INPUT/SNAPSHOT/TERRITORY). */
+// ---- TERRITORY delta (server -> client, binary) ---------------------------
+// Header (15 bytes): u8 tag(104) | u32 tick | u32 baseRevision | u32 revision
+//                    | u16 operationCount
+// Each operation (7 bytes): u8 operation (0=upsert, 1=remove) | i16 q | i16 r
+//                           | u8 owner | u8 kind
+// For remove operations owner/kind are reserved and encoded as zero. A delta may
+// only be applied when the client's current revision equals `baseRevision`.
+exports.TERRITORY_DELTA_HEADER = 15;
+exports.TERRITORY_DELTA_OPERATION = 7;
+function encodeTerritoryDelta(delta) {
+    const n = delta.operations.length;
+    if (n > 0xffff) {
+        throw new RangeError("Territory delta cannot contain more than 65535 operations");
+    }
+    const buf = new ArrayBuffer(exports.TERRITORY_DELTA_HEADER + n * exports.TERRITORY_DELTA_OPERATION);
+    const dv = new DataView(buf);
+    dv.setUint8(0, exports.TAG.TERRITORY_DELTA);
+    dv.setUint32(1, delta.tick >>> 0, true);
+    dv.setUint32(5, delta.baseRevision >>> 0, true);
+    dv.setUint32(9, delta.revision >>> 0, true);
+    dv.setUint16(13, n, true);
+    let o = exports.TERRITORY_DELTA_HEADER;
+    for (const change of delta.operations) {
+        if (change.operation === "upsert") {
+            dv.setUint8(o, 0);
+            dv.setInt16(o + 1, change.cell.q, true);
+            dv.setInt16(o + 3, change.cell.r, true);
+            dv.setUint8(o + 5, change.cell.owner & 0xff);
+            dv.setUint8(o + 6, change.cell.kind);
+        }
+        else {
+            dv.setUint8(o, 1);
+            dv.setInt16(o + 1, change.q, true);
+            dv.setInt16(o + 3, change.r, true);
+            dv.setUint8(o + 5, 0);
+            dv.setUint8(o + 6, 0);
+        }
+        o += exports.TERRITORY_DELTA_OPERATION;
+    }
+    return buf;
+}
+function decodeTerritoryDelta(buf) {
+    const dv = toDataView(buf);
+    if (dv.byteLength < exports.TERRITORY_DELTA_HEADER ||
+        dv.getUint8(0) !== exports.TAG.TERRITORY_DELTA) {
+        return null;
+    }
+    const tick = dv.getUint32(1, true);
+    const baseRevision = dv.getUint32(5, true);
+    const revision = dv.getUint32(9, true);
+    const n = dv.getUint16(13, true);
+    const expectedBytes = exports.TERRITORY_DELTA_HEADER + n * exports.TERRITORY_DELTA_OPERATION;
+    if (dv.byteLength < expectedBytes)
+        return null;
+    const operations = [];
+    let o = exports.TERRITORY_DELTA_HEADER;
+    for (let i = 0; i < n; i++) {
+        const operation = dv.getUint8(o);
+        const q = dv.getInt16(o + 1, true);
+        const r = dv.getInt16(o + 3, true);
+        if (operation === 0) {
+            const kind = dv.getUint8(o + 6);
+            if (kind !== 0 && kind !== 1)
+                return null;
+            operations.push({
+                operation: "upsert",
+                cell: { q, r, owner: dv.getUint8(o + 5), kind },
+            });
+        }
+        else if (operation === 1) {
+            operations.push({ operation: "remove", q, r });
+        }
+        else {
+            return null;
+        }
+        o += exports.TERRITORY_DELTA_OPERATION;
+    }
+    return { tick, baseRevision, revision, operations };
+}
 function peekTag(buf) {
     const dv = toDataView(buf);
     return dv.byteLength > 0 ? dv.getUint8(0) : -1;

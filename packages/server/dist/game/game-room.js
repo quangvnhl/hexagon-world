@@ -46,6 +46,20 @@ class GameRoom {
         }
         return out;
     }
+    worldUiEntities() {
+        return this.gs.snapshotEntities()
+            .filter((e) => e.id >= this.maxHumans || this.seats[e.id])
+            .map((e) => ({
+            id: e.id,
+            x: e.x,
+            y: e.y,
+            alive: e.alive,
+            score: e.score,
+            colorIndex: e.colorIndex,
+            trailPatternIndex: e.trailPatternIndex,
+            shapeIndex: e.shapeIndex,
+        }));
+    }
     reviveSeat(entityId) {
         if (entityId < 0 || entityId >= this.maxHumans)
             return false;
@@ -106,16 +120,38 @@ class GameRoom {
         this.gs.update(dt);
         this.tickCount++;
     }
-    buildSnapshotFor(entityId) {
+    buildSnapshotFor(entityId, entityAoiRadius = Number.POSITIVE_INFINITY) {
         const ack = entityId >= 0 && entityId < this.maxHumans ? this.lastSeq[entityId] : 0;
         const e = this.gs.players[entityId];
         const selfPrep = e && e.phase === "prep" ? Math.max(0, Math.ceil(e.prepRemaining * 1000)) : 0;
+        const allEntities = this.gs.snapshotEntities();
+        let entities = allEntities;
+        if (Number.isFinite(entityAoiRadius) && entityAoiRadius > 0) {
+            const self = allEntities.find((entity) => entity.id === entityId);
+            const isParticipating = (id) => id >= this.maxHumans || Boolean(this.seats[id]);
+            if (self?.alive) {
+                const radiusSq = entityAoiRadius * entityAoiRadius;
+                const kingId = this.gs.kingId();
+                entities = allEntities.filter((entity) => {
+                    if (!isParticipating(entity.id))
+                        return false;
+                    if (entity.id === entityId || entity.id === kingId)
+                        return true;
+                    const dx = entity.x - self.x;
+                    const dy = entity.y - self.y;
+                    return dx * dx + dy * dy <= radiusSq;
+                });
+            }
+            else {
+                entities = allEntities.filter((entity) => isParticipating(entity.id));
+            }
+        }
         return {
             tick: this.tickCount,
             ackSeq: ack,
             selfPrep,
             kingHold: this.gs.kingHoldRemaining,
-            entities: this.gs.snapshotEntities(),
+            entities,
         };
     }
 }

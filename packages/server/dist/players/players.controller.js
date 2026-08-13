@@ -23,14 +23,15 @@ let PlayersController = class PlayersController {
     }
     async me(req) {
         const player = await this.sessions.resolve(req);
-        const [profile, stats, wallets, inventory, loadout] = await Promise.all([
+        const [profile, stats, progression, wallets, inventory, loadout] = await Promise.all([
             this.db.from("player_profiles").select("*").eq("player_id", player.id).single(),
             this.db.from("player_stats").select("*").eq("player_id", player.id).single(),
+            this.db.from("player_progression").select("total_xp,level,updated_at").eq("player_id", player.id).single(),
             this.db.from("player_wallets").select("currency_code,balance").eq("player_id", player.id),
             this.db.from("player_inventory").select("quantity,created_at,shop_items(id,sku,type,asset_key,name,rarity)").eq("player_id", player.id),
             this.db.from("player_loadouts").select("*").eq("player_id", player.id).single(),
         ]);
-        return { player, profile: profile.data, stats: stats.data, wallets: wallets.data ?? [], inventory: inventory.data ?? [], loadout: loadout.data };
+        return { player, profile: profile.data, stats: stats.data, progression: progression.data, wallets: wallets.data ?? [], inventory: inventory.data ?? [], loadout: loadout.data };
     }
     async profile(req, body) {
         const player = await this.sessions.resolve(req);

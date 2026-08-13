@@ -2,7 +2,9 @@
 
 ## Mục tiêu và nguyên tắc UX
 
-- Chỉ tải AdsGram khi ứng dụng thật sự chạy trong Telegram Mini App và đã có `NEXT_PUBLIC_ADSGRAM_BLOCK_ID`.
+- Chỉ tải AdsGram khi ứng dụng thật sự chạy trong Telegram Mini App theo contract
+  [15-telegram-platform-gating-and-adsgram.md](15-telegram-platform-gating-and-adsgram.md)
+  và placement tương ứng đã có Block ID.
 - Không hiện quảng cáo giữa lúc người chơi đang điều khiển, trong 2 giây hiệu ứng chết, hoặc khi trận online còn đang diễn ra.
 - Không biến quảng cáo thành lợi thế pay-to-win trong chế độ Nhiều người.
 - Mọi lỗi tải/hiển thị quảng cáo phải fail-open: đóng trạng thái loading và cho người chơi tiếp tục bình thường.
@@ -24,7 +26,9 @@ Có thể đặt trong Welcome dưới dạng mục `Nhiệm vụ nhận thưở
 ## Kiến trúc triển khai
 
 1. Đăng ký publisher/platform và tạo riêng Block ID cho Rewarded, Interstitial và Task trong AdsGram Partner.
-2. Khai báo biến môi trường riêng cho client, ví dụ `NEXT_PUBLIC_ADSGRAM_REWARDED_BLOCK_ID` và `NEXT_PUBLIC_ADSGRAM_INTERSTITIAL_BLOCK_ID`; không hardcode ID trong component.
+2. Dùng hai biến placement ban đầu:
+   `NEXT_PUBLIC_ADSGRAM_REWARDED_LOBBY_RANDOM_BLOCK_ID` và
+   `NEXT_PUBLIC_ADSGRAM_INTERSTITIAL_END_GAME_BLOCK_ID`; không hardcode ID trong component.
 3. Tạo `src/lib/adsgram.ts` làm adapter duy nhất: lazy-load SDK, khởi tạo controller một lần, chống gọi `show()` đồng thời, timeout và chuẩn hóa kết quả.
 4. Tạo `AdProvider`/hook ở cấp `app/page.tsx`; UI chỉ gửi intent (`showRewarded`, `showInterstitial`) và không truy cập `window.Adsgram` trực tiếp.
 5. Thêm state machine `idle → loading → showing → rewarded/closed/error`, khóa joystick/input khi quảng cáo đang phủ màn hình và tự mở khóa ở `finally`.
@@ -44,10 +48,10 @@ Có thể đặt trong Welcome dưới dạng mục `Nhiệm vụ nhận thưở
 - Rollout theo feature flag 5% → 25% → 100%; theo dõi retention, thời lượng phiên, lỗi SDK, FPS/nhiệt và doanh thu trên mỗi người dùng.
 - Chỉ tăng tần suất sau khi retention và tỷ lệ thoát tại placement ổn định.
 
-## Điều kiện cần trước khi code AdsGram thật
+## Trạng thái triển khai ban đầu
 
-- Các Block ID theo từng format.
-- Quyết định phần thưởng ngoài trận và nơi lưu số dư.
-- Endpoint backend để xác thực Telegram `initData` và cấp thưởng idempotent.
-- Quy tắc cooldown/frequency cap cuối cùng.
-
+- Reward Lobby Random và Interstitial End Game đã có contract placement.
+- Reward URL chưa có; callback client không được cấp coin/XP/item.
+- Interstitial chỉ chạy sau end-game có KING, không chạy ở death/revive.
+- Trước khi cấp reward có giá trị vẫn cần quyết định phần thưởng, Reward URL hoặc
+  endpoint xác minh tương ứng và cơ chế idempotent backend.

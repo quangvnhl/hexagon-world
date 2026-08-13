@@ -9,15 +9,19 @@ import {
   encodeControl,
   encodeSnapshot,
   encodeTerritory,
+  encodeTerritoryDelta,
   type C2SControl,
   type PlayerAppearance,
   type S2CControl,
+  type TerritoryCell,
 } from "@hexagon/shared";
 import { GameRoom } from "../game/game-room";
-import { DT, TICK_RATE, MAX_PLAYERS, ONLINE_BOTS, MIN_PLAYERS } from "../config";
+import { DT, TICK_RATE, MAX_PLAYERS, ONLINE_BOTS, MIN_PLAYERS, ENTITY_AOI_RADIUS } from "../config";
 
 /** Gửi keyframe TERRITORY mỗi bao nhiêu tick (throttle). 6 tick @24Hz ≈ 4 Hz. */
 const TERRITORY_EVERY = 6;
+/** Minimap/xếp hạng toàn cục ở ~5 Hz; scene 3D vẫn dùng snapshot AoI đầy đủ tick-rate. */
+const WORLD_UI_EVERY = 5;
 /** Giữ phòng ĐÃ KẾT THÚC thêm chút để client xem kết quả rồi đóng (ms). */
 const ENDED_GRACE_MS = 8000;
 
@@ -77,6 +81,8 @@ interface ConnState {
   entityId: number | null;
   room: Room | null;
   identity: AuthenticatedJoin | null;
+  territoryRevision: number;
+  territoryCells: Map<string, TerritoryCell>;
 }
 
 interface NetOpts {
@@ -89,6 +95,8 @@ interface NetOpts {
   region?: string;
   serverVersion?: string;
   onMatchResult?: (result: MatchResultEnvelope) => void | Promise<void>;
+  /** Bán kính entity AoI; mặc định lấy từ ENTITY_AOI_RADIUS. */
+  entityAoiRadius?: number;
 }
 
 /**
@@ -116,6 +124,7 @@ export class NetServer {
   private readonly region: string;
   private readonly serverVersion: string;
   private readonly onMatchResult?: (result: MatchResultEnvelope) => void | Promise<void>;
+  private readonly entityAoiRadius: number;
 
   /** Bật vòng lặp thời gian thực (start()); false ở chế độ test (listen() + tickOnce()). */
   private autoLoop = false;
@@ -136,6 +145,7 @@ export class NetServer {
     this.region = opts.region ?? "local";
     this.serverVersion = opts.serverVersion ?? "dev";
     this.onMatchResult = opts.onMatchResult;
+    this.entityAoiRadius = opts.entityAoiRadius ?? ENTITY_AOI_RADIUS;
     this.wss = opts.httpServer
       ? new WebSocketServer({ server: opts.httpServer, ...(opts.path ? { path: opts.path } : {}) })
       : new WebSocketServer({ port: opts.port ?? 0 });
@@ -176,6 +186,7 @@ export class NetServer {
     if (!r || !r.started) return;
     this.stepRoom(r);
     this.broadcast(r);
+    this.broadcastWorldUiIfDue(r);
     this.flushTerritoryIfDue(r);
   }
 
@@ -300,6 +311,15 @@ export class NetServer {
   /** Phát danh sách TÊN người chơi (roster) cho mọi client trong phòng. */
   private broadcastRoster(r: Room): void {
     this.broadcastControl(r, { t: "roster", players: r.room.roster() });
+    this.broadcastWorldUi(r);
+  }
+
+  private broadcastWorldUiIfDue(r: Room): void {
+    if (r.room.tick % WORLD_UI_EVERY === 0) this.broadcastWorldUi(r);
+  }
+
+  private broadcastWorldUi(r: Room): void {
+    this.broadcastControl(r, { t: "world_ui", entities: r.room.worldUiEntities() });
   }
 
   private markEnded(r: Room): void {
@@ -373,6 +393,7 @@ export class NetServer {
     }
     if (stepped) {
       this.broadcast(r);
+      this.broadcastWorldUiIfDue(r);
       this.flushTerritoryIfDue(r);
     }
     // Phòng đã kết thúc → đóng sau grace (client kịp xem kết quả).
@@ -391,7 +412,13 @@ export class NetServer {
 
   // ---- Kết nối ----
   private onConnection(ws: WebSocket): void {
-    this.conns.set(ws, { entityId: null, room: null, identity: null });
+    this.conns.set(ws, {
+      entityId: null,
+      room: null,
+      identity: null,
+      territoryRevision: 0,
+      territoryCells: new Map(),
+    });
     ws.on("message", (data: Buffer, isBinary: boolean) => {
       if (isBinary) this.onBinary(ws, data);
       else this.onText(ws, data.toString());
@@ -455,6 +482,8 @@ export class NetServer {
       else this.broadcastLobby(r);
     } else if (msg.t === "ping") {
       this.send(ws, { t: "pong", time: msg.time });
+    } else if (msg.t === "territory_resync") {
+      if (conn.room) this.sendTerritory(ws, conn.room);
     } else if (msg.t === "revive") {
       if (conn.room && conn.entityId !== null)
         conn.room.room.reviveSeat(conn.entityId);
@@ -497,7 +526,7 @@ export class NetServer {
       const conn = this.conns.get(ws);
       if (!conn || conn.entityId === null) continue;
       if (ws.readyState !== WebSocket.OPEN) continue;
-      ws.send(encodeSnapshot(r.room.buildSnapshotFor(conn.entityId)), {
+      ws.send(encodeSnapshot(r.room.buildSnapshotFor(conn.entityId, this.entityAoiRadius)), {
         binary: true,
       });
     }
@@ -516,17 +545,64 @@ export class NetServer {
   }
 
   private broadcastTerritory(r: Room): void {
-    const buf = encodeTerritory(r.room.tick, r.room.gameState.territoryCells());
     for (const ws of r.conns) {
-      if (ws.readyState === WebSocket.OPEN) ws.send(buf, { binary: true });
+      if (ws.readyState === WebSocket.OPEN) this.sendTerritoryDelta(ws, r);
     }
   }
 
   private sendTerritory(ws: WebSocket, r: Room): void {
     if (ws.readyState !== WebSocket.OPEN) return;
-    ws.send(encodeTerritory(r.room.tick, r.room.gameState.territoryCells()), {
+    const cells = r.room.gameState.territoryCells();
+    ws.send(encodeTerritory(r.room.tick, cells), {
       binary: true,
     });
+    const conn = this.conns.get(ws);
+    if (conn) {
+      conn.territoryRevision = 0;
+      conn.territoryCells = new Map(cells.map((cell) => [this.territoryKey(cell.q, cell.r), cell]));
+    }
+  }
+
+  /** Diff theo từng connection: full keyframe khi JOIN/resync, sau đó chỉ gửi ô thay đổi. */
+  private sendTerritoryDelta(ws: WebSocket, r: Room): void {
+    const conn = this.conns.get(ws);
+    if (!conn) return;
+    const cells = r.room.gameState.territoryCells();
+    const current = new Map(cells.map((cell) => [this.territoryKey(cell.q, cell.r), cell]));
+    const operations: Array<
+      | { operation: "upsert"; cell: TerritoryCell }
+      | { operation: "remove"; q: number; r: number }
+    > = [];
+
+    for (const [key, previous] of conn.territoryCells) {
+      if (!current.has(key)) operations.push({ operation: "remove", q: previous.q, r: previous.r });
+    }
+    for (const [key, cell] of current) {
+      const previous = conn.territoryCells.get(key);
+      if (!previous || previous.owner !== cell.owner || previous.kind !== cell.kind) {
+        operations.push({ operation: "upsert", cell });
+      }
+    }
+    if (operations.length === 0) return;
+
+    // Nếu delta lớn hơn full keyframe thì full frame vừa nhỏ hơn vừa là điểm resync sạch.
+    if (15 + operations.length * 7 >= 7 + cells.length * 6) {
+      this.sendTerritory(ws, r);
+      return;
+    }
+    const nextRevision = (conn.territoryRevision + 1) >>> 0;
+    ws.send(encodeTerritoryDelta({
+      tick: r.room.tick,
+      baseRevision: conn.territoryRevision,
+      revision: nextRevision,
+      operations,
+    }), { binary: true });
+    conn.territoryRevision = nextRevision;
+    conn.territoryCells = current;
+  }
+
+  private territoryKey(q: number, r: number): string {
+    return `${q},${r}`;
   }
 
   /** Phát event khi chuyển trạng thái (chết/đổi King/thắng). Thắng → đánh dấu phòng kết thúc. */

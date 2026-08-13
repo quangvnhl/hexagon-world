@@ -130,4 +130,12 @@ export class InterpolationBuffer {
   clear(): void {
     this.frames = [];
   }
+
+  /**
+   * Teleport/spawn một entity: thay tọa độ của entity trong TOÀN BỘ lịch sử đang giữ để
+   * sample ở mốc trễ không thể nội suy từ vị trí chết cũ sang vị trí hồi sinh mới.
+   */
+  teleportEntity(id: number, state: InterpState): void {
+    for (const frame of this.frames) frame.entities.set(id, { ...state });
+  }
 }

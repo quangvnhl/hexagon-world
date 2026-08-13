@@ -5,6 +5,7 @@ import { GameState } from "@hexagon/shared";
 import { CONFIG } from "@hexagon/shared";
 import { parseKey, axialToPixel } from "@hexagon/shared";
 import { ARENA_R, ARENA_INRADIUS } from "@hexagon/shared";
+import type { WorldUiEntity } from "@hexagon/shared";
 
 const SQRT3 = Math.sqrt(3);
 
@@ -22,12 +23,17 @@ const rgb = (c: readonly [number, number, number]) =>
 export const MiniMap = memo(function MiniMap({
   game,
   localId = 0,
+  entities,
 }: {
   game: GameState;
   /** Id thực thể người chơi cục bộ (0 khi chơi đơn; = playerId khi online). */
   localId?: number;
+  /** Trạng thái toàn phòng nhịp thấp; không bị giới hạn bởi entity AoI của scene 3D. */
+  entities?: readonly WorldUiEntity[];
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
+  const entitiesRef = useRef(entities);
+  entitiesRef.current = entities;
 
   useEffect(() => {
     // Sân lục giác flat-top: rộng nhất = bán kính ngoại tiếp (trục x), cao nhất =
@@ -133,12 +139,16 @@ export const MiniMap = memo(function MiniMap({
       ctx.stroke();
 
       // Chấm cho mọi thực thể còn sống (người chơi nổi bật hơn: viền trắng + to hơn).
-      for (const e of game.players) {
+      const dots = entitiesRef.current ?? game.players;
+      for (const e of dots) {
         if (!e.alive) continue;
-        const [px, py] = toPx(e.pos.x, e.pos.y);
+        const wx = "pos" in e ? e.pos.x : e.x;
+        const wy = "pos" in e ? e.pos.y : e.y;
+        const [px, py] = toPx(wx, wy);
         const human = e.id === localId;
         const r = (human ? 3.5 : 2.6) * dpr;
-        ctx.fillStyle = human ? "#ffffff" : rgb(e.color.owned);
+        const color = game.players[e.id]?.color.owned;
+        ctx.fillStyle = human ? "#ffffff" : color ? rgb(color) : "#ffffff";
         ctx.beginPath();
         ctx.arc(px, py, r, 0, Math.PI * 2);
         ctx.fill();

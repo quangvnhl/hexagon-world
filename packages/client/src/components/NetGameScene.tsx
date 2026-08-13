@@ -19,6 +19,7 @@ import {
   axialToPixel,
   parseKey,
   type PlayerAppearance,
+  type WorldUiEntity,
 } from "@hexagon/shared";
 import { HexGridView } from "./HexGridView";
 import { TerritoryBorders } from "./TerritoryBorders";
@@ -35,6 +36,7 @@ import { FpsMeterIfEnabled } from "./FpsMeter";
 import { GameCamera, MenuButton } from "./GameScene";
 import { notifyTelegramHaptic } from "@/lib/telegram";
 import { TelegramGameHaptics } from "./TelegramGameHaptics";
+import { EndGameInterstitial } from "./EndGameInterstitial";
 import {
   NetClient,
   DEFAULT_SERVER_URL,
@@ -85,6 +87,7 @@ function NetLoop({
   onStats,
   onPing,
   onPlayerCount,
+  visibleEntityIdsRef,
 }: {
   client: NetClient;
   game: GameState;
@@ -102,6 +105,7 @@ function NetLoop({
   ) => void;
   onPing: (ms: number) => void;
   onPlayerCount: (count: number) => void;
+  visibleEntityIdsRef: React.MutableRefObject<ReadonlySet<number>>;
 }) {
   const camera = useThree((s) => s.camera);
   const statAcc = useRef(0);
@@ -128,6 +132,13 @@ function NetLoop({
     const dt = Math.min(dtRaw, 0.05);
     const localId = localIdRef.current;
     const rs = client.getRenderState();
+
+    // Snapshot AoI là nguồn quyết định object nào được phép tồn tại trong scene ở frame này.
+    // Entity biến mất khỏi AoI phải ẩn ngay, không được giữ tọa độ cuối cùng trong GameState-view.
+    const visibleIds = new Set<number>();
+    if (rs.self) visibleIds.add(rs.self.id);
+    for (const o of rs.others) visibleIds.add(o.id);
+    visibleEntityIdsRef.current = visibleIds;
 
     // 1) Dựng lại lưới đất/đuôi khi có keyframe TERRITORY mới.
     const terr = client.getTerritory();
@@ -259,6 +270,7 @@ export default function NetGameScene({
   // View-state dựng theo WELCOME (số ghế/bot của server). Tạo khi nhận WELCOME.
   const [game, setGame] = useState<GameState | null>(null);
   const [playerCount, setPlayerCount] = useState(0);
+  const [worldUi, setWorldUi] = useState<WorldUiEntity[]>([]);
   const gameRef = useRef<GameState | null>(null);
 
   const pointer = useRef<PointerRef>({ x: 0, y: 0, w: 1, h: 1, active: false });
@@ -267,6 +279,8 @@ export default function NetGameScene({
     angle: 0,
   });
   const localIdRef = useRef(0);
+  const visibleEntityIdsRef = useRef<ReadonlySet<number>>(new Set());
+  const rosterIdsRef = useRef<Set<number>>(new Set());
   const spectatingRef = useRef(false);
   // Id thực thể ĐANG XEM khi khán giả (-1 = tự bám thực thể dẫn đầu). Nút ◀ ▶ đổi giá trị này.
   const spectateTargetRef = useRef(-1);
@@ -357,7 +371,20 @@ export default function NetGameScene({
         deaths: deathCountRef.current,
         phase: inPrep ? "prep" : alive ? "playing" : "dead",
         prep: prepMs / 1000,
-        scores: g.scores(),
+        scores: (() => {
+          const global = client.getWorldUi();
+          if (global.length === 0) {
+            const active = rosterIdsRef.current;
+            return g.scores().filter((score) => active.has(score.id));
+          }
+          return global.map((e) => ({
+            id: e.id,
+            name: g.nameOf(e.id),
+            pct: (e.score / g.playable.size) * 100,
+            alive: e.alive,
+            colorIndex: e.colorIndex,
+          }));
+        })(),
         colorIndex: g.players[localId]?.colorIndex ?? 0,
         won,
         kingHold, // đồng hồ giữ ngôi do server tính (đếm ngược 3 phút)
@@ -388,6 +415,8 @@ export default function NetGameScene({
         const g = makeBlankView(w.maxPlayers, w.botCount);
         gameRef.current = g;
         setGame(g);
+        setWorldUi([]);
+        rosterIdsRef.current = new Set();
         // Reset trạng thái vòng chơi mới (quay lại phòng chờ).
         spectatingRef.current = false;
         spectateTargetRef.current = -1;
@@ -401,7 +430,21 @@ export default function NetGameScene({
       onRoster: (players) => {
         // Áp TÊN người chơi vào view (hiển thị đúng tên ở bảng xếp hạng / popup).
         const g = gameRef.current;
+        rosterIdsRef.current = new Set(players.map((p) => p.id));
         if (g) for (const p of players) g.setName(p.id, p.name);
+      },
+      onWorldUi: (entities) => {
+        const g = gameRef.current;
+        if (g) {
+          for (const e of entities) {
+            g.setAppearance(e.id, {
+              colorIndex: e.colorIndex,
+              trailPattern: TRAIL_PATTERNS[e.trailPatternIndex] ?? "solid",
+              shape: PLAYER_SHAPES[e.shapeIndex] ?? "cube",
+            });
+          }
+        }
+        setWorldUi(entities);
       },
       onLobby: (l) => {
         // Chuyển CHỜ→VÀO TRẬN (ván mới) → dọn sạch trạng thái chết/thắng của ván trước.
@@ -511,12 +554,13 @@ export default function NetGameScene({
               onStats={buildStats}
               onPing={setPing}
               onPlayerCount={setPlayerCount}
+              visibleEntityIdsRef={visibleEntityIdsRef}
             />
             <HexGridView game={game} activeEntityId={playerId} />
             {CONFIG.DISPLAY.TERRITORY_BORDERS && <TerritoryBorders game={game} />}
             <BorderRim game={game} />
             <TrailLine game={game} />
-            <PlayerCube game={game} />
+            <PlayerCube game={game} visibleEntityIds={visibleEntityIdsRef} />
             {CONFIG.DISPLAY.PARTICLES && <Effects game={game} />}
             <TelegramGameHaptics
               game={game}
@@ -547,10 +591,16 @@ export default function NetGameScene({
               playerName={playerName}
             />
           )}
-          {CONFIG.DISPLAY.MINIMAP && <MiniMap game={game} localId={playerId} />}
+          {CONFIG.DISPLAY.MINIMAP && (
+            <MiniMap game={game} localId={playerId} entities={worldUi} />
+          )}
           <Joystick dir={joystick} />
         </>
       )}
+      <EndGameInterstitial
+        won={stats.won}
+        kingReached={stats.king || Boolean(stats.kingName)}
+      />
       <FpsMeterIfEnabled
         statusText={
           connected

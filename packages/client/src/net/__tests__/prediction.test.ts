@@ -42,6 +42,20 @@ describe("reconcile", () => {
 });
 
 describe("Predictor", () => {
+  it("respawn reset drops old-life inputs and renders exactly at spawn", () => {
+    const p = new Predictor();
+    p.reset({ x: 2, y: 3, heading: 0 });
+    p.applyInput(1, 0.5, 0.05);
+    expect(p.pendingCount()).toBe(1);
+
+    const spawn = { x: 35, y: -18, heading: 1.1 };
+    p.reset(spawn);
+
+    expect(p.pendingCount()).toBe(0);
+    expect(p.getPredicted()).toEqual(spawn);
+    expect(p.getRenderHead()).toEqual(spawn);
+  });
+
   it("applyInput dự đoán tức thì; onServerState hòa giải khớp replay", () => {
     const p = new Predictor();
     const start = { x: 0, y: 0, heading: 0 };

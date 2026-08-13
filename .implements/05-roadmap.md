@@ -32,14 +32,23 @@ Xem báo cáo: [REPORT-pha-2.md](REPORT-pha-2.md).
 
 ## Pha 3 — Tối ưu mạng
 - [ ] Binary protocol (DataView → FlatBuffers)
-- [ ] Delta compression + area-of-interest (chỉ gửi thứ trong tầm nhìn)
+- [x] Delta compression lãnh thổ: full keyframe khi join/resync, delta theo revision cho từng connection
+- [x] Entity area-of-interest phía server: snapshot lọc theo bán kính cấu hình, luôn giữ self/KING
+- [ ] Territory area-of-interest theo vùng camera (hiện đã delta nhưng chưa lọc ô theo camera)
+- [ ] Spectator interest target + spawn/despawn/tombstone rõ ràng cho entity ngoài AoI
+- [ ] Backpressure, protocol version và đo bytes/giây trước khi quyết định FlatBuffers
 - [ ] (Tùy chọn) WebRTC DataChannel unreliable cho vị trí
 
 ## Pha 4 — Meta & vật phẩm
 - [ ] Totem: teleport gate, slow totem, spy radar
 - [ ] Redis: matchmaking + leaderboard realtime
-- [ ] PostgreSQL + Prisma: account, XP, skin, tiến trình
-- [ ] Lobby/Store (React), Auth
+- [x] Supabase PostgreSQL: account đa nguồn, session, match history, catalog, wallet, inventory, loadout
+- [x] XP/progression: rule cấu hình trong DB, level curve, ledger idempotent và API `/v1/me`
+- [x] Skin/tài sản: màu, model, trail pattern, shop coin và Telegram Stars
+- [x] Auth: Google OAuth cho web, Telegram initData, guest hạn chế backend
+- [x] Lobby/Store React cơ bản
+- [ ] Lobby hoàn chỉnh: ready/cancel/reconnect/private room/party
+- [ ] Hoàn tất migration + seed + webhook/OAuth E2E trên môi trường production
 
 ## Pha 5 — Vận hành
 - [ ] Chống gian lận (server authoritative + sanity check)

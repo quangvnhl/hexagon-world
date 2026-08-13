@@ -22,6 +22,7 @@ import { PlayerPreview3D } from "./PlayerPreview3D";
 import { getTelegramUserName } from "@/lib/telegram";
 import { ensureTelegramSession, getMe, startGoogleLogin, type BackendMe } from "@/lib/backend";
 import { ShopPanel } from "./ShopPanel";
+import { LobbyRewardedAdButton } from "./LobbyRewardedAdButton";
 
 export type GameMode = "solo" | "online";
 type AppearanceTab = "color" | "shape" | "trail";
@@ -584,6 +585,7 @@ export function StartPanel({
           {starting ? "Đang kết nối…" : mode === "online" ? "🔍 Tìm phòng chơi" : "▶ Bắt đầu chơi"}
         </button>
         {startError && <div role="alert" style={{ color: "#ff8b9a", fontSize: 11, marginTop: 7, textAlign: "center" }}>{startError}</div>}
+        <LobbyRewardedAdButton />
 
         {/* Địa chỉ server nằm sau hành động tìm phòng để giao diện chính gọn hơn. */}
         {mode === "online" && (

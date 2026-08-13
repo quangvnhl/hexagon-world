@@ -174,3 +174,110 @@ describe("GameState: bots khởi tạo & hoạt động (đa thực thể)", () 
     );
   });
 });
+
+describe("GameState: neutral head collisions", () => {
+  it("kills players in the same neutral hex even when farther apart than KILL_RADIUS", () => {
+    const g = new GameState(undefined, 0, 2);
+    g.applyTerritory([
+      { q: -10, r: 0, owner: 0, kind: 0 },
+      { q: 10, r: 0, owner: 1, kind: 0 },
+    ]);
+    const [a, b] = g.players;
+    a.phase = "playing";
+    b.phase = "playing";
+    a.pos = { x: -0.6, y: 0 };
+    b.pos = { x: 0.6, y: 0 };
+    a.currentHex = { q: 0, r: 0 };
+    b.currentHex = { q: 0, r: 0 };
+    expect(Math.hypot(a.pos.x - b.pos.x, a.pos.y - b.pos.y)).toBeGreaterThan(
+      CONFIG.KILL_RADIUS
+    );
+
+    g.update(0);
+
+    expect(a.phase).toBe("dead");
+    expect(b.phase).toBe("dead");
+    expect(a.deathCause).toBe("headMutual");
+    expect(b.deathCause).toBe("headMutual");
+  });
+
+  it("does not use physical distance for heads in different neutral hexes", () => {
+    const g = new GameState(undefined, 0, 2);
+    g.applyTerritory([
+      { q: -10, r: 0, owner: 0, kind: 0 },
+      { q: 10, r: 0, owner: 1, kind: 0 },
+    ]);
+    const [a, b] = g.players;
+    a.phase = "playing";
+    b.phase = "playing";
+    // Hai điểm nằm sát hai phía của ranh giới q=0/q=1, gần hơn KILL_RADIUS.
+    a.pos = { x: 0.86, y: 0 };
+    b.pos = { x: 0.87, y: 0 };
+    a.currentHex = { q: 0, r: 0 };
+    b.currentHex = { q: 1, r: 0 };
+    expect(Math.hypot(a.pos.x - b.pos.x, a.pos.y - b.pos.y)).toBeLessThan(
+      CONFIG.KILL_RADIUS
+    );
+
+    g.update(0);
+
+    expect(a.phase).toBe("playing");
+    expect(b.phase).toBe("playing");
+  });
+
+  it("kills both players before either one can be treated as a trail cutter", () => {
+    const g = new GameState(undefined, 0, 2);
+    const neutral = { q: 0, r: 0 };
+    const neutralPoint = axialToPixel(neutral, CONFIG.HEX_SIZE);
+    const approach = { q: 1, r: 0 };
+    const approachPoint = axialToPixel(approach, CONFIG.HEX_SIZE);
+
+    g.applyTerritory([
+      { q: -10, r: 0, owner: 0, kind: 0 },
+      { q: 10, r: 0, owner: 1, kind: 0 },
+      { ...neutral, owner: 0, kind: 1 },
+    ]);
+    const [a, b] = g.players;
+    a.phase = "playing";
+    a.pos = { ...neutralPoint };
+    a.currentHex = neutral;
+    b.phase = "playing";
+    b.pos = { ...approachPoint };
+    b.currentHex = approach;
+
+    (g as unknown as { stepEntity(e: typeof b, x: number, y: number): void })
+      .stepEntity(b, neutralPoint.x, neutralPoint.y);
+
+    expect(a.phase).toBe("dead");
+    expect(b.phase).toBe("dead");
+    expect(a.deathCause).toBe("headMutual");
+    expect(b.deathCause).toBe("headMutual");
+    expect(a.killerId).toBe(-1);
+    expect(b.killerId).toBe(-1);
+    expect(a.owned.size).toBe(0);
+    expect(b.owned.size).toBe(0);
+    expect(g.territoryCells()).toHaveLength(0);
+  });
+
+  it("kills every player in a three-player neutral collision group", () => {
+    const g = new GameState(undefined, 0, 3);
+    const neutralPoint = axialToPixel({ q: 0, r: 0 }, CONFIG.HEX_SIZE);
+    g.applyTerritory([
+      { q: -10, r: 0, owner: 0, kind: 0 },
+      { q: 10, r: 0, owner: 1, kind: 0 },
+      { q: 0, r: 10, owner: 2, kind: 0 },
+    ]);
+    for (const e of g.players) {
+      e.phase = "playing";
+      e.pos = { ...neutralPoint };
+      e.currentHex = { q: 0, r: 0 };
+    }
+
+    g.update(0);
+
+    expect(g.players.every((e) => e.phase === "dead")).toBe(true);
+    expect(g.players.every((e) => e.deathCause === "headMutual")).toBe(true);
+    expect(g.players.every((e) => e.owned.size === 0)).toBe(true);
+    expect(g.territoryCells()).toHaveLength(0);
+  });
+});

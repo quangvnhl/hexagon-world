@@ -17,6 +17,7 @@ import {
   decodeControl,
   decodeSnapshot,
   decodeTerritory,
+  decodeTerritoryDelta,
   encodeControl,
   encodeInput,
   peekTag,
@@ -26,6 +27,7 @@ import {
   type PlayerAppearance,
   type S2CControl,
   type TerritoryCell,
+  type WorldUiEntity,
 } from "@hexagon/shared";
 import { Predictor } from "./prediction";
 import { InterpolationBuffer, InterpState, INTERP_DELAY_MS } from "./interpolation";
@@ -97,6 +99,7 @@ export interface NetClientHandlers {
   onLobby?: (l: LobbyInfo) => void;
   /** Danh sách tên người chơi theo ghế (id → name). */
   onRoster?: (players: { id: number; name: string }[]) => void;
+  onWorldUi?: (entities: WorldUiEntity[]) => void;
 }
 
 export class NetClient {
@@ -107,6 +110,8 @@ export class NetClient {
   private lobby: LobbyInfo | null = null;
   /** Roster tên người chơi mới nhất. */
   private roster: { id: number; name: string }[] = [];
+  /** Toàn bộ người tham gia phục vụ UI nhịp thấp; độc lập với entity AoI của scene 3D. */
+  private worldUi: WorldUiEntity[] = [];
 
   private readonly predictor = new Predictor();
   private readonly interp = new InterpolationBuffer();
@@ -120,11 +125,14 @@ export class NetClient {
 
   /** Snapshot mới nhất — nguồn thông tin hiển thị (color/alive/score) cho mọi entity. */
   private latest: Snapshot | null = null;
+  /** Trạng thái sống ở snapshot gần nhất đã thấy, dùng nhận diện dead → alive (respawn). */
+  private readonly lastAlive = new Map<number, boolean>();
 
   /** Keyframe LÃNH THỔ mới nhất + phiên bản (tăng mỗi keyframe) để renderer chỉ dựng lại
    *  lưới đất/đuôi khi có thay đổi, không phải mỗi frame. */
   private territory: TerritoryCell[] = [];
   private territoryVersion = 0;
+  private territoryRevision = 0;
   /** Trả offset thời gian giữa đồng hồ client và tick server không cần thiết ở Pha 2:
    *  ta dùng thời gian client (performance.now / Date.now) làm mốc cho InterpolationBuffer. */
 
@@ -202,6 +210,7 @@ export class NetClient {
       this.ws = null;
     }
     this.interp.clear();
+    this.lastAlive.clear();
   }
 
   /**
@@ -249,8 +258,25 @@ export class NetClient {
       const kf = decodeTerritory(buf);
       if (kf) {
         this.territory = kf.cells;
+        this.territoryRevision = 0;
         this.territoryVersion++;
       }
+    } else if (tag === TAG.TERRITORY_DELTA) {
+      const delta = decodeTerritoryDelta(buf);
+      if (!delta || delta.baseRevision !== this.territoryRevision) {
+        if (this.ws?.readyState === WebSocket.OPEN) {
+          this.ws.send(encodeControl({ t: "territory_resync" }));
+        }
+        return;
+      }
+      const cells = new Map(this.territory.map((cell) => [`${cell.q},${cell.r}`, cell]));
+      for (const change of delta.operations) {
+        if (change.operation === "remove") cells.delete(`${change.q},${change.r}`);
+        else cells.set(`${change.cell.q},${change.cell.r}`, change.cell);
+      }
+      this.territory = [...cells.values()];
+      this.territoryRevision = delta.revision;
+      this.territoryVersion++;
     }
   }
 
@@ -264,6 +290,8 @@ export class NetClient {
     if (!msg) return;
     switch (msg.t) {
       case "welcome": {
+        this.interp.clear();
+        this.lastAlive.clear();
         this.welcome = {
           playerId: msg.playerId,
           arenaRadius: msg.arenaRadius,
@@ -276,6 +304,7 @@ export class NetClient {
         this.seq = 0;
         this.lobby = null; // ván mới → chờ trạng thái phòng chờ tiếp theo
         this.roster = [];
+        this.worldUi = [];
         this.handlers.onWelcome?.(this.welcome);
         break;
       }
@@ -292,6 +321,11 @@ export class NetClient {
           started: msg.started,
         };
         this.handlers.onLobby?.(this.lobby);
+        if (!msg.started) {
+          // Ván kế tiếp spawn lại toàn bộ ghế; không giữ lịch sử vị trí từ ván cũ.
+          this.interp.clear();
+          this.lastAlive.clear();
+        }
         break;
       }
       case "roster": {
@@ -299,7 +333,13 @@ export class NetClient {
         this.handlers.onRoster?.(msg.players);
         break;
       }
+      case "world_ui": {
+        this.worldUi = msg.entities;
+        this.handlers.onWorldUi?.(msg.entities);
+        break;
+      }
       case "event":
+        if (msg.kind === "death") this.lastAlive.set(msg.id, false);
         this.handlers.onEvent?.(msg);
         break;
     }
@@ -312,12 +352,19 @@ export class NetClient {
     // Nạp thực thể TỪ XA (không phải người chơi cục bộ) vào buffer nội suy.
     const remote = new Map<number, InterpState>();
     let localSnap: EntitySnap | null = null;
+    let localSpawned = false;
     for (const e of snap.entities) {
+      const wasAlive = this.lastAlive.get(e.id);
+      const spawned = e.alive && wasAlive !== true;
+      this.lastAlive.set(e.id, e.alive);
       if (this.welcome && e.id === this.welcome.playerId) {
         localSnap = e;
+        localSpawned = spawned;
         continue;
       }
-      remote.set(e.id, { x: e.x, y: e.y, heading: e.heading });
+      const state = { x: e.x, y: e.y, heading: e.heading };
+      if (spawned) this.interp.teleportEntity(e.id, state);
+      remote.set(e.id, state);
     }
     this.interp.insert(t, remote);
 
@@ -328,7 +375,11 @@ export class NetClient {
         y: localSnap.y,
         heading: localSnap.heading,
       };
-      this.predictor.onServerState(serverHead, snap.ackSeq);
+      if (localSpawned) {
+        this.predictor.reset(serverHead);
+      } else {
+        this.predictor.onServerState(serverHead, snap.ackSeq);
+      }
     }
   }
 
@@ -366,21 +417,26 @@ export class NetClient {
     const others: RenderEntity[] = [];
     for (const [id, s] of sampled) {
       const m = meta.get(id);
+      // InterpolationBuffer có thể còn giữ frame cũ thêm INTERP_DELAY_MS sau khi entity đã
+      // rời AoI. Không có trong snapshot MỚI NHẤT nghĩa là không được render trong scene.
+      if (!m) continue;
       others.push({
         id,
         x: s.x,
         y: s.y,
         heading: s.heading,
-        colorIndex: m?.colorIndex ?? 0,
-        trailPatternIndex: m?.trailPatternIndex ?? 0,
-        shapeIndex: m?.shapeIndex ?? 0,
-        alive: m?.alive ?? true,
-        hasTrail: m?.hasTrail ?? false,
-        score: m?.score ?? 0,
+        colorIndex: m.colorIndex,
+        trailPatternIndex: m.trailPatternIndex,
+        shapeIndex: m.shapeIndex,
+        alive: m.alive,
+        hasTrail: m.hasTrail,
+        score: m.score,
       });
     }
 
-    const playerCount = this.latest ? this.latest.entities.length : 0;
+    // Snapshot đã được server lọc theo AoI, vì vậy entities.length chỉ là số thực thể gần.
+    // Roster là tổng người thật trong phòng; botCount là số bot authoritative của phòng.
+    const playerCount = this.roster.length + (this.welcome?.botCount ?? 0);
     const selfPrep = this.latest ? this.latest.selfPrep : 0;
     const kingHold = this.latest?.kingHold ?? 0;
     return {
@@ -411,6 +467,10 @@ export class NetClient {
   /** Roster tên người chơi mới nhất. */
   getRoster(): { id: number; name: string }[] {
     return this.roster;
+  }
+
+  getWorldUi(): readonly WorldUiEntity[] {
+    return this.worldUi;
   }
 
   /** Đặt lại mốc dự đoán khi (re)spawn — bên gọi cấp trạng thái đầu authoritative. */

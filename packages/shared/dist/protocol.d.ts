@@ -21,6 +21,7 @@ export declare const TAG: {
     readonly INPUT: 2;
     readonly SNAPSHOT: 102;
     readonly TERRITORY: 103;
+    readonly TERRITORY_DELTA: 104;
 };
 export type C2SControl = {
     t: "join";
@@ -33,6 +34,8 @@ export type C2SControl = {
 } | {
     t: "ping";
     time: number;
+} | {
+    t: "territory_resync";
 } | {
     t: "revive";
 };
@@ -64,6 +67,10 @@ export type S2CControl = {
         name: string;
     }[];
 } | {
+    /** Dữ liệu UI toàn cục nhịp thấp (~5 Hz), tách khỏi snapshot entity đã lọc AoI. */
+    t: "world_ui";
+    entities: WorldUiEntity[];
+} | {
     t: "event";
     kind: "death";
     id: number;
@@ -78,6 +85,16 @@ export type S2CControl = {
     kind: "king";
     kingId: number;
 };
+export interface WorldUiEntity {
+    id: number;
+    x: number;
+    y: number;
+    alive: boolean;
+    score: number;
+    colorIndex: number;
+    trailPatternIndex: number;
+    shapeIndex: number;
+}
 export declare const encodeControl: (m: C2SControl | S2CControl) => string;
 export declare function decodeControl<T = C2SControl | S2CControl>(s: string): T | null;
 export declare const INPUT_BYTES = 9;
@@ -138,4 +155,22 @@ export interface TerritoryKeyframe {
 export declare function encodeTerritory(tick: number, cells: TerritoryCell[]): ArrayBuffer;
 export declare function decodeTerritory(buf: ArrayBuffer | Uint8Array): TerritoryKeyframe | null;
 /** Byte tag đầu của một *binary frame* (để phân loại INPUT/SNAPSHOT/TERRITORY). */
+export declare const TERRITORY_DELTA_HEADER = 15;
+export declare const TERRITORY_DELTA_OPERATION = 7;
+export type TerritoryDeltaOperation = {
+    operation: "upsert";
+    cell: TerritoryCell;
+} | {
+    operation: "remove";
+    q: number;
+    r: number;
+};
+export interface TerritoryDelta {
+    tick: number;
+    baseRevision: number;
+    revision: number;
+    operations: TerritoryDeltaOperation[];
+}
+export declare function encodeTerritoryDelta(delta: TerritoryDelta): ArrayBuffer;
+export declare function decodeTerritoryDelta(buf: ArrayBuffer | Uint8Array): TerritoryDelta | null;
 export declare function peekTag(buf: ArrayBuffer | Uint8Array): number;

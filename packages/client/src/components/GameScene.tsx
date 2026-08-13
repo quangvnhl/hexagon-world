@@ -18,6 +18,7 @@ import { ArenaCollider } from "./ArenaCollider";
 import { TerritoryBorders } from "./TerritoryBorders";
 import { MiniMap } from "./MiniMap";
 import { Joystick } from "./Joystick";
+import { EndGameInterstitial } from "./EndGameInterstitial";
 import { HUD, Stats } from "./HUD";
 import { FpsMeterIfEnabled } from "./FpsMeter";
 import { TelegramGameHaptics } from "./TelegramGameHaptics";
@@ -357,6 +358,10 @@ export default function GameScene({
           playerName={playerName}
         />
       )}
+      <EndGameInterstitial
+        won={stats.won}
+        kingReached={stats.king || Boolean(stats.kingName)}
+      />
       {onExit && <MenuButton onExit={onExit} />}
       {CONFIG.DISPLAY.MINIMAP && <MiniMap game={game} />}
       <FpsMeterIfEnabled statusText={`Local · ${game.players.length} người`} />

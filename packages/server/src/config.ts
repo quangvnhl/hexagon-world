@@ -22,10 +22,24 @@ export const MAX_PLAYERS = 8;
 export const BOT_COUNT = CONFIG.BOT_COUNT;
 
 /** Phòng ONLINE KHÔNG dùng bot: chỉ người thật đấu nhau. */
-export const ONLINE_BOTS = 2;
+export const ONLINE_BOTS = 3;
 
 /** Số người THẬT tối thiểu để BẮT ĐẦU một ván online. Chưa đủ → phòng ở trạng thái CHỜ. */
-export const MIN_PLAYERS = 2;
+export const MIN_PLAYERS = 1;
+
+/**
+ * Bán kính Area-of-Interest cho snapshot entity (world units).
+ * Camera rộng nhất hiện nhìn khoảng vài chục world units; 60 chừa đủ vùng đệm cho interpolation.
+ * Có thể tinh chỉnh theo deployment bằng ENTITY_AOI_RADIUS mà không cần build lại image.
+ */
+function positiveNumberFromEnv(name: string, fallback: number): number {
+  const raw = process.env[name];
+  if (!raw) return fallback;
+  const value = Number(raw);
+  return Number.isFinite(value) && value > 0 ? value : fallback;
+}
+
+export const ENTITY_AOI_RADIUS = positiveNumberFromEnv("ENTITY_AOI_RADIUS", 60);
 
 /** Cổng WebSocket mặc định nếu không đặt biến môi trường PORT. */
 export const DEFAULT_PORT = 8910;

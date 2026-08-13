@@ -2,6 +2,7 @@ import {
   GameState,
   type PlayerAppearance,
   type Snapshot,
+  type WorldUiEntity,
 } from "@hexagon/shared";
 import { BOT_COUNT, MAX_PLAYERS } from "../config";
 
@@ -87,6 +88,22 @@ export class GameRoom {
     return out;
   }
 
+  /** Trạng thái nhẹ phục vụ minimap/xếp hạng; không đưa ghế người đang trống vào UI. */
+  worldUiEntities(): WorldUiEntity[] {
+    return this.gs.snapshotEntities()
+      .filter((e) => e.id >= this.maxHumans || this.seats[e.id])
+      .map((e) => ({
+        id: e.id,
+        x: e.x,
+        y: e.y,
+        alive: e.alive,
+        score: e.score,
+        colorIndex: e.colorIndex,
+        trailPatternIndex: e.trailPatternIndex,
+        shapeIndex: e.shapeIndex,
+      }));
+  }
+
   /** Hồi sinh ghế (khi client bấm Hồi sinh). Trả false nếu không thể (đang sống / khoá / hết chỗ). */
   reviveSeat(entityId: number): boolean {
     if (entityId < 0 || entityId >= this.maxHumans) return false;
@@ -163,19 +180,44 @@ export class GameRoom {
    * Dựng snapshot cho một ghế cụ thể: ackSeq = seq cuối server đã áp cho ghế đó, kèm ảnh
    * chụp TOÀN BỘ thực thể (người + bot).
    */
-  buildSnapshotFor(entityId: number): Snapshot {
+  buildSnapshotFor(entityId: number, entityAoiRadius = Number.POSITIVE_INFINITY): Snapshot {
     const ack =
       entityId >= 0 && entityId < this.maxHumans ? this.lastSeq[entityId] : 0;
     const e = this.gs.players[entityId];
     const selfPrep =
       e && e.phase === "prep" ? Math.max(0, Math.ceil(e.prepRemaining * 1000)) : 0;
+    const allEntities = this.gs.snapshotEntities();
+    let entities = allEntities;
+
+    if (Number.isFinite(entityAoiRadius) && entityAoiRadius > 0) {
+      const self = allEntities.find((entity) => entity.id === entityId);
+      const isParticipating = (id: number): boolean =>
+        id >= this.maxHumans || Boolean(this.seats[id]);
+
+      if (self?.alive) {
+        const radiusSq = entityAoiRadius * entityAoiRadius;
+        const kingId = this.gs.kingId();
+        entities = allEntities.filter((entity) => {
+          if (!isParticipating(entity.id)) return false;
+          // Reconciliation luôn cần self; KING cần cho HUD ngay cả khi ngoài camera.
+          if (entity.id === entityId || entity.id === kingId) return true;
+          const dx = entity.x - self.x;
+          const dy = entity.y - self.y;
+          return dx * dx + dy * dy <= radiusSq;
+        });
+      } else {
+        // Chưa có interest-target trong protocol: giữ đủ entity để camera spectator hoạt động như cũ.
+        entities = allEntities.filter((entity) => isParticipating(entity.id));
+      }
+    }
+
     return {
       tick: this.tickCount,
       ackSeq: ack,
       selfPrep,
       // Đồng hồ giữ ngôi KING (giây) do server tính — client dùng để đếm ngược 3 phút.
       kingHold: this.gs.kingHoldRemaining,
-      entities: this.gs.snapshotEntities(),
+      entities,
     };
   }
 }

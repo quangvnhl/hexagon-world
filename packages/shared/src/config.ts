@@ -37,7 +37,7 @@ export const CONFIG = {
     PRESS_DURATION: 0.28,
   },
   /** Cạnh cube nhân vật (người + bot), đơn vị world. Chỉnh to/nhỏ nhân vật ở đây. */
-  CUBE_SIZE: 1,
+  CUBE_SIZE: 1.2,
   /** Tốc độ di chuyển liên tục (world units / giây). Nhỏ = chậm. */
   SPEED: 5.5,
   /** Tốc độ quay đầu tối đa (rad / giây) — làm chuyển hướng mượt. */
@@ -90,8 +90,8 @@ export const CONFIG = {
   /** Camera perspective: vị trí lệch so với người chơi (x, sau, cao) + fov + độ mượt pan.
    *  Rotation KHOÁ cố định (chỉ pan theo người chơi, không xoay theo chuột). */
   CAMERA: {
-    OFFSET: [0, -2, 20] as [number, number, number],
-    FOV: 80,
+    OFFSET: [0, -4, 20] as [number, number, number],
+    FOV: 70,
     /**
      * Hệ số mở rộng vùng nhìn khi mobile xoay ngang.
      * 1 = giữ đúng bề rộng tương đương bản dọc; >1 = camera xa/rộng hơn.
@@ -150,7 +150,7 @@ export const CONFIG = {
    *  tường ngay tại đầu người chơi: xanh dương = hướng đi mong muốn, đỏ = pháp tuyến
    *  tường đang chạm, xanh lá = hướng trượt kết quả. Dùng để thấy vì sao chết sát biên. */
   DEBUG: {
-    COLLISION_VECTORS: false,
+    COLLISION_VECTORS: true,
     /** Đường LINE ĐỎ ở BIÊN va chạm (ArenaCollider) — viền lục giác + mũi tên pháp tuyến 6
      *  tường. Chỉ vẽ khi COLLISION_VECTORS bật. COLOR = màu đường/​mũi tên; Z = độ cao nhô
      *  khỏi mặt sân (tránh z-fight); NORMALS = có vẽ mũi tên pháp tuyến không; NORMAL_LEN =
@@ -167,7 +167,7 @@ export const CONFIG = {
     /** Ngưỡng (world units) coi là "đang áp sát tường" để hiện vector (sớm hơn eps thật). */
     WALL_NEAR: 0.6,
     /** Bán kính (world units) VÒNG collider của cube người chơi (stroke tròn debug). */
-    CUBE_COLLIDER_RADIUS: 0.3,
+    CUBE_COLLIDER_RADIUS: 0.6,
     /** Bán kính (world units) VÒNG va chạm đầu vẽ debug. Mặc định = KILL_RADIUS thật;
      *  đổi ở đây để phóng to/thu nhỏ vòng hiển thị mà không ảnh hưởng luật chơi. */
     KILL_RING_RADIUS: 0.3,

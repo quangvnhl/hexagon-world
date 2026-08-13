@@ -31,13 +31,15 @@ let RegionsController = class RegionsController {
         const guestId = String(body.guestId ?? "").trim();
         if (!/^[A-Za-z0-9_-]{16,128}$/.test(guestId))
             throw new common_1.BadRequestException("invalid_guest_id");
-        return { ticket: this.tickets.issue({ playerId: null, guestId, isGuest: true, platform: "web", displayName: String(body.displayName || "Guest").slice(0, 32), region, appearance: { colorIndex: 0, shape: "cube", trailPattern: "solid" } }), region };
+        const appearance = (0, shared_1.sanitizePlayerAppearance)(body.appearance);
+        return { ticket: this.tickets.issue({ playerId: null, guestId, isGuest: true, platform: "web", displayName: String(body.displayName || "Guest").slice(0, 32), region, appearance }), region };
     }
     async authenticated(req, body) {
         const player = await this.sessions.resolve(req);
         const region = this.assertRegion(body.region);
         const { data } = await this.db.from("player_profiles").select("selected_color,selected_shape,selected_trail_pattern").eq("player_id", player.id).maybeSingle();
-        const appearance = (0, shared_1.sanitizePlayerAppearance)({ colorIndex: Number(String(data?.selected_color ?? "color:0").split(":")[1] ?? 0), shape: String(data?.selected_shape ?? "shape:cube").replace("shape:", ""), trailPattern: String(data?.selected_trail_pattern ?? "trail:solid").replace("trail:", "") });
+        const savedAppearance = { colorIndex: Number(String(data?.selected_color ?? "color:0").split(":")[1] ?? 0), shape: String(data?.selected_shape ?? "shape:cube").replace("shape:", ""), trailPattern: String(data?.selected_trail_pattern ?? "trail:solid").replace("trail:", "") };
+        const appearance = (0, shared_1.sanitizePlayerAppearance)(body.appearance ?? savedAppearance);
         return { ticket: this.tickets.issue({ playerId: player.id, guestId: null, isGuest: false, platform: player.platform, displayName: player.displayName, region, appearance }), region };
     }
     assertRegion(value) {

@@ -1,11 +1,12 @@
 "use client";
 
-import { memo, useEffect, useRef } from "react";
+import { memo, useEffect, useRef, type MutableRefObject } from "react";
 import { useFrame } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import { CONFIG, GameState, type PlayerShape } from "@hexagon/shared";
 import { getCameraGroundView, isInGroundView, type GroundView } from "./cameraVisibility";
+import { applyPlayerColorToPrimaryMaterials } from "./modelMaterialColor";
 
 const MODEL_URLS = {
   fly: "/models/low_poly_house_fly_diptera.glb",
@@ -14,6 +15,14 @@ const MODEL_URLS = {
 } as const satisfies Partial<Record<PlayerShape, string>>;
 
 type ModelShape = keyof typeof MODEL_URLS;
+
+function disposeModelObject(root: THREE.Object3D): void {
+  root.traverse((obj) => {
+    if (!(obj instanceof THREE.Mesh)) return;
+    const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
+    for (const material of materials) material.dispose();
+  });
+}
 
 /** Clone material, convert Y-up models to the game's Z-up plane, then fit them to one cell. */
 function makeModelObject(
@@ -27,13 +36,7 @@ function makeModelObject(
   model.traverse((obj) => {
     if (!(obj instanceof THREE.Mesh)) return;
     const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
-    const cloned = materials.map((material) => {
-      const next = material.clone();
-      if ("color" in next && next.color instanceof THREE.Color) {
-        next.userData.hexBaseColor = next.color.clone();
-      }
-      return next;
-    });
+    const cloned = materials.map((material) => material.clone());
     obj.material = Array.isArray(obj.material) ? cloned : cloned[0];
     obj.userData.hexModelMesh = true;
   });
@@ -54,7 +57,14 @@ function makeModelObject(
 }
 
 /** 3D object for every entity (the legacy component name remains for existing imports). */
-export const PlayerCube = memo(function PlayerCube({ game }: { game: GameState }) {
+export const PlayerCube = memo(function PlayerCube({
+  game,
+  visibleEntityIds,
+}: {
+  game: GameState;
+  /** Online AoI: chỉ render entity có mặt trong snapshot hiện tại. Chơi đơn để trống. */
+  visibleEntityIds?: MutableRefObject<ReadonlySet<number>>;
+}) {
   const { scene: flySource } = useGLTF(MODEL_URLS.fly);
   const { scene: beeSource } = useGLTF(MODEL_URLS.bee);
   const { scene: ladybugSource } = useGLTF(MODEL_URLS.ladybug);
@@ -66,16 +76,13 @@ export const PlayerCube = memo(function PlayerCube({ game }: { game: GameState }
   const refs = useRef<(THREE.Group | null)[]>([]);
   const appearanceSig = useRef<string[]>([]);
   const modelObjects = useRef<(THREE.Group | null)[]>([]);
+  const lastAlive = useRef<boolean[]>([]);
   const view = useRef<GroundView>({ x: 0, y: 0, radius: 0 });
 
   useEffect(
     () => () => {
       for (const root of modelObjects.current) {
-        root?.traverse((obj) => {
-          if (!(obj instanceof THREE.Mesh)) return;
-          const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
-          for (const material of materials) material.dispose();
-        });
+        if (root) disposeModelObject(root);
       }
     },
     []
@@ -88,13 +95,38 @@ export const PlayerCube = memo(function PlayerCube({ game }: { game: GameState }
       const e = game.players[i];
       if (!g) continue;
 
-      g.visible =
-        e.alive && isInGroundView(view.current, e.pos.x, e.pos.y, 2);
+      const wasAlive = lastAlive.current[i];
+      if (!e.alive && wasAlive !== false) {
+        // GLB là object được add thủ công, nên phải remove thủ công khi chết. Hồi sinh sẽ
+        // clone instance mới, tuyệt đối không tái hiện instance còn giữ transform lúc chết.
+        const oldModel = modelObjects.current[i];
+        if (oldModel) {
+          g.remove(oldModel);
+          disposeModelObject(oldModel);
+          modelObjects.current[i] = null;
+          appearanceSig.current[i] = "";
+        }
+      }
+      lastAlive.current[i] = e.alive;
+
+      // Luôn cập nhật transform TRƯỚC rồi mới cho visible để frame hồi sinh đầu tiên không
+      // thể vẽ group ở transform của mạng sống cũ.
       g.position.set(e.pos.x, e.pos.y, 0);
       g.rotation.z = e.heading;
+      const present = visibleEntityIds?.current.has(e.id) ?? true;
+      g.visible =
+        present && e.alive && isInGroundView(view.current, e.pos.x, e.pos.y, 2);
       if (!g.visible) continue;
 
-      if (e.shape in MODEL_URLS && !modelObjects.current[i]) {
+      if (
+        e.shape in MODEL_URLS &&
+        modelObjects.current[i]?.name !== e.shape
+      ) {
+        const previousModel = modelObjects.current[i];
+        if (previousModel) {
+          g.remove(previousModel);
+          disposeModelObject(previousModel);
+        }
         const shape = e.shape as ModelShape;
         const model = makeModelObject(modelSources[shape], shape);
         modelObjects.current[i] = model;
@@ -107,21 +139,24 @@ export const PlayerCube = memo(function PlayerCube({ game }: { game: GameState }
       const sig = `${e.colorIndex}:${e.shape}`;
       if (appearanceSig.current[i] !== sig) {
         appearanceSig.current[i] = sig;
-        const tint = new THREE.Color(e.color.glow);
+        const playerColor = new THREE.Color(e.color.glow);
         g.traverse((obj) => {
           if (!(obj instanceof THREE.Mesh)) return;
-          const materials = Array.isArray(obj.material) ? obj.material : [obj.material];
-          for (const mat of materials) {
-            if (!("color" in mat) || !(mat.color instanceof THREE.Color)) continue;
-            const base = mat.userData.hexBaseColor;
-            if (obj.userData.hexModelMesh && base instanceof THREE.Color) {
-              mat.color.copy(base).lerp(tint, 0.58);
-            } else {
-              mat.color.copy(tint);
+          if (obj.userData.hexModelMesh) {
+            applyPlayerColorToPrimaryMaterials(obj.material, playerColor);
+            return;
+          }
+
+          const materials = Array.isArray(obj.material)
+            ? obj.material
+            : [obj.material];
+          for (const material of materials) {
+            if ("color" in material && material.color instanceof THREE.Color) {
+              material.color.copy(playerColor);
             }
-            if (mat instanceof THREE.MeshStandardMaterial) {
-              mat.emissive.copy(tint);
-              mat.emissiveIntensity = obj.userData.hexModelMesh ? 0.12 : 0.35;
+            if (material instanceof THREE.MeshStandardMaterial) {
+              material.emissive.copy(playerColor);
+              material.emissiveIntensity = 0.35;
             }
           }
         });

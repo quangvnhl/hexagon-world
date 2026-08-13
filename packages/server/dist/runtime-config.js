@@ -59,6 +59,10 @@ function runtimeConfig() {
         sessionSecret,
         sessionTtlSeconds: integer("PLAYER_SESSION_TTL_SECONDS", 86400),
         cookieSecure: text("NODE_ENV") === "production",
+        corsAllowedOrigins: text("CORS_ALLOWED_ORIGINS", new URL(text("GOOGLE_OAUTH_POST_LOGIN_REDIRECT_URI", "http://localhost:3890")).origin)
+            .split(",")
+            .map((origin) => origin.trim())
+            .filter(Boolean),
         google: {
             clientId: secret("GOOGLE_OAUTH_CLIENT_ID", control),
             clientSecret: secret("GOOGLE_OAUTH_CLIENT_SECRET", control),

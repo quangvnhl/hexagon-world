@@ -35,7 +35,7 @@ export declare const CONFIG: {
         readonly PRESS_DURATION: 0.28;
     };
     /** Cạnh cube nhân vật (người + bot), đơn vị world. Chỉnh to/nhỏ nhân vật ở đây. */
-    readonly CUBE_SIZE: 1;
+    readonly CUBE_SIZE: 1.2;
     /** Tốc độ di chuyển liên tục (world units / giây). Nhỏ = chậm. */
     readonly SPEED: 5.5;
     /** Tốc độ quay đầu tối đa (rad / giây) — làm chuyển hướng mượt. */
@@ -91,7 +91,7 @@ export declare const CONFIG: {
      *  Rotation KHOÁ cố định (chỉ pan theo người chơi, không xoay theo chuột). */
     readonly CAMERA: {
         readonly OFFSET: [number, number, number];
-        readonly FOV: 80;
+        readonly FOV: 70;
         /**
          * Hệ số mở rộng vùng nhìn khi mobile xoay ngang.
          * 1 = giữ đúng bề rộng tương đương bản dọc; >1 = camera xa/rộng hơn.
@@ -157,7 +157,7 @@ export declare const CONFIG: {
      *  tường ngay tại đầu người chơi: xanh dương = hướng đi mong muốn, đỏ = pháp tuyến
      *  tường đang chạm, xanh lá = hướng trượt kết quả. Dùng để thấy vì sao chết sát biên. */
     readonly DEBUG: {
-        readonly COLLISION_VECTORS: false;
+        readonly COLLISION_VECTORS: true;
         /** Đường LINE ĐỎ ở BIÊN va chạm (ArenaCollider) — viền lục giác + mũi tên pháp tuyến 6
          *  tường. Chỉ vẽ khi COLLISION_VECTORS bật. COLOR = màu đường/​mũi tên; Z = độ cao nhô
          *  khỏi mặt sân (tránh z-fight); NORMALS = có vẽ mũi tên pháp tuyến không; NORMAL_LEN =
@@ -172,7 +172,7 @@ export declare const CONFIG: {
         /** Ngưỡng (world units) coi là "đang áp sát tường" để hiện vector (sớm hơn eps thật). */
         readonly WALL_NEAR: 0.6;
         /** Bán kính (world units) VÒNG collider của cube người chơi (stroke tròn debug). */
-        readonly CUBE_COLLIDER_RADIUS: 0.3;
+        readonly CUBE_COLLIDER_RADIUS: 0.6;
         /** Bán kính (world units) VÒNG va chạm đầu vẽ debug. Mặc định = KILL_RADIUS thật;
          *  đổi ở đây để phóng to/thu nhỏ vòng hiển thị mà không ảnh hưởng luật chơi. */
         readonly KILL_RING_RADIUS: 0.3;

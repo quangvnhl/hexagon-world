@@ -24,7 +24,14 @@ async function bootstrap(): Promise<void> {
     logger: ["log", "warn", "error"],
   });
   app.use(cookieParser());
-  app.enableCors({ origin: new URL(cfg.google.postLoginRedirectUri).origin, credentials: true });
+  app.enableCors({
+    origin(origin, callback) {
+      // Requests without Origin are server-to-server/health checks. Browser origins must be explicit.
+      if (!origin || cfg.corsAllowedOrigins.includes(origin)) callback(null, true);
+      else callback(new Error(`CORS origin không được phép: ${origin}`), false);
+    },
+    credentials: true,
+  });
   app.enableShutdownHooks();
   await app.listen(cfg.port, "0.0.0.0");
   // eslint-disable-next-line no-console

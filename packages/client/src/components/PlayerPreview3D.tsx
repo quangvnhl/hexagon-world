@@ -5,6 +5,7 @@ import { Canvas, useFrame } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import type { PlayerShape, TrailPattern } from "@hexagon/shared";
+import { applyPlayerColorToPrimaryMaterials } from "./modelMaterialColor";
 
 const MODEL_URLS = {
   fly: "/models/low_poly_house_fly_diptera.glb",
@@ -18,21 +19,16 @@ function PreviewModel({ shape, color }: { shape: ModelShape; color: string }) {
   const { scene } = useGLTF(MODEL_URLS[shape]);
   const model = useMemo(() => {
     const clone = scene.clone(true);
+    const playerColor = new THREE.Color(color);
     clone.traverse((object) => {
       if (!(object instanceof THREE.Mesh)) return;
       const source = Array.isArray(object.material) ? object.material : [object.material];
-      const materials = source.map((material) => {
-        const next = material.clone();
-        if ("color" in next && next.color instanceof THREE.Color) {
-          next.color.lerp(new THREE.Color(color), 0.58);
-        }
-        if (next instanceof THREE.MeshStandardMaterial) {
-          next.emissive.set(color);
-          next.emissiveIntensity = 0.12;
-        }
-        return next;
-      });
+      const materials = source.map((material) => material.clone());
       object.material = Array.isArray(object.material) ? materials : materials[0];
+      applyPlayerColorToPrimaryMaterials(
+        object.material,
+        playerColor
+      );
     });
 
     clone.rotation.x = Math.PI / 2;
@@ -159,7 +155,7 @@ function AnimatedPreview({
     if (mover.current) {
       mover.current.position.set(x, y, 0.55);
       mover.current.rotation.z = Math.atan2(
-        Math.cos(x * 1.55) * 1.12,
+        Math.cos(x * 1.55) * 1.12 * direction,
         direction
       );
       mover.current.position.z += Math.sin(t * 5) * 0.05;
@@ -214,7 +210,7 @@ export function PlayerPreview3D({
       >
         <ambientLight intensity={1.4} />
         <directionalLight position={[4, -3, 8]} intensity={2.2} />
-        <pointLight position={[-4, 2, 3]} intensity={8} color={color} />
+        <pointLight position={[-4, 2, 3]} intensity={8} color="#ffffff" />
         <AnimatedPreview shape={shape} color={color} pattern={pattern} />
         <gridHelper args={[10, 10, "#263953", "#17243a"]} rotation={[Math.PI / 2, 0, 0]} />
       </Canvas>

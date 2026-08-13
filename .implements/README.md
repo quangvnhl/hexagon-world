@@ -19,6 +19,7 @@ phải đọc và tuân thủ các tài liệu này trước khi code.**
 | [10-player-backend-supabase.md](10-player-backend-supabase.md) | Kế hoạch backend người chơi, đa nguồn, shop và tài sản trên Supabase | Backend + Product |
 | [11-player-backend-runbook.md](11-player-backend-runbook.md) | Runbook migration, OAuth, Telegram Stars, admin và multi-region | Backend + DevOps |
 | [12-player-backend-implementation-report.md](12-player-backend-implementation-report.md) | Phạm vi đã triển khai, kiểm thử và blocker hạ tầng | Backend + Product |
+| [15-telegram-platform-gating-and-adsgram.md](15-telegram-platform-gating-and-adsgram.md) | Quy tắc bắt buộc cô lập Telegram và placement AdsGram | Tất cả agent sửa code platform |
 
 ## Nguyên tắc làm việc cho agents
 

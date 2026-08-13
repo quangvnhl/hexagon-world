@@ -67,4 +67,17 @@ describe("InterpolationBuffer", () => {
     const s = buf.sample(0).get(1)!;
     expect(s.x).toBe(7);
   });
+
+  it("respawn teleport removes the death position from every interpolation frame", () => {
+    const buf = new InterpolationBuffer();
+    buf.insert(1000, ents({ 5: { x: 2, y: 3, heading: 0 } }));
+    buf.insert(1100, ents({ 5: { x: 2.2, y: 3, heading: 0 } }));
+
+    const spawn = { x: 40, y: -25, heading: 1.2 };
+    buf.teleportEntity(5, spawn);
+    buf.insert(1200, ents({ 5: spawn }));
+
+    expect(buf.sample(1050).get(5)).toEqual(spawn);
+    expect(buf.sample(1150).get(5)).toEqual(spawn);
+  });
 });

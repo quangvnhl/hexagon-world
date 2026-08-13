@@ -591,14 +591,19 @@ export class GameState {
     e.lastPct = (this.ownedPlayable(e) / this.playable.size) * 100;
     e.lastTerritory = [];
     for (const k of e.owned) if (this.playable.has(k)) e.lastTerritory.push(k);
+    let releasedTerritory = false;
     if (killer && killer !== e && killer.alive) {
       // Cướp toàn bộ đất của nạn nhân cho kẻ đã hạ.
       for (const k of [...e.owned]) this.claimCell(k, killer);
     } else {
       for (const k of e.owned) {
-        if (this.cellOwner.get(k) === e.id) this.cellOwner.delete(k);
+        if (this.cellOwner.get(k) === e.id) {
+          this.cellOwner.delete(k);
+          releasedTerritory = true;
+        }
       }
     }
+    if (releasedTerritory) this.territoryRevision++;
     // Dọn đuôi của nạn nhân.
     for (const t of e.trailHexes) {
       if (this.cellTrail.get(t) === e.id) this.cellTrail.delete(t);
@@ -872,6 +877,11 @@ export class GameState {
   private enterHex(e: Entity, h: Axial): boolean {
     const hk = keyOf(h);
 
+    // Hai đầu cùng nằm trên MỘT ô trung lập phải được phân xử TRƯỚC va chạm với đuôi. Nếu không,
+    // entity được update sau có thể cắt đuôi entity kia trước khi resolveHeadCollisions()
+    // chạy, biến một va chạm hòa thành kết quả một sống/một chết phụ thuộc thứ tự update.
+    if (this.resolveNeutralSameHex(e)) return true;
+
     // 1. Bước lên 1 ô ĐUÔI — xét TRƯỚC cả đất của mình: đâm đuôi đối thủ ở BẤT KỲ ô nào
     //    (kể cả khi ô đó nằm trong lãnh thổ của mình) đều khiến đối thủ chết.
     const trailOwner = this.cellTrail.get(hk);
@@ -934,11 +944,48 @@ export class GameState {
   }
 
   // ---- Va chạm đầu ---------------------------------------------------------
+  /**
+   * Xử lý ngay một cụm đầu cùng nằm trên một ô trung lập. Không dùng khoảng cách vật lý:
+   * chỉ cần pixelToAxial của các đầu cho ra cùng HexKey thì toàn bộ cụm chết đồng thời.
+   */
+  private resolveNeutralSameHex(trigger: Entity): boolean {
+    if (trigger.phase !== "playing") return false;
+    const triggerKey = keyOf(pixelToAxial(trigger.pos.x, trigger.pos.y, CONFIG.HEX_SIZE));
+    if (this.cellOwner.has(triggerKey)) return false;
+
+    const victims: Entity[] = [trigger];
+    for (const other of this.players) {
+      if (other === trigger || other.phase !== "playing") continue;
+      const otherKey = keyOf(pixelToAxial(other.pos.x, other.pos.y, CONFIG.HEX_SIZE));
+      if (otherKey === triggerKey) victims.push(other);
+    }
+    if (victims.length < 2) return false;
+
+    for (const victim of victims) this.kill(victim, undefined, "headMutual");
+    return true;
+  }
+
   /** Chủ đất hạ KẺ XÂM NHẬP: nếu đầu đối thủ b đang đứng trên ĐẤT của a và sát đầu a
    *  (≤ KILL_RADIUS) → b chết. Chủ đất bất khả xâm phạm trên sân nhà. */
   private resolveHeadCollisions(): void {
     const R = CONFIG.KILL_RADIUS;
     const R2 = R * R;
+
+    // Luật ô trung lập là luật theo GRID, không phải collider: nhóm tất cả đầu theo HexKey
+    // hiện tại rồi loại đồng thời mọi nhóm có từ hai người trở lên trên cùng ô trung lập.
+    const neutralGroups = new Map<HexKey, Entity[]>();
+    for (const e of this.players) {
+      if (e.phase !== "playing") continue;
+      const hk = keyOf(pixelToAxial(e.pos.x, e.pos.y, CONFIG.HEX_SIZE));
+      if (this.cellOwner.has(hk)) continue;
+      const group = neutralGroups.get(hk);
+      if (group) group.push(e);
+      else neutralGroups.set(hk, [e]);
+    }
+    for (const group of neutralGroups.values()) {
+      if (group.length < 2) continue;
+      for (const victim of group) this.kill(victim, undefined, "headMutual");
+    }
 
     // BROAD-PHASE (spatial hash): đưa đầu mọi thực thể đang chơi vào hash, lấy các CẶP
     // ứng viên cách nhau ≤ KILL_RADIUS thay vì quét O(n²). Với cellSize = KILL_RADIUS
@@ -979,9 +1026,14 @@ export class GameState {
         this.kill(b, a, "headIntruder"); // b xâm nhập sân nhà a → b chết, đất về a
       } else if (aOnB) {
         this.kill(a, b, "headIntruder");
-      } else if (aCell !== a.id && bCell !== b.id) {
-        // CẢ HAI đang ở ngoài sân nhà (ô trung lập / đất bên thứ ba) mà đâm đầu vào
-        // nhau → cả hai chết, mất sạch đất.
+      } else if (
+        aCell !== undefined &&
+        bCell !== undefined &&
+        aCell !== a.id &&
+        bCell !== b.id
+      ) {
+        // Cả hai ở trên đất bên thứ ba vẫn dùng collider cũ. Va chạm trên ô trung lập đã
+        // được xử lý riêng hoàn toàn theo HexKey ở đầu hàm, không xét khoảng cách vật lý.
         this.kill(a, undefined, "headMutual");
         this.kill(b, undefined, "headMutual");
       }

@@ -62,12 +62,25 @@ declare global {
   }
 }
 
+/**
+ * Gate tối thiểu để phân biệt Telegram Mini App thật với stub/script được nạp ở
+ * browser thường. Chữ ký vẫn phải được backend xác minh trước mọi thao tác cấp
+ * tài sản; gate này chỉ dùng để cô lập code/SDK theo platform.
+ */
+export function hasTelegramMiniAppInitData(initData: string | undefined): boolean {
+  if (!initData) return false;
+  const params = new URLSearchParams(initData);
+  return Boolean(
+    params.get("auth_date") && params.get("user") && params.get("hash")
+  );
+}
+
 export function getTelegramWebApp(): TelegramWebApp | null {
   if (typeof window === "undefined") return null;
   const app = window.Telegram?.WebApp;
-  // telegram-web-app.js also creates a stub in a normal browser. initData is the
-  // reliable client-side signal that this page was launched as a Mini App.
-  return app?.initData ? app : null;
+  // telegram-web-app.js cũng tạo stub ở browser thường. Chỉ cho code Telegram
+  // chạy khi initData có cấu trúc Mini App tối thiểu.
+  return app && hasTelegramMiniAppInitData(app.initData) ? app : null;
 }
 
 export function getTelegramUserName(): string | null {

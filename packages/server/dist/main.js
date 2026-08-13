@@ -53,7 +53,15 @@ async function bootstrap() {
         logger: ["log", "warn", "error"],
     });
     app.use((0, cookie_parser_1.default)());
-    app.enableCors({ origin: new URL(cfg.google.postLoginRedirectUri).origin, credentials: true });
+    app.enableCors({
+        origin(origin, callback) {
+            if (!origin || cfg.corsAllowedOrigins.includes(origin))
+                callback(null, true);
+            else
+                callback(new Error(`CORS origin không được phép: ${origin}`), false);
+        },
+        credentials: true,
+    });
     app.enableShutdownHooks();
     await app.listen(cfg.port, "0.0.0.0");
     console.log(`[Hexagon] role=${cfg.role} region=${cfg.region} port=${cfg.port}`);

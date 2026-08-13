@@ -59,6 +59,8 @@ export const Effects = memo(function Effects({ game }: { game: GameState }) {
 
   const lastAlive = useRef(new Map<number, boolean>());
   const lastOwned = useRef(new Map<number, number>());
+  /** Entity vừa hồi sinh đang chờ keyframe cụm đất spawn đầu tiên; lần tăng này không phải capture. */
+  const awaitingSpawnTerritory = useRef(new Set<number>());
   const initialized = useRef(false);
 
   const tmpColor = useMemo(() => new THREE.Color(), []);
@@ -137,13 +139,22 @@ export const Effects = memo(function Effects({ game }: { game: GameState }) {
           tmpColor.set(entity.color.glow);
           deathBurst(entity.pos.x, entity.pos.y, tmpColor);
         }
+        if (entity.alive && wasAlive === false) {
+          awaitingSpawnTerritory.current.add(entity.id);
+        }
         lastAlive.current.set(entity.id, entity.alive);
 
         const owned = entity.owned.size;
         const previousOwned = lastOwned.current.get(entity.id) ?? owned;
         if (owned > previousOwned) {
-          const [r, g, b] = entity.color.owned;
-          sparkBurst(entity.pos.x, entity.pos.y, r, g, b);
+          if (awaitingSpawnTerritory.current.has(entity.id)) {
+            // 0 → cụm đất khởi đầu khi respawn: chỉ chốt baseline, không phát particle tại
+            // transform cũ. Xóa cờ sau khi keyframe đất spawn thực sự đã tới.
+            awaitingSpawnTerritory.current.delete(entity.id);
+          } else if (entity.alive && wasAlive === true) {
+            const [r, g, b] = entity.color.owned;
+            sparkBurst(entity.pos.x, entity.pos.y, r, g, b);
+          }
         }
         lastOwned.current.set(entity.id, owned);
       }
@@ -222,7 +233,7 @@ export const Effects = memo(function Effects({ game }: { game: GameState }) {
 
   return (
     <>
-      <points geometry={sparkGeometry}>
+      <points geometry={sparkGeometry} frustumCulled={false}>
         <pointsMaterial
           vertexColors
           size={0.5}
