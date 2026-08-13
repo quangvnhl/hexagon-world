@@ -122,14 +122,14 @@ export declare const CONFIG: {
                 readonly VIEW_SCALE: 1.15;
                 readonly ZOOM: {
                     readonly MIN: 1;
-                    readonly MAX: 1.4;
+                    readonly MAX: 1.8;
                 };
             };
             readonly MOBILE_LANDSCAPE: {
                 readonly VIEW_SCALE: 2.5;
                 readonly ZOOM: {
                     readonly MIN: 1;
-                    readonly MAX: 1.4;
+                    readonly MAX: 1.8;
                 };
             };
         };

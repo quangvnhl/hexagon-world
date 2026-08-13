@@ -9,9 +9,18 @@ describe("camera profiles", () => {
     expect(cameraProfileName(true, 844, 390)).toBe("MOBILE_LANDSCAPE");
   });
 
-  it("preserves the base FOV for profiles with view scale 1", () => {
+  it("applies each profile view scale to its FOV", () => {
     expect(cameraFov("DESKTOP", 1920, 1080)).toBeCloseTo(CONFIG.CAMERA.FOV);
-    expect(cameraFov("MOBILE_PORTRAIT", 390, 844)).toBeCloseTo(CONFIG.CAMERA.FOV);
+    const expectedPortrait =
+      (Math.atan(
+        Math.tan((CONFIG.CAMERA.FOV * Math.PI) / 360) *
+          CONFIG.CAMERA.PROFILES.MOBILE_PORTRAIT.VIEW_SCALE
+      ) *
+        360) /
+      Math.PI;
+    expect(cameraFov("MOBILE_PORTRAIT", 390, 844)).toBeCloseTo(
+      expectedPortrait
+    );
   });
 
   it("preserves the previous mobile landscape FOV formula", () => {

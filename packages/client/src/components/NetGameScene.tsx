@@ -90,6 +90,7 @@ function NetLoop({
   onPlayerCount,
   visibleEntityIdsRef,
   authoritativeScoresRef,
+  captureHapticEnabledRef,
 }: {
   client: NetClient;
   game: GameState;
@@ -110,6 +111,7 @@ function NetLoop({
   onPlayerCount: (count: number) => void;
   visibleEntityIdsRef: React.MutableRefObject<ReadonlySet<number>>;
   authoritativeScoresRef: React.MutableRefObject<ReadonlyMap<number, number>>;
+  captureHapticEnabledRef: React.MutableRefObject<boolean>;
 }) {
   const camera = useThree((s) => s.camera);
   const { width, height } = useThree((s) => s.size);
@@ -184,6 +186,7 @@ function NetLoop({
     const self = rs.self;
     const alive = self?.alive ?? false;
     const inPrep = rs.selfPrep > 0;
+    captureHapticEnabledRef.current = alive && !inPrep;
 
     // 3) Input: chỉ khi có self, còn sống, không xem. Tính hướng mong muốn rồi gửi.
     //    Khi CHUẨN BỊ (prep) chỉ NGẮM (sendAim, không dự đoán tiến); khi chơi thì sendInput.
@@ -287,6 +290,7 @@ export default function NetGameScene({
   const [worldUi, setWorldUi] = useState<WorldUiEntity[]>([]);
   const gameRef = useRef<GameState | null>(null);
   const authoritativeScoresRef = useRef<ReadonlyMap<number, number>>(new Map());
+  const captureHapticEnabledRef = useRef(false);
 
   const pointer = useRef<PointerRef>({ x: 0, y: 0, w: 1, h: 1, active: false });
   const joystick = useRef<{ active: boolean; angle: number }>({
@@ -596,6 +600,7 @@ export default function NetGameScene({
               onPlayerCount={setPlayerCount}
               visibleEntityIdsRef={visibleEntityIdsRef}
               authoritativeScoresRef={authoritativeScoresRef}
+              captureHapticEnabledRef={captureHapticEnabledRef}
             />
             <HexGridView game={game} activeEntityId={playerId} />
             {CONFIG.DISPLAY.TERRITORY_BORDERS && <TerritoryBorders game={game} />}
@@ -613,6 +618,8 @@ export default function NetGameScene({
               game={game}
               playerId={playerId}
               trackDeaths={false}
+              authoritativeScores={authoritativeScoresRef}
+              captureEnabled={captureHapticEnabledRef}
             />
             {CONFIG.DEBUG.COLLISION_VECTORS && (
               <>

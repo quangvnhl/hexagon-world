@@ -105,11 +105,11 @@ export const CONFIG = {
       },
       MOBILE_PORTRAIT: {
         VIEW_SCALE: 1.15,
-        ZOOM: { MIN: 1, MAX: 1.4 },
+        ZOOM: { MIN: 1, MAX: 1.8 },
       },
       MOBILE_LANDSCAPE: {
         VIEW_SCALE: 2.5,
-        ZOOM: { MIN: 1, MAX: 1.4 },
+        ZOOM: { MIN: 1, MAX: 1.8 },
       },
     },
   },

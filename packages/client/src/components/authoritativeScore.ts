@@ -9,3 +9,16 @@ export function resolvedOwnershipScore(
 ): number | undefined {
   return authoritativeScores ? authoritativeScores.get(entityId) : sceneOwnedSize;
 }
+
+export function shouldHapticForCapture(
+  previousScore: number | null,
+  currentScore: number | undefined,
+  captureEnabled: boolean
+): boolean {
+  return (
+    captureEnabled &&
+    previousScore !== null &&
+    currentScore !== undefined &&
+    currentScore > previousScore
+  );
+}

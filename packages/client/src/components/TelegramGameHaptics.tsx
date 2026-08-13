@@ -4,16 +4,24 @@ import { memo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import type { GameState } from "@hexagon/shared";
 import { impactTelegramHaptic, notifyTelegramHaptic } from "@/lib/telegram";
+import {
+  resolvedOwnershipScore,
+  shouldHapticForCapture,
+} from "./authoritativeScore";
 
 /** Theo dõi bộ đếm chết nên vẫn hoạt động khi người dùng tắt hiệu ứng hạt. */
 export const TelegramGameHaptics = memo(function TelegramGameHaptics({
   game,
   playerId,
   trackDeaths = true,
+  authoritativeScores,
+  captureEnabled,
 }: {
   game: GameState;
   playerId: number;
   trackDeaths?: boolean;
+  authoritativeScores?: React.MutableRefObject<ReadonlyMap<number, number>>;
+  captureEnabled?: React.MutableRefObject<boolean>;
 }) {
   const previousDeaths = useRef<Map<number, number> | null>(null);
   const previousOwned = useRef<number | null>(null);
@@ -21,17 +29,19 @@ export const TelegramGameHaptics = memo(function TelegramGameHaptics({
   useFrame(() => {
     const player = game.players[playerId];
     if (player) {
-      const owned = player.owned.size;
-      if (
-        previousOwned.current !== null &&
-        owned > previousOwned.current &&
-        player.phase === "playing"
-      ) {
+      const owned = resolvedOwnershipScore(
+        playerId,
+        player.owned.size,
+        authoritativeScores?.current
+      );
+      const enabled =
+        (captureEnabled?.current ?? true) && player.phase === "playing";
+      if (shouldHapticForCapture(previousOwned.current, owned, enabled)) {
         // Một lần rung nhẹ cho mỗi đợt chiếm đất, không rung N lần khi khép
         // vòng và server/client cấp nhiều ô trong cùng một tick.
         impactTelegramHaptic("light");
       }
-      previousOwned.current = owned;
+      if (owned !== undefined) previousOwned.current = owned;
     }
 
     if (!trackDeaths) return;
