@@ -23,4 +23,5 @@ __exportStar(require("./config"), exports);
 __exportStar(require("./arena"), exports);
 __exportStar(require("./state"), exports);
 __exportStar(require("./protocol"), exports);
+__exportStar(require("./protocol-version"), exports);
 __exportStar(require("./spatialhash"), exports);

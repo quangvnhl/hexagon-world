@@ -20,6 +20,9 @@ phải đọc và tuân thủ các tài liệu này trước khi code.**
 | [11-player-backend-runbook.md](11-player-backend-runbook.md) | Runbook migration, OAuth, Telegram Stars, admin và multi-region | Backend + DevOps |
 | [12-player-backend-implementation-report.md](12-player-backend-implementation-report.md) | Phạm vi đã triển khai, kiểm thử và blocker hạ tầng | Backend + Product |
 | [15-telegram-platform-gating-and-adsgram.md](15-telegram-platform-gating-and-adsgram.md) | Quy tắc bắt buộc cô lập Telegram và placement AdsGram | Tất cả agent sửa code platform |
+| [16-work-session-roadmap-audit.md](16-work-session-roadmap-audit.md) | Tổng kết cửa sổ làm việc, tồn đọng Pha 3–4 và gate chuyển Pha 5 | PM + Tech lead |
+| [17-phase-3-completion-report.md](17-phase-3-completion-report.md) | Báo cáo đóng Pha 3: AoI, lifecycle, backpressure, protocol metrics | Backend + Frontend + DevOps |
+| [18-telegram-stars-coin-packages.md](18-telegram-stars-coin-packages.md) | Contract mua ba gói coin bằng Telegram Stars | Backend + Frontend + DevOps |
 
 ## Nguyên tắc làm việc cho agents
 
@@ -40,5 +43,5 @@ phải đọc và tuân thủ các tài liệu này trước khi code.**
 - [x] Bot/AI đối kháng (đa thực thể: bành trướng, cắt đuôi để hạ nhau)
 - [x] **Pha 1 hoàn thiện gameplay:** cơ chế thắng (giữ King 3 phút), camera zoom theo diện tích, hiệu ứng hạt, joystick mobile, unit test Vitest — xem [05-roadmap.md](05-roadmap.md) & [REPORT-pha-1.md](REPORT-pha-1.md)
 - [x] **Pha 2 nền tảng multiplayer:** monorepo pnpm (`shared`/`client`/`server`), server NestJS authoritative + `ws` (tick 24Hz), protocol nhị phân + snapshot, client prediction/interpolation, spatial hashing — xem [REPORT-pha-2.md](REPORT-pha-2.md)
-- [ ] Pha 3: binary delta compression, area-of-interest, WebRTC
-- [ ] Matchmaking, totem, DB (Pha 4+)
+- [x] Pha 3: delta/AoI lãnh thổ, entity/spectator lifecycle, backpressure và protocol metrics
+- [ ] Pha 4: backend lõi đã có; còn migration/E2E production và lobby reconnect

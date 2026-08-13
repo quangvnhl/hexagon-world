@@ -6,11 +6,19 @@ import {
   decodeTerritoryDelta,
   encodeTerritory,
   encodeTerritoryDelta,
+  encodeTerritoryMinimap,
+  decodeTerritoryMinimap,
   peekTag,
   type TerritoryDelta,
 } from "../protocol";
 
 describe("protocol TERRITORY_DELTA (binary)", () => {
+  it("keeps full-map minimap keyframes on a distinct tag", () => {
+    const cells = [{ q: 2, r: -3, owner: 4, kind: 0 as const }];
+    const frame = encodeTerritoryMinimap(88, cells);
+    expect(peekTag(frame)).toBe(TAG.TERRITORY_MINIMAP);
+    expect(decodeTerritoryMinimap(frame)).toEqual({ tick: 88, cells });
+  });
   it("roundtrips upserts, removals and revision metadata", () => {
     const delta: TerritoryDelta = {
       tick: 1234,

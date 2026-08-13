@@ -180,7 +180,11 @@ export class GameRoom {
    * Dựng snapshot cho một ghế cụ thể: ackSeq = seq cuối server đã áp cho ghế đó, kèm ảnh
    * chụp TOÀN BỘ thực thể (người + bot).
    */
-  buildSnapshotFor(entityId: number, entityAoiRadius = Number.POSITIVE_INFINITY): Snapshot {
+  buildSnapshotFor(
+    entityId: number,
+    entityAoiRadius = Number.POSITIVE_INFINITY,
+    interestTargetId: number | null = null,
+  ): Snapshot {
     const ack =
       entityId >= 0 && entityId < this.maxHumans ? this.lastSeq[entityId] : 0;
     const e = this.gs.players[entityId];
@@ -194,20 +198,29 @@ export class GameRoom {
       const isParticipating = (id: number): boolean =>
         id >= this.maxHumans || Boolean(this.seats[id]);
 
-      if (self?.alive) {
+      const requestedTarget =
+        interestTargetId !== null && isParticipating(interestTargetId)
+          ? allEntities.find((entity) => entity.id === interestTargetId && entity.alive)
+          : undefined;
+      const leaderId = self?.alive ? -1 : this.gs.leaderId();
+      const leader = leaderId >= 0
+        ? allEntities.find((entity) => entity.id === leaderId)
+        : undefined;
+      const focus = self?.alive ? self : requestedTarget ?? leader ?? self;
+
+      if (focus) {
         const radiusSq = entityAoiRadius * entityAoiRadius;
         const kingId = this.gs.kingId();
         entities = allEntities.filter((entity) => {
           if (!isParticipating(entity.id)) return false;
           // Reconciliation luôn cần self; KING cần cho HUD ngay cả khi ngoài camera.
           if (entity.id === entityId || entity.id === kingId) return true;
-          const dx = entity.x - self.x;
-          const dy = entity.y - self.y;
+          const dx = entity.x - focus.x;
+          const dy = entity.y - focus.y;
           return dx * dx + dy * dy <= radiusSq;
         });
       } else {
-        // Chưa có interest-target trong protocol: giữ đủ entity để camera spectator hoạt động như cũ.
-        entities = allEntities.filter((entity) => isParticipating(entity.id));
+        entities = self ? [self] : [];
       }
     }
 

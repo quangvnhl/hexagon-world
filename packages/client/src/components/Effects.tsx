@@ -4,6 +4,7 @@ import { memo, useLayoutEffect, useMemo, useRef } from "react";
 import { useFrame } from "@react-three/fiber";
 import * as THREE from "three";
 import { CONFIG, GameState } from "@hexagon/shared";
+import { resolvedOwnershipScore } from "./authoritativeScore";
 
 const SPARK_POOL_SIZE = 300;
 const DROP_POOL_SIZE = 240;
@@ -14,7 +15,17 @@ const FLOOR_Z = 0.08;
  * - Giọt 3D cùng màu nhân vật bắn ra khi alive chuyển từ true sang false.
  * - Tia sáng nhỏ khi chiếm thêm đất.
  */
-export const Effects = memo(function Effects({ game }: { game: GameState }) {
+export const Effects = memo(function Effects({
+  game,
+  visibleEntityIds,
+  authoritativeScores,
+}: {
+  game: GameState;
+  /** Online AoI; bỏ trống ở single-player để theo dõi toàn bộ entity. */
+  visibleEntityIds?: React.MutableRefObject<ReadonlySet<number>>;
+  /** Điểm toàn phòng từ server; số ô trong scene online chỉ là lát cắt AoI. */
+  authoritativeScores?: React.MutableRefObject<ReadonlyMap<number, number>>;
+}) {
   const sparkLifeTime = CONFIG.EFFECTS.LIFE;
   const sparkCount = CONFIG.EFFECTS.PARTICLES;
   const dropLifeTime = CONFIG.EFFECTS.DEATH_LIFE;
@@ -128,12 +139,26 @@ export const Effects = memo(function Effects({ game }: { game: GameState }) {
 
     if (!initialized.current) {
       for (const entity of game.players) {
+        if (visibleEntityIds && !visibleEntityIds.current.has(entity.id)) continue;
         lastAlive.current.set(entity.id, entity.alive);
-        lastOwned.current.set(entity.id, entity.owned.size);
+        const owned = resolvedOwnershipScore(
+          entity.id,
+          entity.owned.size,
+          authoritativeScores?.current
+        );
+        if (owned !== undefined) lastOwned.current.set(entity.id, owned);
       }
       initialized.current = true;
     } else {
       for (const entity of game.players) {
+        if (visibleEntityIds && !visibleEntityIds.current.has(entity.id)) {
+          // Khi enter lại AoI, baseline lại trạng thái hiện tại; không phát vụ nổ cho cái chết
+          // đã xảy ra trong lúc entity nằm ngoài vùng quan tâm.
+          lastAlive.current.delete(entity.id);
+          lastOwned.current.delete(entity.id);
+          awaitingSpawnTerritory.current.delete(entity.id);
+          continue;
+        }
         const wasAlive = lastAlive.current.get(entity.id);
         if (wasAlive === true && !entity.alive) {
           tmpColor.set(entity.color.glow);
@@ -144,7 +169,15 @@ export const Effects = memo(function Effects({ game }: { game: GameState }) {
         }
         lastAlive.current.set(entity.id, entity.alive);
 
-        const owned = entity.owned.size;
+        const owned = resolvedOwnershipScore(
+          entity.id,
+          entity.owned.size,
+          authoritativeScores?.current
+        );
+        if (owned === undefined) {
+          lastOwned.current.delete(entity.id);
+          continue;
+        }
         const previousOwned = lastOwned.current.get(entity.id) ?? owned;
         if (owned > previousOwned) {
           if (awaitingSpawnTerritory.current.has(entity.id)) {

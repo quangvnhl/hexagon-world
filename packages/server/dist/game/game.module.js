@@ -36,6 +36,8 @@ let GatewayService = class GatewayService {
             authenticateTicket: (token) => this.tickets.verify(token, cfg.region),
             region: cfg.region,
             serverVersion: process.env.npm_package_version ?? "0.1.0",
+            protocolVersion: config_1.SERVER_PROTOCOL_VERSION,
+            backpressureBytes: config_1.WS_BACKPRESSURE_BYTES,
             onMatchResult: (result) => this.results.report(result),
         });
         await this.net.start();

@@ -4,4 +4,5 @@ export * from "./config";
 export * from "./arena";
 export * from "./state";
 export * from "./protocol";
+export * from "./protocol-version";
 export * from "./spatialhash";

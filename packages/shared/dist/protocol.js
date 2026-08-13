@@ -8,6 +8,8 @@ exports.encodeSnapshot = encodeSnapshot;
 exports.decodeSnapshot = decodeSnapshot;
 exports.encodeTerritory = encodeTerritory;
 exports.decodeTerritory = decodeTerritory;
+exports.encodeTerritoryMinimap = encodeTerritoryMinimap;
+exports.decodeTerritoryMinimap = decodeTerritoryMinimap;
 exports.encodeTerritoryDelta = encodeTerritoryDelta;
 exports.decodeTerritoryDelta = decodeTerritoryDelta;
 exports.peekTag = peekTag;
@@ -17,6 +19,7 @@ exports.TAG = {
     SNAPSHOT: 102,
     TERRITORY: 103,
     TERRITORY_DELTA: 104,
+    TERRITORY_MINIMAP: 105,
 };
 const encodeControl = (m) => JSON.stringify(m);
 exports.encodeControl = encodeControl;
@@ -166,6 +169,37 @@ function decodeTerritory(buf) {
             r: dv.getInt16(o + 2, true),
             owner: dv.getUint8(o + 4),
             kind: (dv.getUint8(o + 5) === 1 ? 1 : 0),
+        });
+        o += exports.TERRITORY_CELL;
+    }
+    return { tick, cells };
+}
+/** Full-map territory keyframe dedicated to the low-frequency minimap stream. */
+function encodeTerritoryMinimap(tick, cells) {
+    const buf = encodeTerritory(tick, cells);
+    new DataView(buf).setUint8(0, exports.TAG.TERRITORY_MINIMAP);
+    return buf;
+}
+function decodeTerritoryMinimap(buf) {
+    const dv = toDataView(buf);
+    if (dv.byteLength < exports.TERRITORY_HEADER ||
+        dv.getUint8(0) !== exports.TAG.TERRITORY_MINIMAP)
+        return null;
+    const tick = dv.getUint32(1, true);
+    const n = dv.getUint16(5, true);
+    if (dv.byteLength < exports.TERRITORY_HEADER + n * exports.TERRITORY_CELL)
+        return null;
+    const cells = [];
+    let o = exports.TERRITORY_HEADER;
+    for (let i = 0; i < n; i++) {
+        const kind = dv.getUint8(o + 5);
+        if (kind !== 0 && kind !== 1)
+            return null;
+        cells.push({
+            q: dv.getInt16(o, true),
+            r: dv.getInt16(o + 2, true),
+            owner: dv.getUint8(o + 4),
+            kind,
         });
         o += exports.TERRITORY_CELL;
     }

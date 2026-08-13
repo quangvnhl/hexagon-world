@@ -9,6 +9,9 @@ export interface BackendProgression { total_xp: number; level: number; updated_a
 export interface InventoryEntry { quantity: number; shop_items: { id: string; sku: string; type: "color" | "shape" | "trail"; asset_key: string; name: string; rarity: string }; }
 export interface BackendMe { player: BackendPlayer; profile: { selected_color: string; selected_shape: string; selected_trail_pattern: string } | null; stats: BackendStats | null; progression: BackendProgression | null; wallets: { currency_code: string; balance: number }[]; inventory: InventoryEntry[]; loadout: { color_item_id: string | null; shape_item_id: string | null; trail_item_id: string | null } | null; }
 export interface CatalogItem { id: string; sku: string; type: "color" | "shape" | "trail"; asset_key: string; name: string; rarity: string; is_default_free: boolean; shop_prices: { id: string; platform: string; currency_code: "coin" | "XTR"; amount: number; starts_at: string; ends_at: string | null }[]; }
+export interface CoinPackage { id: string; sku: string; name: string; coinAmount: number; starsAmount: number; sortOrder: number; }
+export interface StarsCoinInvoice { orderId: string; invoiceUrl: string | null; status: string; expiresAt: string | null; }
+export interface PaymentOrder { orderId: string; status: string; productKind: string; }
 
 async function json<T>(path: string, init?: RequestInit): Promise<T> {
   const url = `${API_URL}${path}`;
@@ -53,6 +56,16 @@ export function startGoogleLogin(): void { window.location.assign(`${API_URL}/v1
 export async function getCatalog(): Promise<CatalogItem[]> { return (await json<{ items: CatalogItem[] }>("/v1/shop/catalog")).items; }
 export async function purchaseWithCoin(itemId: string): Promise<void> { await json("/v1/shop/purchases", { method: "POST", body: JSON.stringify({ itemId, idempotencyKey: crypto.randomUUID() }) }); }
 export async function createStarsInvoice(itemId: string): Promise<string> { return (await json<{ invoiceUrl: string }>("/v1/payments/telegram-stars/invoice", { method: "POST", body: JSON.stringify({ itemId, idempotencyKey: crypto.randomUUID() }) })).invoiceUrl; }
+export async function getCoinPackages(): Promise<CoinPackage[]> { return (await json<{ packages: CoinPackage[] }>("/v1/shop/coin-packages", { cache: "no-store" })).packages; }
+export async function createCoinPackageStarsInvoice(packageId: string): Promise<StarsCoinInvoice> {
+  return json<StarsCoinInvoice>("/v1/payments/telegram-stars/coin-invoice", {
+    method: "POST",
+    body: JSON.stringify({ packageId, idempotencyKey: crypto.randomUUID() }),
+  });
+}
+export async function getPaymentOrder(orderId: string): Promise<PaymentOrder> {
+  return json<PaymentOrder>(`/v1/payments/orders/${encodeURIComponent(orderId)}`, { cache: "no-store" });
+}
 export async function equipItem(item: CatalogItem): Promise<void> {
   const key = item.type === "color" ? "colorItemId" : item.type === "shape" ? "shapeItemId" : "trailItemId";
   await json("/v1/loadout", { method: "PUT", body: JSON.stringify({ [key]: item.id }) });

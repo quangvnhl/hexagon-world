@@ -37,6 +37,7 @@ import { GameCamera, MenuButton } from "./GameScene";
 import { notifyTelegramHaptic } from "@/lib/telegram";
 import { TelegramGameHaptics } from "./TelegramGameHaptics";
 import { EndGameInterstitial } from "./EndGameInterstitial";
+import { useCameraProfile } from "./cameraProfile";
 import {
   NetClient,
   DEFAULT_SERVER_URL,
@@ -88,6 +89,7 @@ function NetLoop({
   onPing,
   onPlayerCount,
   visibleEntityIdsRef,
+  authoritativeScoresRef,
 }: {
   client: NetClient;
   game: GameState;
@@ -101,15 +103,19 @@ function NetLoop({
     localId: number,
     alive: boolean,
     prepMs: number,
-    kingHold: number
+    kingHold: number,
+    localScore: number
   ) => void;
   onPing: (ms: number) => void;
   onPlayerCount: (count: number) => void;
   visibleEntityIdsRef: React.MutableRefObject<ReadonlySet<number>>;
+  authoritativeScoresRef: React.MutableRefObject<ReadonlyMap<number, number>>;
 }) {
   const camera = useThree((s) => s.camera);
+  const { width, height } = useThree((s) => s.size);
+  const cameraProfile = useCameraProfile(width, height);
   const statAcc = useRef(0);
-  const zoom = useRef(CONFIG.CAMERA.ZOOM.MIN);
+  const zoom = useRef(cameraProfile.settings.ZOOM.MIN);
   const lastTerr = useRef(-1);
   /** Hướng ngắm/đi gần nhất — giữ để dự đoán tiến ngay cả frame không có hướng mới. */
   const lastHeading = useRef<number | null>(null);
@@ -229,10 +235,14 @@ function NetLoop({
         fy = game.players[tid].pos.y;
       }
     }
+    client.setTerritoryInterest(fx, fy);
     const [ox, oy, oz] = CONFIG.CAMERA.OFFSET;
     const k = CONFIG.CAMERA.LERP;
-    const { MIN, MAX } = CONFIG.CAMERA.ZOOM;
-    const t = Math.min(Math.max(game.pctOf(localId) / CONFIG.KING_PCT, 0), 1);
+    const { MIN, MAX } = cameraProfile.settings.ZOOM;
+    const localScore =
+      authoritativeScoresRef.current.get(localId) ?? self?.score ?? 0;
+    const authoritativePct = (localScore / game.playable.size) * 100;
+    const t = Math.min(Math.max(authoritativePct / CONFIG.KING_PCT, 0), 1);
     const targetZoom = MIN + t * (MAX - MIN);
     zoom.current += (targetZoom - zoom.current) * k;
     const z = zoom.current;
@@ -244,7 +254,7 @@ function NetLoop({
     statAcc.current += dt;
     if (statAcc.current >= 0.2) {
       statAcc.current = 0;
-      onStats(game, localId, alive, rs.selfPrep, rs.kingHold);
+      onStats(game, localId, alive, rs.selfPrep, rs.kingHold, localScore);
       onPing(client.getPing());
       onPlayerCount(rs.playerCount);
     }
@@ -267,11 +277,16 @@ export default function NetGameScene({
   onExit?: () => void;
 }) {
   const client = useMemo(() => new NetClient(), []);
+  const minimapTerritorySource = useCallback(
+    () => client.getMinimapTerritory().cells,
+    [client]
+  );
   // View-state dựng theo WELCOME (số ghế/bot của server). Tạo khi nhận WELCOME.
   const [game, setGame] = useState<GameState | null>(null);
   const [playerCount, setPlayerCount] = useState(0);
   const [worldUi, setWorldUi] = useState<WorldUiEntity[]>([]);
   const gameRef = useRef<GameState | null>(null);
+  const authoritativeScoresRef = useRef<ReadonlyMap<number, number>>(new Map());
 
   const pointer = useRef<PointerRef>({ x: 0, y: 0, w: 1, h: 1, active: false });
   const joystick = useRef<{ active: boolean; angle: number }>({
@@ -339,7 +354,8 @@ export default function NetGameScene({
       localId: number,
       alive: boolean,
       prepMs: number,
-      kingHold: number
+      kingHold: number,
+      localScore: number
     ) => {
       // Phát hiện chuyển sống→chết để chốt "ảnh lãnh thổ" cho bản đồ popup.
       if (wasAliveRef.current && !alive) {
@@ -351,13 +367,23 @@ export default function NetGameScene({
         });
         deathInfoRef.current = {
           ...deathInfoRef.current,
-          lastPct: g.pctOf(localId),
+          lastPct: (localScore / g.playable.size) * 100,
           cells,
         };
       }
       wasAliveRef.current = alive;
 
-      const kid = g.kingId();
+      const global = client.getWorldUi();
+      const globalLeader = global
+        .filter((entity) => entity.alive)
+        .reduce<WorldUiEntity | null>(
+          (best, entity) => (!best || entity.score > best.score ? entity : best),
+          null
+        );
+      const kid = globalLeader &&
+        (globalLeader.score / g.playable.size) * 100 >= CONFIG.KING_PCT
+        ? globalLeader.id
+        : global.length > 0 ? -1 : g.kingId();
       const won = wonRef.current.won;
       const winnerId = wonRef.current.winnerId;
       const inPrep = prepMs > 0;
@@ -366,13 +392,12 @@ export default function NetGameScene({
       const specId =
         specWant >= 0 && g.players[specWant]?.alive ? specWant : g.leaderId();
       setStats({
-        pct: g.pctOf(localId),
+        pct: (localScore / g.playable.size) * 100,
         king: kid === localId,
         deaths: deathCountRef.current,
         phase: inPrep ? "prep" : alive ? "playing" : "dead",
         prep: prepMs / 1000,
         scores: (() => {
-          const global = client.getWorldUi();
           if (global.length === 0) {
             const active = rosterIdsRef.current;
             return g.scores().filter((score) => active.has(score.id));
@@ -416,6 +441,7 @@ export default function NetGameScene({
         gameRef.current = g;
         setGame(g);
         setWorldUi([]);
+        authoritativeScoresRef.current = new Map();
         rosterIdsRef.current = new Set();
         // Reset trạng thái vòng chơi mới (quay lại phòng chờ).
         spectatingRef.current = false;
@@ -434,6 +460,9 @@ export default function NetGameScene({
         if (g) for (const p of players) g.setName(p.id, p.name);
       },
       onWorldUi: (entities) => {
+        authoritativeScoresRef.current = new Map(
+          entities.map((entity) => [entity.id, entity.score])
+        );
         const g = gameRef.current;
         if (g) {
           for (const e of entities) {
@@ -505,17 +534,28 @@ export default function NetGameScene({
   const onRevive = useCallback(() => client.sendRevive(), [client]);
   const onSpectate = useCallback(() => {
     spectatingRef.current = true;
+    const target = gameRef.current?.leaderId() ?? -1;
+    spectateTargetRef.current = target;
+    client.sendSpectateTarget(target >= 0 ? target : null);
     setSpectating(true);
-  }, []);
+  }, [client]);
   // Chuyển thực thể đang xem sang người sống trước/sau (thủ công thay cho tự bám dẫn đầu).
   const onSpectatePrev = useCallback(() => {
     const g = gameRef.current;
-    if (g) spectateTargetRef.current = g.spectateCycle(spectateTargetRef.current, -1);
-  }, []);
+    if (g) {
+      const target = g.spectateCycle(spectateTargetRef.current, -1);
+      spectateTargetRef.current = target;
+      client.sendSpectateTarget(target >= 0 ? target : null);
+    }
+  }, [client]);
   const onSpectateNext = useCallback(() => {
     const g = gameRef.current;
-    if (g) spectateTargetRef.current = g.spectateCycle(spectateTargetRef.current, 1);
-  }, []);
+    if (g) {
+      const target = g.spectateCycle(spectateTargetRef.current, 1);
+      spectateTargetRef.current = target;
+      client.sendSpectateTarget(target >= 0 ? target : null);
+    }
+  }, [client]);
   const onRestart = useCallback(() => {
     // Online: chơi lại = kết nối lại (nhận ghế mới, spawn mới).
     wonRef.current = { won: false, winnerId: -1 };
@@ -555,13 +595,20 @@ export default function NetGameScene({
               onPing={setPing}
               onPlayerCount={setPlayerCount}
               visibleEntityIdsRef={visibleEntityIdsRef}
+              authoritativeScoresRef={authoritativeScoresRef}
             />
             <HexGridView game={game} activeEntityId={playerId} />
             {CONFIG.DISPLAY.TERRITORY_BORDERS && <TerritoryBorders game={game} />}
             <BorderRim game={game} />
             <TrailLine game={game} />
             <PlayerCube game={game} visibleEntityIds={visibleEntityIdsRef} />
-            {CONFIG.DISPLAY.PARTICLES && <Effects game={game} />}
+            {CONFIG.DISPLAY.PARTICLES && (
+              <Effects
+                game={game}
+                visibleEntityIds={visibleEntityIdsRef}
+                authoritativeScores={authoritativeScoresRef}
+              />
+            )}
             <TelegramGameHaptics
               game={game}
               playerId={playerId}
@@ -592,7 +639,12 @@ export default function NetGameScene({
             />
           )}
           {CONFIG.DISPLAY.MINIMAP && (
-            <MiniMap game={game} localId={playerId} entities={worldUi} />
+            <MiniMap
+              game={game}
+              localId={playerId}
+              entities={worldUi}
+              territorySource={minimapTerritorySource}
+            />
           )}
           <Joystick dir={joystick} />
         </>

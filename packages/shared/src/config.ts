@@ -66,16 +66,16 @@ export const CONFIG = {
     /** Tốc độ quay đầu RIÊNG của bot (rad/giây) — TÁCH khỏi TURN_RATE của người chơi để
      *  chỉnh độ nhanh nhẹn của bot mà không đổi cảm giác lái của người. Cao hơn → bot
      *  khép được vòng LỚN (bành trướng nhanh) nhưng nếu quá cao dễ curl vào đuôi mình. */
-    TURN_RATE: 14,
+    TURN_RATE: 2,
     /** Khoảng cách tối đa rời "nhà" trước khi quay về khép vòng (world units). */
-    RANGE_MIN: 2,
-    RANGE_MAX: 20,
+    RANGE_MIN: 6,
+    RANGE_MAX: 6,
     /** Nhiễu hướng khi bành trướng (rad) — cho đường đi bớt thẳng đơ. */
     WANDER: 0.05,
     /** Thời gian (giây) bot nằm chờ trước khi tự hồi sinh sau khi chết. */
     RESPAWN_DELAY: 3,
     /** Cự ly quét chướng ngại phía trước (world units) khi né đuôi/tường. */
-    AVOID_DIST: 3,
+    AVOID_DIST: 1,
   },
   /** Hồ sơ ĐỘ KHÓ của bot (gán luân phiên cho từng bot). FSM: EXPAND/RETURN/HUNT/FLEE.
    *  - aggression: xác suất chuyển sang SĂN khi thấy con mồi.
@@ -92,15 +92,26 @@ export const CONFIG = {
   CAMERA: {
     OFFSET: [0, -4, 20] as [number, number, number],
     FOV: 70,
-    /**
-     * Hệ số mở rộng vùng nhìn khi mobile xoay ngang.
-     * 1 = giữ đúng bề rộng tương đương bản dọc; >1 = camera xa/rộng hơn.
-     */
-    MOBILE_LANDSCAPE_VIEW_SCALE: 2.5,
     LERP: 0.15,
-    /** Hệ số phóng lớn camera theo diện tích — 1 = gần nhất, MAX = xa nhất khi đạt
-     *  ngưỡng King (giống agar.io: càng lớn càng thấy rộng sân). */
-    ZOOM: { MIN: 1, MAX: 1.4 },
+    /**
+     * Cấu hình vùng nhìn riêng cho từng kiểu màn hình.
+     * VIEW_SCALE: 1 = vùng nhìn chuẩn; >1 = rộng hơn.
+     * ZOOM tăng dần từ MIN tới MAX theo phần trăm lãnh thổ của người chơi.
+     */
+    PROFILES: {
+      DESKTOP: {
+        VIEW_SCALE: 1,
+        ZOOM: { MIN: 1, MAX: 1.4 },
+      },
+      MOBILE_PORTRAIT: {
+        VIEW_SCALE: 1.15,
+        ZOOM: { MIN: 1, MAX: 1.4 },
+      },
+      MOBILE_LANDSCAPE: {
+        VIEW_SCALE: 2.5,
+        ZOOM: { MIN: 1, MAX: 1.4 },
+      },
+    },
   },
   /** Hiệu ứng "juice": số hạt mỗi lần nổ + thời gian sống (giây) của hạt. */
   EFFECTS: {

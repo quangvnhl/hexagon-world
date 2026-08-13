@@ -14,7 +14,7 @@ import {
 import { captureEnclosed } from "../src/floodfill";
 import { GameState, Entity, Phase } from "../src/state";
 import { CONFIG, PLAYER_COLORS } from "../src/config";
-import { insideArena, ARENA_INRADIUS, ARENA_R } from "../src/arena";
+import { insideArena, ARENA_INRADIUS, ARENA_R, WALL_LIMIT } from "../src/arena";
 
 /** Cho game qua hết pha chuẩn bị (đứng yên 3s) để bắt đầu di chuyển. */
 function skipPrep(g: GameState) {
@@ -427,9 +427,14 @@ console.log("[21] Ghi LÝ DO CHẾT + ảnh chụp lãnh thổ");
   human.pos = { x: start.x, y: start.y };
   human.currentHex = { q: 2, r: 0 };
   const K = key(3, 0);
-  (g as any).cellTrail.set(K, human.id);
-  human.trailHexes.push(K);
-  human.trailSet.add(K);
+  // Cắt vào một đoạn CŨ hơn grace window. Chỉ một ô đuôi mới nhất không còn là ca tự-cắt
+  // hợp lệ vì SELF_TRAIL_GRACE chủ đích bỏ qua dao động hex sát đầu.
+  const ownTrail = [K, key(4, 0), key(5, 0)];
+  for (const trailKey of ownTrail) {
+    (g as any).cellTrail.set(trailKey, human.id);
+    human.trailHexes.push(trailKey);
+    human.trailSet.add(trailKey);
+  }
   const pctBefore = g.territoryPct();
   const p3 = axialToPixel({ q: 3, r: 0 }, CONFIG.HEX_SIZE);
   (g as any).stepEntity(human, p3.x, p3.y); // đầu bước vào chính ô đuôi của mình
@@ -498,7 +503,8 @@ console.log("[22] Húc thẳng vào TƯỜNG/GÓC (đang mang đuôi) → KHÔNG
       return human.pos.x * Math.cos(ang) + human.pos.y * Math.sin(ang);
     })
   );
-  check("húc góc: đầu vẫn áp sát tường (trượt, không lùi)", maxDot >= ARENA_INRADIUS - 0.5);
+  // So với biên VA CHẠM thật (đã nhân WALL_SCALE), không phải inradius hình học dùng render.
+  check("húc góc: đầu vẫn áp sát tường (trượt, không lùi)", maxDot >= WALL_LIMIT - 0.5);
 }
 
 console.log("");

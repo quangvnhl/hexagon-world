@@ -138,4 +138,9 @@ export class InterpolationBuffer {
   teleportEntity(id: number, state: InterpState): void {
     for (const frame of this.frames) frame.entities.set(id, { ...state });
   }
+
+  /** Entity rời AoI: xóa khỏi mọi frame để sample trễ không dựng lại object ma. */
+  removeEntity(id: number): void {
+    for (const frame of this.frames) frame.entities.delete(id);
+  }
 }

@@ -30,7 +30,9 @@ url=https://api.example.com/v1/webhooks/telegram
 secret_token=<TELEGRAM_WEBHOOK_SECRET>
 ```
 
-Chỉ webhook `successful_payment` cấp item; trạng thái invoice phía client không có quyền cấp tài sản.
+Chỉ webhook `successful_payment` cấp item hoặc cộng coin; trạng thái invoice phía client
+không có quyền cấp tài sản. Luồng coin package và checklist đối soát nằm tại
+[`18-telegram-stars-coin-packages.md`](18-telegram-stars-coin-packages.md).
 
 ## 4. Admin coin và retention
 

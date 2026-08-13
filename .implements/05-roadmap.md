@@ -2,7 +2,7 @@
 
 Phân pha rõ ràng; mỗi pha có thể giao cho một nhóm sub-agent.
 
-## Pha 0 — MVP local (ĐANG LÀM)
+## Pha 0 — MVP local — ĐÃ XONG
 - [x] Tài liệu kế hoạch `.implements`
 - [x] Next.js + R3F scaffold, lưới hex top-down
 - [x] Di chuyển theo chuột, đuôi + biên
@@ -30,25 +30,29 @@ Xem báo cáo: [REPORT-pha-2.md](REPORT-pha-2.md).
 > ws thật) · **e2e xuyên gói 4/4** (client predict ↔ server thật, dự đoán hội tụ drift=0) ·
 > `next build` xanh (client). Đồng bộ delta LÃNH THỔ + AoI để **Pha 3**.
 
-## Pha 3 — Tối ưu mạng
-- [ ] Binary protocol (DataView → FlatBuffers)
+## Pha 3 — Tối ưu mạng — ĐÃ XONG
+- [x] Binary protocol bằng `DataView` cho snapshot và lãnh thổ
 - [x] Delta compression lãnh thổ: full keyframe khi join/resync, delta theo revision cho từng connection
 - [x] Entity area-of-interest phía server: snapshot lọc theo bán kính cấu hình, luôn giữ self/KING
-- [ ] Territory area-of-interest theo vùng camera (hiện đã delta nhưng chưa lọc ô theo camera)
-- [ ] Spectator interest target + spawn/despawn/tombstone rõ ràng cho entity ngoài AoI
-- [ ] Backpressure, protocol version và đo bytes/giây trước khi quyết định FlatBuffers
-- [ ] (Tùy chọn) WebRTC DataChannel unreliable cho vị trí
+- [x] Territory area-of-interest theo camera, hysteresis và keyframe toàn bản đồ riêng cho minimap (~200 ms)
+- [x] Spectator interest target; snapshot absence là despawn authoritative, client xóa interpolation/effect state khi rời AoI
+- [x] Backpressure (`bufferedAmount`), protocol version và metric bytes/giây/frame drop theo message type
+- [x] **Quyết định hoãn:** chỉ chuyển `DataView` sang FlatBuffers nếu số đo CPU/băng thông chứng minh cần thiết
+- [x] **Quyết định bỏ qua hiện tại:** WebRTC DataChannel; chỉ xem lại khi WebSocket có HOL/độ trễ đã đo được
 
-## Pha 4 — Meta & vật phẩm
-- [ ] Totem: teleport gate, slow totem, spy radar
-- [ ] Redis: matchmaking + leaderboard realtime
+Xem báo cáo đóng pha: [17-phase-3-completion-report.md](17-phase-3-completion-report.md).
+
+## Pha 4 — Meta & vật phẩm — ĐANG THỰC HIỆN
+- [ ] **Hoãn khỏi gate beta:** Totem: teleport gate, slow totem, spy radar
+- [ ] **Hoãn tới khi chạy nhiều node:** Redis matchmaking + leaderboard realtime
 - [x] Supabase PostgreSQL: account đa nguồn, session, match history, catalog, wallet, inventory, loadout
 - [x] XP/progression: rule cấu hình trong DB, level curve, ledger idempotent và API `/v1/me`
 - [x] Skin/tài sản: màu, model, trail pattern, shop coin và Telegram Stars
 - [x] Auth: Google OAuth cho web, Telegram initData, guest hạn chế backend
 - [x] Lobby/Store React cơ bản
-- [ ] Lobby hoàn chỉnh: ready/cancel/reconnect/private room/party
-- [ ] Hoàn tất migration + seed + webhook/OAuth E2E trên môi trường production
+- [ ] **Gate:** Lobby ready/cancel/reconnect; private room/party hoãn sau beta
+- [ ] **Gate:** Áp migration + seed trên Supabase staging/production
+- [ ] **Gate:** Google OAuth, Telegram auth/Stars webhook và match-result E2E trên HTTPS production
 
 ## Pha 5 — Vận hành
 - [ ] Chống gian lận (server authoritative + sanity check)
@@ -58,3 +62,14 @@ Xem báo cáo: [REPORT-pha-2.md](REPORT-pha-2.md).
 ## Tiêu chí lên pha sau
 Chỉ chuyển pha khi pha trước có: build xanh, demo chạy, và (từ Pha 2) test tự động
 cho phần logic chia sẻ.
+
+### Trạng thái gate ngày 2026-08-13
+
+- Build production toàn monorepo: đạt.
+- Runtime smoke test server: đạt (`/health/live`, `/health/network`, role `all`, region `sea`).
+- Vitest: đạt 54 shared + 31 client + 13 server.
+- `verify:logic`: đạt 93/0.
+- Pha 3: **đã đóng, đủ điều kiện tiếp tục Pha 4**.
+- Pha 4 còn migration, E2E production và lobby reconnect; chưa đủ điều kiện chuyển sang Pha 5.
+
+Chi tiết và thứ tự xử lý: [16-work-session-roadmap-audit.md](16-work-session-roadmap-audit.md).

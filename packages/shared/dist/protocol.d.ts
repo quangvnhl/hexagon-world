@@ -16,14 +16,16 @@
  */
 import type { DeathCause } from "./state";
 import type { PlayerShape, TrailPattern } from "./config";
+import type { ProtocolJoinMetadata } from "./protocol-version";
 /** Byte tag đầu tiên của mỗi *binary frame*. */
 export declare const TAG: {
     readonly INPUT: 2;
     readonly SNAPSHOT: 102;
     readonly TERRITORY: 103;
     readonly TERRITORY_DELTA: 104;
+    readonly TERRITORY_MINIMAP: 105;
 };
-export type C2SControl = {
+export type C2SControl = ({
     t: "join";
     name: string;
     /** Regional ticket do control plane ký. Bắt buộc trên game server production. */
@@ -31,11 +33,18 @@ export type C2SControl = {
     colorIndex?: number;
     trailPattern?: TrailPattern;
     shape?: PlayerShape;
-} | {
+} & ProtocolJoinMetadata) | {
     t: "ping";
     time: number;
 } | {
     t: "territory_resync";
+} | {
+    t: "territory_interest";
+    x: number;
+    y: number;
+} | {
+    t: "interest";
+    targetId: number | null;
 } | {
     t: "revive";
 };
@@ -154,6 +163,9 @@ export interface TerritoryKeyframe {
 }
 export declare function encodeTerritory(tick: number, cells: TerritoryCell[]): ArrayBuffer;
 export declare function decodeTerritory(buf: ArrayBuffer | Uint8Array): TerritoryKeyframe | null;
+/** Full-map territory keyframe dedicated to the low-frequency minimap stream. */
+export declare function encodeTerritoryMinimap(tick: number, cells: TerritoryCell[]): ArrayBuffer;
+export declare function decodeTerritoryMinimap(buf: ArrayBuffer | Uint8Array): TerritoryKeyframe | null;
 /** Byte tag đầu của một *binary frame* (để phân loại INPUT/SNAPSHOT/TERRITORY). */
 export declare const TERRITORY_DELTA_HEADER = 15;
 export declare const TERRITORY_DELTA_OPERATION = 7;

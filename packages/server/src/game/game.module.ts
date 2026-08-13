@@ -6,7 +6,7 @@ import {
 } from "@nestjs/common";
 import { HttpAdapterHost } from "@nestjs/core";
 import { NetServer } from "../net/net-server";
-import { DEFAULT_PORT, MAX_PLAYERS, BOT_COUNT, TICK_RATE } from "../config";
+import { DEFAULT_PORT, MAX_PLAYERS, BOT_COUNT, TICK_RATE, SERVER_PROTOCOL_VERSION, WS_BACKPRESSURE_BYTES } from "../config";
 import { runtimeConfig } from "../runtime-config";
 import { TicketService } from "../regions/ticket.service";
 import { MatchResultReporter } from "../matches/match-result-reporter.service";
@@ -36,6 +36,8 @@ export class GatewayService implements OnModuleInit, OnApplicationShutdown {
       authenticateTicket: (token) => this.tickets.verify(token, cfg.region),
       region: cfg.region,
       serverVersion: process.env.npm_package_version ?? "0.1.0",
+      protocolVersion: SERVER_PROTOCOL_VERSION,
+      backpressureBytes: WS_BACKPRESSURE_BYTES,
       onMatchResult: (result) => this.results.report(result),
     });
     await this.net.start();

@@ -6,6 +6,7 @@ import { CONFIG } from "@hexagon/shared";
 import { parseKey, axialToPixel } from "@hexagon/shared";
 import { ARENA_R, ARENA_INRADIUS } from "@hexagon/shared";
 import type { WorldUiEntity } from "@hexagon/shared";
+import type { TerritoryCell } from "@hexagon/shared";
 
 const SQRT3 = Math.sqrt(3);
 
@@ -24,12 +25,15 @@ export const MiniMap = memo(function MiniMap({
   game,
   localId = 0,
   entities,
+  territorySource,
 }: {
   game: GameState;
   /** Id thực thể người chơi cục bộ (0 khi chơi đơn; = playerId khi online). */
   localId?: number;
   /** Trạng thái toàn phòng nhịp thấp; không bị giới hạn bởi entity AoI của scene 3D. */
   entities?: readonly WorldUiEntity[];
+  /** Full-map low-frequency stream; scene GameState may contain only territory AoI. */
+  territorySource?: () => readonly TerritoryCell[];
 }) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const entitiesRef = useRef(entities);
@@ -79,16 +83,28 @@ export const MiniMap = memo(function MiniMap({
       // + viền sáng để NỔI BẬT rõ ràng so với đối thủ.
       const mine: [number, number][] = [];
       tctx.globalAlpha = 0.45;
-      game.forEachOwned((k, oid) => {
-        const p = axialToPixel(parseKey(k), CONFIG.HEX_SIZE);
+      const drawCell = (q: number, r: number, oid: number) => {
+        const p = axialToPixel({ q, r }, CONFIG.HEX_SIZE);
         const [px, py] = toPx(p.x, p.y);
         if (oid === localId) {
           mine.push([px, py]);
           return;
         }
-        tctx.fillStyle = rgb(game.players[oid].color.owned);
+        const color = game.players[oid]?.color.owned;
+        if (!color) return;
+        tctx.fillStyle = rgb(color);
         tctx.fillRect(px - cellW / 2, py - cellH / 2, cellW, cellH);
-      });
+      };
+      if (territorySource) {
+        for (const cell of territorySource()) {
+          if (cell.kind === 0) drawCell(cell.q, cell.r, cell.owner);
+        }
+      } else {
+        game.forEachOwned((k, oid) => {
+          const cell = parseKey(k);
+          drawCell(cell.q, cell.r, oid);
+        });
+      }
       // Ô của NGƯỜI CHƠI: đậm, hơi to hơn để rõ.
       tctx.globalAlpha = 1;
       const mineColor = rgb(game.players[localId].color.owned);
@@ -104,7 +120,7 @@ export const MiniMap = memo(function MiniMap({
     let lastGrid = -1;
     let timer = 0;
     const render = () => {
-      if (game.gridRevision !== lastGrid) {
+      if (territorySource || game.gridRevision !== lastGrid) {
         lastGrid = game.gridRevision;
         drawTerritory();
       }
@@ -161,7 +177,7 @@ export const MiniMap = memo(function MiniMap({
     render();
     timer = window.setInterval(render, 200);
     return () => window.clearInterval(timer);
-  }, [game, localId]);
+  }, [game, localId, territorySource]);
 
   return (
     <div

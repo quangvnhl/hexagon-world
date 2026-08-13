@@ -9,6 +9,7 @@ import {
   encodeInput,
   peekTag,
   TAG,
+  GAME_PROTOCOL_VERSION,
   type S2CControl,
   type Snapshot,
   type WorldUiEntity,
@@ -66,11 +67,19 @@ class TestClient {
     name: string,
     look?: { colorIndex: number; trailPattern: "solid" | "stripes" | "dots" | "chevrons"; shape: "cube" | "cylinder" | "sphere" | "cone" | "fly" | "bee" | "ladybug" },
   ): void {
-    this.ws.send(encodeControl({ t: "join", name, ...look }));
+    this.ws.send(encodeControl({ t: "join", name, ...look, protocolVersion: GAME_PROTOCOL_VERSION }));
   }
 
   input(seq: number, heading: number): void {
     this.ws.send(encodeInput(seq, heading));
+  }
+
+  interest(targetId: number | null): void {
+    this.ws.send(encodeControl({ t: "interest", targetId }));
+  }
+
+  revive(): void {
+    this.ws.send(encodeControl({ t: "revive" }));
   }
 
   /** Chờ tới khi có WELCOME (server đã cấp ghế). */
@@ -252,7 +261,22 @@ describe("NetServer integration (real ws, deterministic ticks)", () => {
     expect(room.worldUiEntities().map((entity) => entity.id)).toEqual([idA, idC]);
   });
 
-  it("giữ entity đang tham gia khi self chết để bảo toàn spectator", () => {
+  it("rejects a mismatched protocol before allocating a room", async () => {
+    server = new NetServer({ port: 0, protocolVersion: GAME_PROTOCOL_VERSION });
+    await server.listen();
+    const ws = new WebSocket(`ws://127.0.0.1:${server.port}`);
+    await new Promise<void>((resolve, reject) => { ws.once("open", resolve); ws.once("error", reject); });
+    const closed = new Promise<{ code: number; reason: string }>((resolve) => {
+      ws.once("close", (code, reason) => resolve({ code, reason: reason.toString() }));
+    });
+    ws.send(JSON.stringify({ t: "join", name: "Old client", protocolVersion: GAME_PROTOCOL_VERSION - 1 }));
+    const result = await closed;
+    expect(result.code).toBe(4002);
+    expect(result.reason).toContain(`server=${GAME_PROTOCOL_VERSION}`);
+    expect(server.roomCount).toBe(0);
+  });
+
+  it("spectator AoI bám leader/target, luôn giữ self và trở lại self sau respawn", () => {
     const room = new GameRoom(3, 0);
     const idA = room.join("A")!;
     const idB = room.join("B")!;
@@ -262,8 +286,71 @@ describe("NetServer integration (real ws, deterministic ticks)", () => {
     room.gameState.players[idC].pos = { x: -60, y: 0 };
     room.gameState.players[idA].phase = "dead";
 
-    const snap = room.buildSnapshotFor(idA, 10);
-    expect(snap.entities.map((entity) => entity.id)).toEqual([idA, idB, idC]);
+    const leaderSnap = room.buildSnapshotFor(idA, 10);
+    expect(leaderSnap.entities.map((entity) => entity.id)).toEqual([idA, idB]);
+
+    const targetSnap = room.buildSnapshotFor(idA, 10, idC);
+    expect(targetSnap.entities.map((entity) => entity.id)).toEqual([idA, idC]);
+
+    room.gameState.players[idA].phase = "prep";
+    const respawnSnap = room.buildSnapshotFor(idA, 10, idC);
+    expect(respawnSnap.entities.map((entity) => entity.id)).toEqual([idA]);
+  });
+
+  it("entity enter/leave AoI được phản ánh ngay ở snapshot kế tiếp", () => {
+    const room = new GameRoom(3, 0);
+    const idA = room.join("A")!;
+    const idB = room.join("B")!;
+    room.gameState.players[idA].pos = { x: 0, y: 0 };
+    room.gameState.players[idB].pos = { x: 20, y: 0 };
+    expect(room.buildSnapshotFor(idA, 10).entities.map((e) => e.id)).toEqual([idA]);
+
+    room.gameState.players[idB].pos = { x: 8, y: 0 };
+    expect(room.buildSnapshotFor(idA, 10).entities.map((e) => e.id)).toEqual([idA, idB]);
+
+    room.gameState.players[idB].pos = { x: 11, y: 0 };
+    expect(room.buildSnapshotFor(idA, 10).entities.map((e) => e.id)).toEqual([idA]);
+  });
+
+  it("control interest đổi spectator target và revive xóa target cũ", async () => {
+    server = new NetServer({ port: 0, entityAoiRadius: 10 });
+    await server.listen();
+    const url = `ws://127.0.0.1:${server.port}`;
+    const a = new TestClient(url);
+    const b = new TestClient(url);
+    const c = new TestClient(url);
+    clients = [a, b, c];
+    await Promise.all([a.open(), b.open(), c.open()]);
+    a.join("A"); b.join("B"); c.join("C");
+    await Promise.all([a.waitWelcome(), b.waitWelcome(), c.waitWelcome()]);
+
+    const idA = a.welcome!.playerId;
+    const idB = b.welcome!.playerId;
+    const idC = c.welcome!.playerId;
+    const room = server.activeRoom!;
+    room.gameState.players[idA].pos = { x: 0, y: 0 };
+    room.gameState.players[idB].pos = { x: 60, y: 0 };
+    room.gameState.players[idC].pos = { x: -60, y: 0 };
+    room.gameState.players[idA].phase = "dead";
+
+    server.tickOnce();
+    await delay(10);
+    expect(a.snapshots.at(-1)!.entities.map((e) => e.id)).toEqual([idA, idB]);
+
+    a.interest(idC);
+    await delay(10);
+    server.tickOnce();
+    await delay(10);
+    expect(a.snapshots.at(-1)!.entities.map((e) => e.id)).toEqual([idA, idC]);
+
+    a.revive();
+    await delay(10);
+    room.gameState.players[idA].pos = { x: 0, y: 0 };
+    room.gameState.players[idC].pos = { x: -60, y: 0 };
+    server.tickOnce();
+    await delay(10);
+    expect(a.snapshots.at(-1)!.entities.some((e) => e.id === idA)).toBe(true);
+    expect(a.snapshots.at(-1)!.entities.some((e) => e.id === idC)).toBe(false);
   });
 
   it("VÒNG ĐỜI: phòng tạo khi JOIN, ĐÓNG khi hết người", async () => {

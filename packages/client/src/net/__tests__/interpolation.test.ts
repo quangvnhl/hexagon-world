@@ -80,4 +80,17 @@ describe("InterpolationBuffer", () => {
     expect(buf.sample(1050).get(5)).toEqual(spawn);
     expect(buf.sample(1150).get(5)).toEqual(spawn);
   });
+
+  it("removeEntity xóa entity rời AoI khỏi mọi frame và cho phép enter lại sạch", () => {
+    const buf = new InterpolationBuffer();
+    buf.insert(1000, ents({ 5: { x: 1, y: 1, heading: 0 } }));
+    buf.insert(1100, ents({ 5: { x: 2, y: 1, heading: 0 } }));
+    buf.removeEntity(5);
+
+    expect(buf.sample(1000).has(5)).toBe(false);
+    expect(buf.sample(1100).has(5)).toBe(false);
+
+    buf.insert(1200, ents({ 5: { x: 30, y: 4, heading: 1 } }));
+    expect(buf.sample(1200).get(5)).toEqual({ x: 30, y: 4, heading: 1 });
+  });
 });

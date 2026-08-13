@@ -16,6 +16,7 @@
  */
 import type { DeathCause } from "./state";
 import type { PlayerShape, TrailPattern } from "./config";
+import type { ProtocolJoinMetadata } from "./protocol-version";
 
 /** Byte tag đầu tiên của mỗi *binary frame*. */
 export const TAG = {
@@ -23,12 +24,13 @@ export const TAG = {
   SNAPSHOT: 102,
   TERRITORY: 103,
   TERRITORY_DELTA: 104,
+  TERRITORY_MINIMAP: 105,
 } as const;
 
 // ---- Điều khiển (JSON, text frame) ----------------------------------------
 
 export type C2SControl =
-  | {
+  | ({
       t: "join";
       name: string;
       /** Regional ticket do control plane ký. Bắt buộc trên game server production. */
@@ -36,9 +38,11 @@ export type C2SControl =
       colorIndex?: number;
       trailPattern?: TrailPattern;
       shape?: PlayerShape;
-    }
+    } & ProtocolJoinMetadata)
   | { t: "ping"; time: number }
   | { t: "territory_resync" }
+  | { t: "territory_interest"; x: number; y: number }
+  | { t: "interest"; targetId: number | null }
   | { t: "revive" };
 
 export type S2CControl =
@@ -288,6 +292,43 @@ export function decodeTerritory(
       r: dv.getInt16(o + 2, true),
       owner: dv.getUint8(o + 4),
       kind: (dv.getUint8(o + 5) === 1 ? 1 : 0) as 0 | 1,
+    });
+    o += TERRITORY_CELL;
+  }
+  return { tick, cells };
+}
+
+/** Full-map territory keyframe dedicated to the low-frequency minimap stream. */
+export function encodeTerritoryMinimap(
+  tick: number,
+  cells: TerritoryCell[]
+): ArrayBuffer {
+  const buf = encodeTerritory(tick, cells);
+  new DataView(buf).setUint8(0, TAG.TERRITORY_MINIMAP);
+  return buf;
+}
+
+export function decodeTerritoryMinimap(
+  buf: ArrayBuffer | Uint8Array
+): TerritoryKeyframe | null {
+  const dv = toDataView(buf);
+  if (
+    dv.byteLength < TERRITORY_HEADER ||
+    dv.getUint8(0) !== TAG.TERRITORY_MINIMAP
+  ) return null;
+  const tick = dv.getUint32(1, true);
+  const n = dv.getUint16(5, true);
+  if (dv.byteLength < TERRITORY_HEADER + n * TERRITORY_CELL) return null;
+  const cells: TerritoryCell[] = [];
+  let o = TERRITORY_HEADER;
+  for (let i = 0; i < n; i++) {
+    const kind = dv.getUint8(o + 5);
+    if (kind !== 0 && kind !== 1) return null;
+    cells.push({
+      q: dv.getInt16(o, true),
+      r: dv.getInt16(o + 2, true),
+      owner: dv.getUint8(o + 4),
+      kind,
     });
     o += TERRITORY_CELL;
   }

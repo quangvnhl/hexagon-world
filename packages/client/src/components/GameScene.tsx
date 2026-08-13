@@ -22,6 +22,7 @@ import { EndGameInterstitial } from "./EndGameInterstitial";
 import { HUD, Stats } from "./HUD";
 import { FpsMeterIfEnabled } from "./FpsMeter";
 import { TelegramGameHaptics } from "./TelegramGameHaptics";
+import { cameraFov, useCameraProfile } from "./cameraProfile";
 
 interface PointerRef {
   x: number;
@@ -31,31 +32,11 @@ interface PointerRef {
   active: boolean;
 }
 
-/** Mobile landscape lấy bản dọc làm chuẩn rồi mở rộng theo hệ số trong CONFIG.CAMERA. */
+/** Chọn FOV theo profile desktop, mobile dọc hoặc mobile ngang. */
 export function GameCamera() {
   const { width, height } = useThree((state) => state.size);
-  const [coarse, setCoarse] = useState(false);
-
-  useEffect(() => {
-    const media = window.matchMedia("(pointer: coarse)");
-    const sync = () => setCoarse(media.matches);
-    sync();
-    media.addEventListener("change", sync);
-    return () => media.removeEventListener("change", sync);
-  }, []);
-
-  const aspect = width / Math.max(height, 1);
-  let fov: number = CONFIG.CAMERA.FOV;
-  if (coarse && aspect > 1) {
-    const portraitAspect = 1 / aspect;
-    const portraitHalfWidth =
-      Math.tan(THREE.MathUtils.degToRad(CONFIG.CAMERA.FOV) / 2) *
-      portraitAspect *
-      CONFIG.CAMERA.MOBILE_LANDSCAPE_VIEW_SCALE;
-    fov = THREE.MathUtils.radToDeg(
-      2 * Math.atan(portraitHalfWidth / aspect)
-    );
-  }
+  const profile = useCameraProfile(width, height);
+  const fov = cameraFov(profile.name, width, height);
 
   return (
     <PerspectiveCamera
@@ -110,10 +91,12 @@ function GameLoop({
   onStats: (s: Stats) => void;
 }) {
   const camera = useThree((s) => s.camera);
+  const { width, height } = useThree((s) => s.size);
+  const cameraProfile = useCameraProfile(width, height);
   const statAcc = useRef(0);
   const lastPhase = useRef(game.phase);
   // Hệ số zoom hiện tại (lerp mượt về target theo diện tích) — bắt đầu ở mức gần nhất.
-  const zoom = useRef(CONFIG.CAMERA.ZOOM.MIN);
+  const zoom = useRef(cameraProfile.settings.ZOOM.MIN);
   // Raycaster + mặt phẳng mặt đất (z=0) để quy đổi vị trí chuột → điểm world.
   const ray = useMemo(() => new THREE.Raycaster(), []);
   const groundPlane = useMemo(
@@ -167,7 +150,7 @@ function GameLoop({
     const [ox, oy, oz] = CONFIG.CAMERA.OFFSET;
     const k = CONFIG.CAMERA.LERP;
     // Zoom theo diện tích: pct càng gần ngưỡng King → hệ số càng tiến về MAX (xa hơn).
-    const { MIN, MAX } = CONFIG.CAMERA.ZOOM;
+    const { MIN, MAX } = cameraProfile.settings.ZOOM;
     const t = Math.min(Math.max(game.territoryPct() / CONFIG.KING_PCT, 0), 1);
     const targetZoom = MIN + t * (MAX - MIN);
     zoom.current += (targetZoom - zoom.current) * k; // lerp mượt, không giật

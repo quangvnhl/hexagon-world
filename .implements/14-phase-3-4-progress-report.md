@@ -26,13 +26,12 @@ Ngày cập nhật: 2026-08-13.
 - Client: 18 tests.
 - Typecheck cả ba package và production build phải đạt trước khi phát hành.
 
-## Còn lại ưu tiên cao
+## Cập nhật đóng Pha 3
 
-1. Territory AoI theo camera và vùng đệm.
-2. Spectator interest target và semantics entity enter/leave AoI.
-3. Backpressure (`bufferedAmount`), protocol version, thống kê bytes/giây và load test.
-4. Áp migration progression trên Supabase staging và chạy test SQL/RPC thật.
-5. Redis matchmaking/room registry và leaderboard khi chạy nhiều game node.
-6. Totem server-authoritative và UI kỹ năng.
+Territory camera AoI/minimap stream, spectator entity lifecycle, backpressure, protocol version và
+bandwidth metrics đã hoàn thành. Xem [17-phase-3-completion-report.md](17-phase-3-completion-report.md).
+
+Ưu tiên còn lại thuộc Pha 4: áp migration progression trên Supabase staging và chạy SQL/RPC/auth/
+payment E2E thật; hoàn thiện ready/cancel/reconnect. Redis và totem được hoãn theo roadmap.
 
 FlatBuffers và WebRTC vẫn để sau khi đo băng thông thực tế; DataView + delta/AoI hiện đem lại lợi ích trực tiếp hơn.

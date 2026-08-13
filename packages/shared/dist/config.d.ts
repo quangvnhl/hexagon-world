@@ -64,16 +64,16 @@ export declare const CONFIG: {
         /** Tốc độ quay đầu RIÊNG của bot (rad/giây) — TÁCH khỏi TURN_RATE của người chơi để
          *  chỉnh độ nhanh nhẹn của bot mà không đổi cảm giác lái của người. Cao hơn → bot
          *  khép được vòng LỚN (bành trướng nhanh) nhưng nếu quá cao dễ curl vào đuôi mình. */
-        readonly TURN_RATE: 14;
+        readonly TURN_RATE: 2;
         /** Khoảng cách tối đa rời "nhà" trước khi quay về khép vòng (world units). */
-        readonly RANGE_MIN: 2;
-        readonly RANGE_MAX: 20;
+        readonly RANGE_MIN: 6;
+        readonly RANGE_MAX: 6;
         /** Nhiễu hướng khi bành trướng (rad) — cho đường đi bớt thẳng đơ. */
         readonly WANDER: 0.05;
         /** Thời gian (giây) bot nằm chờ trước khi tự hồi sinh sau khi chết. */
         readonly RESPAWN_DELAY: 3;
         /** Cự ly quét chướng ngại phía trước (world units) khi né đuôi/tường. */
-        readonly AVOID_DIST: 3;
+        readonly AVOID_DIST: 1;
     };
     /** Hồ sơ ĐỘ KHÓ của bot (gán luân phiên cho từng bot). FSM: EXPAND/RETURN/HUNT/FLEE.
      *  - aggression: xác suất chuyển sang SĂN khi thấy con mồi.
@@ -104,17 +104,34 @@ export declare const CONFIG: {
     readonly CAMERA: {
         readonly OFFSET: [number, number, number];
         readonly FOV: 70;
-        /**
-         * Hệ số mở rộng vùng nhìn khi mobile xoay ngang.
-         * 1 = giữ đúng bề rộng tương đương bản dọc; >1 = camera xa/rộng hơn.
-         */
-        readonly MOBILE_LANDSCAPE_VIEW_SCALE: 2.5;
         readonly LERP: 0.15;
-        /** Hệ số phóng lớn camera theo diện tích — 1 = gần nhất, MAX = xa nhất khi đạt
-         *  ngưỡng King (giống agar.io: càng lớn càng thấy rộng sân). */
-        readonly ZOOM: {
-            readonly MIN: 1;
-            readonly MAX: 1.4;
+        /**
+         * Cấu hình vùng nhìn riêng cho từng kiểu màn hình.
+         * VIEW_SCALE: 1 = vùng nhìn chuẩn; >1 = rộng hơn.
+         * ZOOM tăng dần từ MIN tới MAX theo phần trăm lãnh thổ của người chơi.
+         */
+        readonly PROFILES: {
+            readonly DESKTOP: {
+                readonly VIEW_SCALE: 1;
+                readonly ZOOM: {
+                    readonly MIN: 1;
+                    readonly MAX: 1.4;
+                };
+            };
+            readonly MOBILE_PORTRAIT: {
+                readonly VIEW_SCALE: 1.15;
+                readonly ZOOM: {
+                    readonly MIN: 1;
+                    readonly MAX: 1.4;
+                };
+            };
+            readonly MOBILE_LANDSCAPE: {
+                readonly VIEW_SCALE: 2.5;
+                readonly ZOOM: {
+                    readonly MIN: 1;
+                    readonly MAX: 1.4;
+                };
+            };
         };
     };
     /** Hiệu ứng "juice": số hạt mỗi lần nổ + thời gian sống (giây) của hạt. */

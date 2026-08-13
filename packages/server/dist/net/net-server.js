@@ -5,7 +5,9 @@ const ws_1 = require("ws");
 const node_crypto_1 = require("node:crypto");
 const shared_1 = require("@hexagon/shared");
 const game_room_1 = require("../game/game-room");
+const territory_aoi_1 = require("./territory-aoi");
 const config_1 = require("../config");
+const network_transport_1 = require("./network-transport");
 const TERRITORY_EVERY = 6;
 const WORLD_UI_EVERY = 5;
 const ENDED_GRACE_MS = 8000;
@@ -26,6 +28,8 @@ class NetServer {
         this.serverVersion = opts.serverVersion ?? "dev";
         this.onMatchResult = opts.onMatchResult;
         this.entityAoiRadius = opts.entityAoiRadius ?? config_1.ENTITY_AOI_RADIUS;
+        this.protocolVersion = opts.protocolVersion ?? shared_1.GAME_PROTOCOL_VERSION;
+        this.transport = new network_transport_1.NetworkTransport(opts.backpressureBytes ?? config_1.WS_BACKPRESSURE_BYTES, network_transport_1.gameNetworkMetrics);
         this.wss = opts.httpServer
             ? new ws_1.WebSocketServer({ server: opts.httpServer, ...(opts.path ? { path: opts.path } : {}) })
             : new ws_1.WebSocketServer({ port: opts.port ?? 0 });
@@ -53,6 +57,7 @@ class NetServer {
     get roomCount() {
         return this.rooms.size;
     }
+    get networkMetrics() { return this.transport.snapshot(); }
     tickOnce() {
         const r = this.active;
         if (!r || !r.started)
@@ -271,6 +276,8 @@ class NetServer {
             identity: null,
             territoryRevision: 0,
             territoryCells: new Map(),
+            territoryInterest: null,
+            interestTargetId: null,
         });
         ws.on("message", (data, isBinary) => {
             if (isBinary)
@@ -300,6 +307,11 @@ class NetServer {
         if (msg.t === "join") {
             if (conn.entityId !== null)
                 return;
+            const requestedVersion = Number(msg.protocolVersion);
+            if (!Number.isInteger(requestedVersion) || requestedVersion !== this.protocolVersion) {
+                ws.close(4002, `protocol mismatch client=${Number.isInteger(requestedVersion) ? requestedVersion : "missing"} server=${this.protocolVersion}`);
+                return;
+            }
             let identity = null;
             if (msg.ticket && this.authenticateTicket) {
                 try {
@@ -327,6 +339,7 @@ class NetServer {
             }
             conn.entityId = id;
             conn.room = r;
+            conn.interestTargetId = null;
             r.conns.add(ws);
             this.send(ws, {
                 t: "welcome",
@@ -339,11 +352,18 @@ class NetServer {
                 botCount: config_1.ONLINE_BOTS,
             });
             this.sendTerritory(ws, r);
+            this.sendMinimapTerritory(ws, r);
             this.broadcastRoster(r);
             if (!r.started && r.room.occupied() >= config_1.MIN_PLAYERS)
                 this.startGame(r);
             else
                 this.broadcastLobby(r);
+        }
+        else if (msg.t === "interest") {
+            if (msg.targetId === null)
+                conn.interestTargetId = null;
+            else if (Number.isInteger(msg.targetId) && msg.targetId >= 0)
+                conn.interestTargetId = msg.targetId;
         }
         else if (msg.t === "ping") {
             this.send(ws, { t: "pong", time: msg.time });
@@ -352,9 +372,17 @@ class NetServer {
             if (conn.room)
                 this.sendTerritory(ws, conn.room);
         }
+        else if (msg.t === "territory_interest") {
+            if (conn.room && Number.isFinite(msg.x) && Number.isFinite(msg.y)) {
+                conn.territoryInterest = { x: msg.x, y: msg.y };
+                this.sendTerritory(ws, conn.room);
+            }
+        }
         else if (msg.t === "revive") {
-            if (conn.room && conn.entityId !== null)
-                conn.room.room.reviveSeat(conn.entityId);
+            if (conn.room && conn.entityId !== null) {
+                if (conn.room.room.reviveSeat(conn.entityId))
+                    conn.interestTargetId = null;
+            }
         }
     }
     onClose(ws) {
@@ -380,21 +408,17 @@ class NetServer {
             }
         }
         this.conns.delete(ws);
+        this.transport.remove(ws);
     }
     send(ws, msg) {
-        if (ws.readyState === ws_1.WebSocket.OPEN)
-            ws.send((0, shared_1.encodeControl)(msg));
+        this.transport.send(ws, (0, shared_1.encodeControl)(msg), "control");
     }
     broadcast(r) {
         for (const ws of r.conns) {
             const conn = this.conns.get(ws);
             if (!conn || conn.entityId === null)
                 continue;
-            if (ws.readyState !== ws_1.WebSocket.OPEN)
-                continue;
-            ws.send((0, shared_1.encodeSnapshot)(r.room.buildSnapshotFor(conn.entityId, this.entityAoiRadius)), {
-                binary: true,
-            });
+            this.transport.send(ws, (0, shared_1.encodeSnapshot)(r.room.buildSnapshotFor(conn.entityId, this.entityAoiRadius, conn.interestTargetId)), "snapshot", { binary: true, droppable: true });
         }
     }
     flushTerritoryIfDue(r) {
@@ -403,6 +427,8 @@ class NetServer {
             r.lastTerrRev = rev;
             this.broadcastTerritory(r);
         }
+        if (r.room.tick % WORLD_UI_EVERY === 0)
+            this.broadcastMinimapTerritory(r);
     }
     broadcastTerritory(r) {
         for (const ws of r.conns) {
@@ -413,21 +439,19 @@ class NetServer {
     sendTerritory(ws, r) {
         if (ws.readyState !== ws_1.WebSocket.OPEN)
             return;
-        const cells = r.room.gameState.territoryCells();
-        ws.send((0, shared_1.encodeTerritory)(r.room.tick, cells), {
-            binary: true,
-        });
         const conn = this.conns.get(ws);
-        if (conn) {
-            conn.territoryRevision = 0;
-            conn.territoryCells = new Map(cells.map((cell) => [this.territoryKey(cell.q, cell.r), cell]));
-        }
+        if (!conn)
+            return;
+        const cells = this.territoryCellsForConnection(r, conn);
+        this.transport.send(ws, (0, shared_1.encodeTerritory)(r.room.tick, cells), "territory_keyframe", { binary: true });
+        conn.territoryRevision = 0;
+        conn.territoryCells = new Map(cells.map((cell) => [this.territoryKey(cell.q, cell.r), cell]));
     }
     sendTerritoryDelta(ws, r) {
         const conn = this.conns.get(ws);
         if (!conn)
             return;
-        const cells = r.room.gameState.territoryCells();
+        const cells = this.territoryCellsForConnection(r, conn);
         const current = new Map(cells.map((cell) => [this.territoryKey(cell.q, cell.r), cell]));
         const operations = [];
         for (const [key, previous] of conn.territoryCells) {
@@ -447,17 +471,39 @@ class NetServer {
             return;
         }
         const nextRevision = (conn.territoryRevision + 1) >>> 0;
-        ws.send((0, shared_1.encodeTerritoryDelta)({
+        const sent = this.transport.send(ws, (0, shared_1.encodeTerritoryDelta)({
             tick: r.room.tick,
             baseRevision: conn.territoryRevision,
             revision: nextRevision,
             operations,
-        }), { binary: true });
+        }), "territory_delta", { binary: true, droppable: true });
+        if (!sent)
+            return;
         conn.territoryRevision = nextRevision;
         conn.territoryCells = current;
     }
     territoryKey(q, r) {
         return `${q},${r}`;
+    }
+    territoryCellsForConnection(r, conn) {
+        let focus = conn.territoryInterest;
+        if (!focus && conn.entityId !== null) {
+            const entity = r.room.gameState.players[conn.entityId];
+            if (entity)
+                focus = { x: entity.pos.x, y: entity.pos.y };
+        }
+        if (!focus)
+            return [];
+        return (0, territory_aoi_1.filterTerritoryAoi)(r.room.gameState.territoryCells(), new Set(conn.territoryCells.keys()), focus, shared_1.CONFIG.HEX_SIZE, config_1.TERRITORY_AOI_RADIUS, config_1.TERRITORY_AOI_HYSTERESIS);
+    }
+    broadcastMinimapTerritory(r) {
+        for (const ws of r.conns)
+            this.sendMinimapTerritory(ws, r);
+    }
+    sendMinimapTerritory(ws, r) {
+        if (ws.readyState !== ws_1.WebSocket.OPEN)
+            return;
+        this.transport.send(ws, (0, shared_1.encodeTerritoryMinimap)(r.room.tick, r.room.gameState.territoryCells()), "territory_minimap", { binary: true, droppable: true });
     }
     emitEvents(r) {
         const gs = r.room.gameState;
@@ -506,8 +552,7 @@ class NetServer {
     broadcastControl(r, msg) {
         const text = (0, shared_1.encodeControl)(msg);
         for (const ws of r.conns) {
-            if (ws.readyState === ws_1.WebSocket.OPEN)
-                ws.send(text);
+            this.transport.send(ws, text, "control");
         }
     }
     close() {

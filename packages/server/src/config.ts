@@ -41,5 +41,11 @@ function positiveNumberFromEnv(name: string, fallback: number): number {
 
 export const ENTITY_AOI_RADIUS = positiveNumberFromEnv("ENTITY_AOI_RADIUS", 60);
 
+/** Hot-path frames are coalesced while a socket has this many unsent bytes. */
+export const WS_BACKPRESSURE_BYTES = positiveNumberFromEnv("WS_BACKPRESSURE_BYTES", 262144);
+export const SERVER_PROTOCOL_VERSION = positiveNumberFromEnv("GAME_PROTOCOL_VERSION", 3);
+export const TERRITORY_AOI_RADIUS = positiveNumberFromEnv("TERRITORY_AOI_RADIUS", 48);
+export const TERRITORY_AOI_HYSTERESIS = positiveNumberFromEnv("TERRITORY_AOI_HYSTERESIS", 10);
+
 /** Cổng WebSocket mặc định nếu không đặt biến môi trường PORT. */
 export const DEFAULT_PORT = 8910;
