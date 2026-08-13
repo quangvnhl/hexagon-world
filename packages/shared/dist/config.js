@@ -37,7 +37,7 @@ exports.CONFIG = {
         PRESS_DEPTH: 0.4,
         PRESS_SCALE: 0.95,
         /** Tổng thời gian nhún xuống rồi trở lại vị trí ban đầu (giây). */
-        PRESS_DURATION: 0.28,
+        PRESS_DURATION: 0.2,
     },
     /** Cạnh cube nhân vật (người + bot), đơn vị world. Chỉnh to/nhỏ nhân vật ở đây. */
     CUBE_SIZE: 1.2,
@@ -69,14 +69,14 @@ exports.CONFIG = {
         /** Tốc độ quay đầu RIÊNG của bot (rad/giây) — TÁCH khỏi TURN_RATE của người chơi để
          *  chỉnh độ nhanh nhẹn của bot mà không đổi cảm giác lái của người. Cao hơn → bot
          *  khép được vòng LỚN (bành trướng nhanh) nhưng nếu quá cao dễ curl vào đuôi mình. */
-        TURN_RATE: 4,
+        TURN_RATE: 14,
         /** Khoảng cách tối đa rời "nhà" trước khi quay về khép vòng (world units). */
         RANGE_MIN: 2,
         RANGE_MAX: 20,
         /** Nhiễu hướng khi bành trướng (rad) — cho đường đi bớt thẳng đơ. */
         WANDER: 0.05,
         /** Thời gian (giây) bot nằm chờ trước khi tự hồi sinh sau khi chết. */
-        RESPAWN_DELAY: 1.5,
+        RESPAWN_DELAY: 3,
         /** Cự ly quét chướng ngại phía trước (world units) khi né đuôi/tường. */
         AVOID_DIST: 3,
     },
@@ -86,8 +86,8 @@ exports.CONFIG = {
      *  - skill: chất lượng né chướng ngại (0..1) — cao thì quét nhiều hướng, nhìn xa hơn.
      *  - reaction: nhịp ra quyết định (giây) — nhỏ = phản ứng nhanh. */
     BOT_DIFFICULTY: [
-        // { label: "Dễ", aggression: 4.12, vision: 12, skill: 10.4, reaction: 0.3 },
-        // { label: "Thường", aggression: 5.45, vision: 20, skill: 10.75, reaction: 0.2 },
+        { label: "Dễ", aggression: 1, vision: 12, skill: 0.3, reaction: 0.3 },
+        { label: "Thường", aggression: 4, vision: 16, skill: 0.5, reaction: 0.2 },
         { label: "Khó", aggression: 10, vision: 20, skill: 1, reaction: 0.1 },
     ],
     /** Camera perspective: vị trí lệch so với người chơi (x, sau, cao) + fov + độ mượt pan.
@@ -153,7 +153,7 @@ exports.CONFIG = {
      *  tường ngay tại đầu người chơi: xanh dương = hướng đi mong muốn, đỏ = pháp tuyến
      *  tường đang chạm, xanh lá = hướng trượt kết quả. Dùng để thấy vì sao chết sát biên. */
     DEBUG: {
-        COLLISION_VECTORS: true,
+        COLLISION_VECTORS: false,
         /** Đường LINE ĐỎ ở BIÊN va chạm (ArenaCollider) — viền lục giác + mũi tên pháp tuyến 6
          *  tường. Chỉ vẽ khi COLLISION_VECTORS bật. COLOR = màu đường/​mũi tên; Z = độ cao nhô
          *  khỏi mặt sân (tránh z-fight); NORMALS = có vẽ mũi tên pháp tuyến không; NORMAL_LEN =

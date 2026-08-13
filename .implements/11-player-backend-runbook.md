@@ -50,6 +50,28 @@ Chạy retention hằng ngày từ scheduler/cron bên ngoài. Match cũ hơn 30
 - Cập nhật `GAME_REGIONS_JSON` trên control plane khi thêm/bớt vùng.
 - Reverse proxy phải chuyển WebSocket path `/game` và endpoint `/health/ping`.
 
+Với một node đặt ở Đông Nam Á, cấu hình tối thiểu có thể là:
+
+```dotenv
+GAME_REGION=sea
+GAME_REGION_NAME=Southeast Asia
+GAME_PUBLIC_WS_URL=wss://beeking.ws.cukinacha.com/game
+GAME_PUBLIC_PING_URL=https://beeking.ws.cukinacha.com/health/ping
+```
+
+`GAME_REGION` là mã kỹ thuật và phải khớp giữa region trong control plane,
+ticket và game node. `GAME_REGION_NAME` chỉ là tên hiển thị. Với deployment
+`SERVER_ROLE=all`, không cần đặt `GAME_REGIONS_JSON`; fallback sẽ dùng bộ bốn
+biến `GAME_REGION*`/`GAME_PUBLIC_*` ở trên.
+
+Client web và Telegram Mini App gọi API qua CORS. `CORS_ALLOWED_ORIGINS` phải
+chứa **origin của URL Mini App/client**, không phải origin của Telegram và
+không kèm path hoặc dấu `/` cuối. Ví dụ:
+
+```dotenv
+CORS_ALLOWED_ORIGINS=https://beeking.cukinacha.com
+```
+
 Tham khảo `compose.multiregion.example.yaml`. Không chạy file example nguyên trạng trước khi thay domain và secret.
 
 ## 6. Kiểm tra phát hành

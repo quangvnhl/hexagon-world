@@ -89,7 +89,12 @@ export function runtimeConfig(): RuntimeConfig {
     catch { throw new Error("GAME_REGIONS_JSON không phải JSON hợp lệ"); }
   }
   if (!regions.length) {
-    regions = [{ id: text("GAME_REGION", "local"), name: "Local", wsUrl: text("GAME_PUBLIC_WS_URL", "ws://localhost:8910/game"), pingUrl: text("GAME_PUBLIC_PING_URL", "http://localhost:8910/health/ping") }];
+    regions = [{
+      id: text("GAME_REGION", "local"),
+      name: text("GAME_REGION_NAME", "Local"),
+      wsUrl: text("GAME_PUBLIC_WS_URL", "ws://localhost:8910/game"),
+      pingUrl: text("GAME_PUBLIC_PING_URL", "http://localhost:8910/health/ping"),
+    }];
   }
   cached = {
     role,

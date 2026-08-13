@@ -14,7 +14,11 @@ async function json<T>(path: string, init?: RequestInit): Promise<T> {
   const url = `${API_URL}${path}`;
   let response: Response;
   try {
-    response = await fetch(url, { ...init, credentials: "include", headers: { "content-type": "application/json", ...(init?.headers ?? {}) } });
+    const headers = new Headers(init?.headers);
+    // GET/HEAD khong co body khong can Content-Type. Tranh tao preflight CORS
+    // khong can thiet trong Telegram WebView va cac trinh duyet mobile.
+    if (init?.body != null && !headers.has("content-type")) headers.set("content-type", "application/json");
+    response = await fetch(url, { ...init, credentials: "include", headers });
   } catch (error) {
     const reason = error instanceof Error && error.name === "AbortError" ? "quá thời gian chờ" : "lỗi mạng/CORS";
     throw new Error(`Không thể kết nối máy chủ API (${reason}): ${url}`);

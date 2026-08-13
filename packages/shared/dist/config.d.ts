@@ -32,7 +32,7 @@ export declare const CONFIG: {
         readonly PRESS_DEPTH: 0.4;
         readonly PRESS_SCALE: 0.95;
         /** Tổng thời gian nhún xuống rồi trở lại vị trí ban đầu (giây). */
-        readonly PRESS_DURATION: 0.28;
+        readonly PRESS_DURATION: 0.2;
     };
     /** Cạnh cube nhân vật (người + bot), đơn vị world. Chỉnh to/nhỏ nhân vật ở đây. */
     readonly CUBE_SIZE: 1.2;
@@ -64,14 +64,14 @@ export declare const CONFIG: {
         /** Tốc độ quay đầu RIÊNG của bot (rad/giây) — TÁCH khỏi TURN_RATE của người chơi để
          *  chỉnh độ nhanh nhẹn của bot mà không đổi cảm giác lái của người. Cao hơn → bot
          *  khép được vòng LỚN (bành trướng nhanh) nhưng nếu quá cao dễ curl vào đuôi mình. */
-        readonly TURN_RATE: 4;
+        readonly TURN_RATE: 14;
         /** Khoảng cách tối đa rời "nhà" trước khi quay về khép vòng (world units). */
         readonly RANGE_MIN: 2;
         readonly RANGE_MAX: 20;
         /** Nhiễu hướng khi bành trướng (rad) — cho đường đi bớt thẳng đơ. */
         readonly WANDER: 0.05;
         /** Thời gian (giây) bot nằm chờ trước khi tự hồi sinh sau khi chết. */
-        readonly RESPAWN_DELAY: 1.5;
+        readonly RESPAWN_DELAY: 3;
         /** Cự ly quét chướng ngại phía trước (world units) khi né đuôi/tường. */
         readonly AVOID_DIST: 3;
     };
@@ -81,6 +81,18 @@ export declare const CONFIG: {
      *  - skill: chất lượng né chướng ngại (0..1) — cao thì quét nhiều hướng, nhìn xa hơn.
      *  - reaction: nhịp ra quyết định (giây) — nhỏ = phản ứng nhanh. */
     readonly BOT_DIFFICULTY: readonly [{
+        readonly label: "Dễ";
+        readonly aggression: 1;
+        readonly vision: 12;
+        readonly skill: 0.3;
+        readonly reaction: 0.3;
+    }, {
+        readonly label: "Thường";
+        readonly aggression: 4;
+        readonly vision: 16;
+        readonly skill: 0.5;
+        readonly reaction: 0.2;
+    }, {
         readonly label: "Khó";
         readonly aggression: 10;
         readonly vision: 20;
@@ -157,7 +169,7 @@ export declare const CONFIG: {
      *  tường ngay tại đầu người chơi: xanh dương = hướng đi mong muốn, đỏ = pháp tuyến
      *  tường đang chạm, xanh lá = hướng trượt kết quả. Dùng để thấy vì sao chết sát biên. */
     readonly DEBUG: {
-        readonly COLLISION_VECTORS: true;
+        readonly COLLISION_VECTORS: false;
         /** Đường LINE ĐỎ ở BIÊN va chạm (ArenaCollider) — viền lục giác + mũi tên pháp tuyến 6
          *  tường. Chỉ vẽ khi COLLISION_VECTORS bật. COLOR = màu đường/​mũi tên; Z = độ cao nhô
          *  khỏi mặt sân (tránh z-fight); NORMALS = có vẽ mũi tên pháp tuyến không; NORMAL_LEN =
