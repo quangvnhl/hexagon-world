@@ -37,12 +37,13 @@ import { Predictor } from "./prediction";
 import { InterpolationBuffer, InterpState, INTERP_DELAY_MS } from "./interpolation";
 import { HeadState } from "./stepHead";
 import { shouldSendTerritoryInterest, type TerritoryInterestState } from "./territoryInterest";
+import { reconnectDelayMs, shouldReconnect } from "./reconnectPolicy";
 
 /** URL server mặc định (override qua biến môi trường build-time của Next). */
 export const DEFAULT_SERVER_URL =
   process.env.NEXT_PUBLIC_SERVER_URL ?? "ws://localhost:8910";
 
-export type ConnStatus = "idle" | "connecting" | "open" | "closed" | "error" | "protocol_mismatch";
+export type ConnStatus = "idle" | "connecting" | "reconnecting" | "open" | "closed" | "error" | "protocol_mismatch" | "cancelled";
 
 /** Thông tin trận từ WELCOME. */
 export interface WelcomeInfo {
@@ -53,6 +54,7 @@ export interface WelcomeInfo {
   seed: number;
   maxPlayers: number;
   botCount: number;
+  resumed: boolean;
 }
 
 /** Một thực thể để render (đã gộp thông tin hiển thị từ snapshot mới nhất). */
@@ -97,6 +99,15 @@ export interface LobbyInfo {
   needed: number;
   /** Đã vào trận chưa (false = còn đang chờ). */
   started: boolean;
+  readyCount: number;
+  selfReady: boolean;
+}
+
+interface ConnectionArgs {
+  url: string;
+  name: string;
+  appearance: PlayerAppearance;
+  ticket?: string;
 }
 
 /** Callback tuỳ chọn để UI phản ứng theo sự kiện (không bắt buộc). */
@@ -116,6 +127,11 @@ export interface NetClientHandlers {
 export class NetClient {
   private ws: WebSocket | null = null;
   private status: ConnStatus = "idle";
+  private connectionArgs: ConnectionArgs | null = null;
+  private reconnectToken: string | null = null;
+  private reconnectAttempt = 0;
+  private reconnectTimer: ReturnType<typeof setTimeout> | null = null;
+  private manuallyClosed = false;
   private welcome: WelcomeInfo | null = null;
   /** Trạng thái phòng chờ mới nhất (null trước khi nhận). */
   private lobby: LobbyInfo | null = null;
@@ -179,22 +195,62 @@ export class NetClient {
     ticket?: string
   ): void {
     this.disconnect();
-    this.setStatus("connecting");
-    const ws = new WebSocket(url);
+    this.manuallyClosed = false;
+    this.connectionArgs = { url, name, appearance, ticket };
+    this.reconnectAttempt = 0;
+    this.openSocket(false);
+  }
+
+  private openSocket(reconnecting: boolean): void {
+    const args = this.connectionArgs;
+    if (!args || this.manuallyClosed) return;
+    this.setStatus(reconnecting ? "reconnecting" : "connecting");
+    const ws = new WebSocket(args.url);
     ws.binaryType = "arraybuffer";
     this.ws = ws;
 
     ws.onopen = () => {
       this.setStatus("open");
-      const look = sanitizePlayerAppearance(appearance);
-      ws.send(encodeControl({ t: "join", name, ticket, ...look, protocolVersion: GAME_PROTOCOL_VERSION }));
+      const look = sanitizePlayerAppearance(args.appearance);
+      ws.send(encodeControl({
+        t: "join",
+        name: args.name,
+        ticket: args.ticket,
+        reconnectToken: this.reconnectToken ?? undefined,
+        ...look,
+        protocolVersion: GAME_PROTOCOL_VERSION,
+      }));
       // Đo ping định kỳ (mỗi 1s) để hiển thị độ trễ mạng.
       this.sendPing();
       this.pingTimer = setInterval(() => this.sendPing(), 1000);
     };
-    ws.onclose = (event) => this.setStatus(event.code === 4002 ? "protocol_mismatch" : "closed");
+    ws.onclose = (event) => {
+      if (this.ws === ws) this.ws = null;
+      if (this.pingTimer) clearInterval(this.pingTimer);
+      this.pingTimer = null;
+      if (event.code === 4002) {
+        this.setStatus("protocol_mismatch");
+      } else if (shouldReconnect(event.code, this.manuallyClosed)) {
+        this.scheduleReconnect();
+      } else if (!this.manuallyClosed) {
+        this.setStatus("closed");
+      }
+    };
     ws.onerror = () => this.setStatus("error");
     ws.onmessage = (ev: MessageEvent) => this.onMessage(ev.data);
+  }
+
+  private scheduleReconnect(): void {
+    const delay = reconnectDelayMs(this.reconnectAttempt++);
+    if (delay === null) {
+      this.setStatus("closed");
+      return;
+    }
+    this.setStatus("reconnecting");
+    this.reconnectTimer = setTimeout(() => {
+      this.reconnectTimer = null;
+      this.openSocket(true);
+    }, delay);
   }
 
   /** Gửi PING đo RTT. */
@@ -211,6 +267,14 @@ export class NetClient {
 
   /** Đóng kết nối và dọn trạng thái nội suy. */
   disconnect(): void {
+    this.manuallyClosed = true;
+    this.connectionArgs = null;
+    this.reconnectToken = null;
+    this.reconnectAttempt = 0;
+    if (this.reconnectTimer) {
+      clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
     if (this.pingTimer) {
       clearInterval(this.pingTimer);
       this.pingTimer = null;
@@ -277,6 +341,21 @@ export class NetClient {
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(encodeControl({ t: "revive" }));
     }
+  }
+
+  setLobbyReady(ready: boolean): void {
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(encodeControl({ t: "lobby_ready", ready }));
+    }
+  }
+
+  cancelLobby(): void {
+    this.manuallyClosed = true;
+    if (this.ws?.readyState === WebSocket.OPEN) {
+      this.ws.send(encodeControl({ t: "lobby_cancel" }));
+    }
+    this.setStatus("cancelled");
+    this.disconnect();
   }
 
   private onMessage(data: unknown): void {
@@ -353,8 +432,13 @@ export class NetClient {
     if (!msg) return;
     switch (msg.t) {
       case "welcome": {
-        this.interp.clear();
-        this.lastAlive.clear();
+        const resumed = msg.resumed === true;
+        this.reconnectToken = msg.reconnectToken ?? this.reconnectToken;
+        this.reconnectAttempt = 0;
+        if (!resumed) {
+          this.interp.clear();
+          this.lastAlive.clear();
+        }
         this.welcome = {
           playerId: msg.playerId,
           arenaRadius: msg.arenaRadius,
@@ -363,15 +447,18 @@ export class NetClient {
           seed: msg.seed,
           maxPlayers: msg.maxPlayers,
           botCount: msg.botCount,
+          resumed,
         };
         this.seq = 0;
         this.lobby = null; // ván mới → chờ trạng thái phòng chờ tiếp theo
-        this.roster = [];
-        this.worldUi = [];
-        this.minimapUi = [];
-        this.radarActive = false;
-        this.totems = [];
-        this.totemRevision = 0;
+        if (!resumed) {
+          this.roster = [];
+          this.worldUi = [];
+          this.minimapUi = [];
+          this.radarActive = false;
+          this.totems = [];
+          this.totemRevision = 0;
+        }
         this.handlers.onWelcome?.(this.welcome);
         break;
       }
@@ -386,6 +473,8 @@ export class NetClient {
           present: msg.present,
           needed: msg.needed,
           started: msg.started,
+          readyCount: msg.readyCount ?? 0,
+          selfReady: msg.selfReady ?? false,
         };
         this.handlers.onLobby?.(this.lobby);
         if (!msg.started) {

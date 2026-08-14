@@ -5,7 +5,7 @@ import {
 } from "@nestjs/common";
 import { HttpAdapterHost } from "@nestjs/core";
 import { NetServer } from "../net/net-server";
-import { DEFAULT_PORT, MAX_HUMAN_PLAYERS, ONLINE_BOTS, TICK_RATE, SERVER_PROTOCOL_VERSION, WS_BACKPRESSURE_BYTES } from "../config";
+import { DEFAULT_PORT, MAX_HUMAN_PLAYERS, ONLINE_BOT_CAPACITY_MIN, ONLINE_BOT_CAPACITY_MAX, TICK_RATE, SERVER_PROTOCOL_VERSION, WS_BACKPRESSURE_BYTES } from "../config";
 import { runtimeConfig } from "../runtime-config";
 import { TicketService } from "../regions/ticket.service";
 import { MatchResultReporter } from "../matches/match-result-reporter.service";
@@ -53,7 +53,7 @@ export class GatewayService implements OnApplicationShutdown {
     console.log(
       `[Hexagon] Server AUTHORITATIVE region=${cfg.region} chuẩn bị trên cổng ${port}, ` +
         `${TICK_RATE} Hz. Phòng tạo khi có người vào ` +
-        `(tối đa ${MAX_HUMAN_PLAYERS} ghế người + ${ONLINE_BOTS} bot online), ` +
+        `(tối đa ${MAX_HUMAN_PLAYERS} ghế người + ${ONLINE_BOT_CAPACITY_MIN}..${ONLINE_BOT_CAPACITY_MAX} bot online/room), ` +
         `đóng khi hết người hoặc hết ván.`,
     );
   }

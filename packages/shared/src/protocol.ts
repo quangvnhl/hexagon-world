@@ -38,11 +38,15 @@ export type C2SControl =
       colorIndex?: number;
       trailPattern?: TrailPattern;
       shape?: PlayerShape;
+      /** Opaque room session token issued by WELCOME, used only to resume a dropped socket. */
+      reconnectToken?: string;
     } & ProtocolJoinMetadata)
   | { t: "ping"; time: number }
   | { t: "territory_resync" }
   | { t: "territory_interest"; x: number; y: number }
   | { t: "interest"; targetId: number | null }
+  | { t: "lobby_ready"; ready: boolean }
+  | { t: "lobby_cancel" }
   | { t: "revive" };
 
 export type S2CControl =
@@ -56,6 +60,8 @@ export type S2CControl =
       /** Số ghế người + số bot của PHÒNG (authoritative) → client dựng view khớp đúng. */
       maxPlayers: number;
       botCount: number;
+      reconnectToken?: string;
+      resumed?: boolean;
     }
   | { t: "pong"; time: number }
   | {
@@ -65,6 +71,8 @@ export type S2CControl =
       present: number;
       needed: number;
       started: boolean;
+      readyCount?: number;
+      selfReady?: boolean;
     }
   | {
       /** Danh sách TÊN người chơi theo ghế (id → name) → client hiển thị đúng tên. */

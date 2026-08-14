@@ -19,7 +19,7 @@ import {
 } from "@hexagon/shared";
 import { GameRoom } from "../game/game-room";
 import { filterTerritoryAoi } from "./territory-aoi";
-import { DT, TICK_RATE, MAX_HUMAN_PLAYERS, ONLINE_BOTS, ONLINE_BOT_JOIN_INTERVAL_MS, KING_ROOM_DURATION_SECONDS, MIN_PLAYERS, ENTITY_AOI_RADIUS, TERRITORY_AOI_RADIUS, TERRITORY_AOI_HYSTERESIS, WS_BACKPRESSURE_BYTES } from "../config";
+import { DT, TICK_RATE, MAX_HUMAN_PLAYERS, ONLINE_BOT_JOIN_INTERVAL_MS, KING_ROOM_DURATION_SECONDS, MIN_PLAYERS, ENTITY_AOI_RADIUS, TERRITORY_AOI_RADIUS, TERRITORY_AOI_HYSTERESIS, WS_BACKPRESSURE_BYTES, onlineBotCapacityForRoom, LOBBY_RECONNECT_GRACE_MS } from "../config";
 import { NetworkTransport, gameNetworkMetrics, type NetworkMetricsSnapshot } from "./network-transport";
 
 /** Gửi keyframe TERRITORY mỗi bao nhiêu tick (throttle). 6 tick @24Hz ≈ 4 Hz. */
@@ -59,6 +59,8 @@ interface Room {
   participants: Map<number, AuthenticatedJoin>;
   matchStats: Map<number, { kills: number; deaths: number; deathCause: string }>;
   botActivationElapsedMs: number;
+  /** Ghế đã bấm Sẵn sàng khi phòng chưa bắt đầu. */
+  readySeats: Set<number>;
 }
 
 export interface MatchResultEnvelope {
@@ -91,6 +93,18 @@ interface ConnState {
   territoryCells: Map<string, TerritoryCell>;
   territoryInterest: { x: number; y: number } | null;
   interestTargetId: number | null;
+  reconnectToken: string | null;
+  intentionalClose: boolean;
+}
+
+interface ResumeSession {
+  token: string;
+  room: Room;
+  entityId: number;
+  identity: AuthenticatedJoin | null;
+  socket: WebSocket | null;
+  timer: NodeJS.Timeout | null;
+  expiresAt: number | null;
 }
 
 interface NetOpts {
@@ -111,6 +125,7 @@ interface NetOpts {
   onlineBots?: number;
   botJoinIntervalMs?: number;
   kingDurationSeconds?: number;
+  reconnectGraceMs?: number;
 }
 
 /**
@@ -142,9 +157,10 @@ export class NetServer {
   private readonly protocolVersion: number;
   private readonly transport: NetworkTransport;
   private readonly maxHumans: number;
-  private readonly onlineBots: number;
+  private readonly onlineBotsOverride: number | null;
   private readonly botJoinIntervalMs: number;
   private readonly kingDurationSeconds: number;
+  private readonly reconnectGraceMs: number;
 
   /** Bật vòng lặp thời gian thực (start()); false ở chế độ test (listen() + tickOnce()). */
   private autoLoop = false;
@@ -152,6 +168,7 @@ export class NetServer {
 
   private readonly conns = new Map<WebSocket, ConnState>();
   private readonly rooms = new Set<Room>();
+  private readonly resumeSessions = new Map<string, ResumeSession>();
   /** Phòng đang mở nhận người mới (null nếu chưa có / vừa kết thúc). */
   private active: Room | null = null;
 
@@ -169,9 +186,12 @@ export class NetServer {
     this.protocolVersion = opts.protocolVersion ?? GAME_PROTOCOL_VERSION;
     this.transport = new NetworkTransport(opts.backpressureBytes ?? WS_BACKPRESSURE_BYTES, gameNetworkMetrics);
     this.maxHumans = opts.maxHumans ?? MAX_HUMAN_PLAYERS;
-    this.onlineBots = opts.onlineBots ?? ONLINE_BOTS;
+    this.onlineBotsOverride = opts.onlineBots === undefined
+      ? null
+      : Math.min(16, Math.max(0, Math.round(opts.onlineBots)));
     this.botJoinIntervalMs = opts.botJoinIntervalMs ?? ONLINE_BOT_JOIN_INTERVAL_MS;
     this.kingDurationSeconds = opts.kingDurationSeconds ?? KING_ROOM_DURATION_SECONDS;
+    this.reconnectGraceMs = Math.max(100, Math.round(opts.reconnectGraceMs ?? LOBBY_RECONNECT_GRACE_MS));
     this.wss = opts.httpServer
       ? new WebSocketServer({ server: opts.httpServer, ...(opts.path ? { path: opts.path } : {}) })
       : new WebSocketServer({ port: opts.port ?? 0 });
@@ -250,10 +270,11 @@ export class NetServer {
     if (joinable) { this.active = joinable; return joinable; }
     {
       const roomId = this.nextRoomId++;
+      const botCapacity = this.onlineBotsOverride ?? onlineBotCapacityForRoom(roomId);
       const r: Room = {
         id: roomId,
         // Online: CHỈ người thật (0 bot). Phòng mở ở trạng thái CHỜ (chưa mô phỏng).
-        room: new GameRoom(this.maxHumans, this.onlineBots, this.kingDurationSeconds, roomId),
+        room: new GameRoom(this.maxHumans, botCapacity, this.kingDurationSeconds, roomId),
         conns: new Set(),
         started: false,
         ended: false,
@@ -273,6 +294,7 @@ export class NetServer {
         participants: new Map(),
         matchStats: new Map(),
         botActivationElapsedMs: 0,
+        readySeats: new Set(),
       };
       r.prevAlive = r.room.gameState.snapshotEntities().map((e) => e.alive);
       this.rooms.add(r);
@@ -282,9 +304,15 @@ export class NetServer {
     return this.active!;
   }
 
-  /** Đủ MIN_PLAYERS người thật → BẮT ĐẦU ván: spawn đồng bộ, bật mô phỏng, báo vào trận. */
+  private canStart(r: Room): boolean {
+    const present = r.room.occupied();
+    return !r.started && !r.ended && present >= MIN_PLAYERS &&
+      r.conns.size === present && r.readySeats.size === present;
+  }
+
+  /** Đủ người và tất cả đã sẵn sàng → bắt đầu ván. */
   private startGame(r: Room): void {
-    if (r.started || r.ended) return;
+    if (!this.canStart(r)) return;
     r.room.startMatch(); // spawn tươi tất cả ghế đang có người
     r.started = true;
     r.prevAlive = r.room.gameState.snapshotEntities().map((e) => e.alive);
@@ -296,6 +324,7 @@ export class NetServer {
     r.botActivationElapsedMs = 0;
     r.participants.clear();
     r.matchStats.clear();
+    r.readySeats.clear();
     for (const ws of r.conns) {
       const conn = this.conns.get(ws);
       if (!conn || conn.entityId === null) continue;
@@ -335,14 +364,20 @@ export class NetServer {
     this.broadcastLobby(r);
   }
 
-  /** Phát trạng thái PHÒNG CHỜ cho mọi client trong phòng (số người / cần / đã bắt đầu). */
+  /** Phát trạng thái phòng chờ riêng từng client vì selfReady khác nhau. */
   private broadcastLobby(r: Room): void {
-    this.broadcastControl(r, {
-      t: "lobby",
-      present: r.room.occupied(),
-      needed: MIN_PLAYERS,
-      started: r.started,
-    });
+    for (const ws of r.conns) {
+      const conn = this.conns.get(ws);
+      if (!conn || conn.entityId === null) continue;
+      this.send(ws, {
+        t: "lobby",
+        present: r.room.occupied(),
+        needed: MIN_PLAYERS,
+        started: r.started,
+        readyCount: r.readySeats.size,
+        selfReady: r.readySeats.has(conn.entityId),
+      });
+    }
   }
 
   /** Phát danh sách TÊN người chơi (roster) cho mọi client trong phòng. */
@@ -418,6 +453,11 @@ export class NetServer {
     }
     this.rooms.delete(r);
     if (this.active === r) this.active = null;
+    for (const [token, session] of this.resumeSessions) {
+      if (session.room !== r) continue;
+      if (session.timer) clearTimeout(session.timer);
+      this.resumeSessions.delete(token);
+    }
     for (const ws of r.conns) {
       const c = this.conns.get(ws);
       if (c) c.room = null;
@@ -480,7 +520,7 @@ export class NetServer {
 
   private reconcileBots(r: Room, elapsedMs: number): void {
     if (r.room.kingCountdownActive || r.ended) return;
-    const target = this.onlineBots;
+    const target = r.room.botCapacity;
     if (r.room.activeBotCount >= target) { r.botActivationElapsedMs = 0; return; }
     r.botActivationElapsedMs += elapsedMs;
     if (r.botActivationElapsedMs < this.botJoinIntervalMs) return;
@@ -498,6 +538,8 @@ export class NetServer {
       territoryCells: new Map(),
       territoryInterest: null,
       interestTargetId: null,
+      reconnectToken: null,
+      intentionalClose: false,
     });
     ws.on("message", (data: Buffer, isBinary: boolean) => {
       if (isBinary) this.onBinary(ws, data);
@@ -513,6 +555,99 @@ export class NetServer {
     const input = decodeInput(data);
     if (!input) return;
     conn.room.room.applyInput(conn.entityId, input.seq, input.heading);
+  }
+
+  private issueResumeSession(ws: WebSocket, conn: ConnState, r: Room, entityId: number): string {
+    const token = randomUUID();
+    conn.reconnectToken = token;
+    this.resumeSessions.set(token, {
+      token,
+      room: r,
+      entityId,
+      identity: conn.identity,
+      socket: ws,
+      timer: null,
+      expiresAt: null,
+    });
+    return token;
+  }
+
+  private sendJoinState(ws: WebSocket, conn: ConnState, r: Room, resumed: boolean): void {
+    const id = conn.entityId;
+    if (id === null) return;
+    const reconnectToken = this.issueResumeSession(ws, conn, r, id);
+    this.send(ws, {
+      t: "welcome",
+      playerId: id,
+      arenaRadius: CONFIG.ARENA_RADIUS,
+      hexSize: CONFIG.HEX_SIZE,
+      tickRate: this.tickRate,
+      seed: r.id,
+      maxPlayers: this.maxHumans,
+      botCount: r.room.botCapacity,
+      reconnectToken,
+      resumed,
+    });
+    this.sendTerritory(ws, r);
+    this.sendMinimapTerritory(ws, r);
+    this.sendTotems(ws, r);
+    this.broadcastRoster(r);
+    this.broadcastLobby(r);
+  }
+
+  private resumeConnection(ws: WebSocket, conn: ConnState, token: string): boolean {
+    const session = this.resumeSessions.get(token);
+    if (!session || session.socket || session.room.ended ||
+        session.expiresAt === null || session.expiresAt <= Date.now()) return false;
+    if (session.timer) clearTimeout(session.timer);
+    this.resumeSessions.delete(token);
+    conn.entityId = session.entityId;
+    conn.room = session.room;
+    conn.identity = session.identity;
+    conn.interestTargetId = null;
+    session.room.conns.add(ws);
+    this.sendJoinState(ws, conn, session.room, true);
+    if (this.canStart(session.room)) this.startGame(session.room);
+    return true;
+  }
+
+  private afterSeatRemoved(r: Room): void {
+    if (r.room.occupied() === 0) {
+      this.closeRoom(r);
+    } else if (!r.ended && r.started && r.room.occupied() < MIN_PLAYERS) {
+      this.handleLastPlayer(r);
+    } else {
+      this.broadcastRoster(r);
+      this.broadcastLobby(r);
+    }
+  }
+
+  private removeConnectionSeat(ws: WebSocket, conn: ConnState): void {
+    const r = conn.room;
+    const entityId = conn.entityId;
+    if (!r || entityId === null) return;
+    if (conn.reconnectToken) {
+      const session = this.resumeSessions.get(conn.reconnectToken);
+      if (session?.timer) clearTimeout(session.timer);
+      this.resumeSessions.delete(conn.reconnectToken);
+    }
+    r.readySeats.delete(entityId);
+    r.room.leave(entityId);
+    r.conns.delete(ws);
+    conn.room = null;
+    conn.entityId = null;
+    conn.reconnectToken = null;
+    this.afterSeatRemoved(r);
+  }
+
+  private expireResumeSession(token: string): void {
+    const session = this.resumeSessions.get(token);
+    if (!session || session.socket) return;
+    this.resumeSessions.delete(token);
+    const r = session.room;
+    r.readySeats.delete(session.entityId);
+    r.room.leave(session.entityId);
+    this.afterSeatRemoved(r);
   }
 
   private onText(ws: WebSocket, text: string): void {
@@ -536,6 +671,12 @@ export class NetServer {
         ws.close(4003, "can regional ticket");
         return;
       }
+      if (msg.reconnectToken) {
+        if (!this.resumeConnection(ws, conn, msg.reconnectToken)) {
+          ws.close(4003, "reconnect token khong hop le hoac da het han");
+        }
+        return;
+      }
       conn.identity = identity;
       const r = this.ensureActiveRoom();
       const id = r.room.join(identity?.displayName ?? msg.name, {
@@ -551,28 +692,13 @@ export class NetServer {
       conn.room = r;
       conn.interestTargetId = null;
       r.conns.add(ws);
+      r.readySeats.delete(id);
       if (r.started) {
         const joinedIdentity = identity ?? { playerId: null, guestId: `legacy-${r.id}-${id}`, isGuest: true, platform: "web", displayName: r.room.gameState.nameOf(id), appearance: { colorIndex: 0, shape: "cube", trailPattern: "solid" } as PlayerAppearance };
         r.participants.set(id, joinedIdentity);
         r.matchStats.set(id, { kills: 0, deaths: 0, deathCause: "" });
       }
-      this.send(ws, {
-        t: "welcome",
-        playerId: id,
-        arenaRadius: CONFIG.ARENA_RADIUS,
-        hexSize: CONFIG.HEX_SIZE,
-        tickRate: this.tickRate,
-        seed: r.id,
-        maxPlayers: this.maxHumans,
-        botCount: this.onlineBots,
-      });
-      this.sendTerritory(ws, r);
-      this.sendMinimapTerritory(ws, r);
-      this.sendTotems(ws, r);
-      this.broadcastRoster(r); // đồng bộ TÊN cho mọi người trong phòng
-      // Đủ người → bắt đầu; chưa đủ → cập nhật màn chờ (cho cả người vừa vào & người cũ).
-      if (!r.started && r.room.occupied() >= MIN_PLAYERS) this.startGame(r);
-      else this.broadcastLobby(r);
+      this.sendJoinState(ws, conn, r, false);
     } else if (msg.t === "interest") {
       if (msg.targetId === null) conn.interestTargetId = null;
       else if (Number.isInteger(msg.targetId) && msg.targetId >= 0)
@@ -586,6 +712,17 @@ export class NetServer {
         conn.territoryInterest = { x: msg.x, y: msg.y };
         this.sendTerritory(ws, conn.room);
       }
+    } else if (msg.t === "lobby_ready") {
+      if (conn.room && conn.entityId !== null && !conn.room.started && !conn.room.ended) {
+        if (msg.ready) conn.room.readySeats.add(conn.entityId);
+        else conn.room.readySeats.delete(conn.entityId);
+        this.broadcastLobby(conn.room);
+        if (this.canStart(conn.room)) this.startGame(conn.room);
+      }
+    } else if (msg.t === "lobby_cancel") {
+      conn.intentionalClose = true;
+      this.removeConnectionSeat(ws, conn);
+      ws.close(1000, "roi phong");
     } else if (msg.t === "revive") {
       if (conn.room && conn.entityId !== null) {
         if (conn.room.room.reviveSeat(conn.entityId)) conn.interestTargetId = null;
@@ -596,28 +733,25 @@ export class NetServer {
   private onClose(ws: WebSocket): void {
     const conn = this.conns.get(ws);
     if (!conn) return;
-    const r = conn.room;
-    if (r && conn.entityId !== null) {
-      r.room.leave(conn.entityId);
-      r.conns.delete(ws);
-      // Hết người trong phòng → đóng phòng ngay.
-      if (r.conns.size === 0) {
-        this.closeRoom(r);
-      } else if (!r.ended && r.started && r.room.occupied() < MIN_PLAYERS) {
-        // Đang chơi mà tụt xuống 1 người: nếu người còn lại CÒN SỐNG → họ THẮNG (người sống
-        // cuối cùng); nếu đã chết → quay về phòng chờ (matching).
-        this.handleLastPlayer(r);
-      } else if (!r.started) {
-        // Còn đang CHỜ → cập nhật lại màn chờ + roster (số người giảm).
-        this.broadcastRoster(r);
-        this.broadcastLobby(r);
-      } else {
-        // Vẫn đủ người, đang chơi → cập nhật roster.
-        this.broadcastRoster(r);
-      }
-    }
     this.conns.delete(ws);
     this.transport.remove(ws);
+    const r = conn.room;
+    if (r && conn.entityId !== null) {
+      r.conns.delete(ws);
+      if (conn.intentionalClose || !conn.reconnectToken || r.ended) {
+        this.removeConnectionSeat(ws, conn);
+      } else {
+        const session = this.resumeSessions.get(conn.reconnectToken);
+        if (!session) {
+          this.removeConnectionSeat(ws, conn);
+        } else {
+          session.socket = null;
+          session.expiresAt = Date.now() + this.reconnectGraceMs;
+          session.timer = setTimeout(() => this.expireResumeSession(session.token), this.reconnectGraceMs);
+          this.broadcastLobby(r);
+        }
+      }
+    }
   }
 
   private send(ws: WebSocket, msg: S2CControl): void {
@@ -811,6 +945,10 @@ export class NetServer {
     }
     this.rooms.clear();
     this.active = null;
+    for (const session of this.resumeSessions.values()) {
+      if (session.timer) clearTimeout(session.timer);
+    }
+    this.resumeSessions.clear();
     for (const ws of this.conns.keys()) {
       try {
         ws.terminate();

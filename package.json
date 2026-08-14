@@ -8,6 +8,8 @@
     "build": "pnpm --filter @hexagon/shared build && pnpm --filter @hexagon/server build && pnpm --filter @hexagon/client build",
     "typecheck": "pnpm --filter @hexagon/shared build && pnpm -r typecheck",
     "test": "pnpm -r test",
+    "release:check": "node scripts/release-gate.mjs",
+    "test:release-gate": "node --test scripts/release-gate.test.mjs",
     "verify:logic": "pnpm --filter @hexagon/shared verify:logic",
     "dev:client": "pnpm --filter @hexagon/client dev",
     "dev:server": "pnpm --filter @hexagon/server start:dev",

@@ -52,7 +52,7 @@ Xem báo cáo đóng pha: [17-phase-3-completion-report.md](17-phase-3-completio
 - [x] Skin/tài sản: màu, model, trail pattern, shop coin và Telegram Stars
 - [x] Auth: Google OAuth cho web, Telegram initData, guest hạn chế backend
 - [x] Lobby/Store React cơ bản
-- [ ] **Gate:** Lobby ready/cancel/reconnect; private room/party hoãn sau beta
+- [x] **Gate:** Lobby ready/cancel/reconnect có reconnect grace; private room/party hoãn sau beta
 - [ ] **Gate:** Áp migration + seed trên Supabase staging/production
 - [ ] **Gate:** Google OAuth, Telegram auth/Stars webhook và match-result E2E trên HTTPS production
 
@@ -69,9 +69,10 @@ cho phần logic chia sẻ.
 
 - Build production toàn monorepo: đạt.
 - Runtime smoke test server: đạt (`/health/live`, `/health/network`, role `all`, region `sea`).
-- Vitest: đạt 60 shared + 55 client + 32 server.
+- Vitest: đạt 61 shared + 57 client + 35 server; release gate 5/5.
 - `verify:logic`: đạt 93/0.
 - Pha 3: **đã đóng, đủ điều kiện tiếp tục Pha 4**.
-- Pha 4 còn migration/seed thật, E2E production và lobby ready/cancel/reconnect; chưa đủ điều kiện chuyển sang Pha 5.
+- Pha 4 còn migration/seed thật và E2E HTTPS production; chưa đủ điều kiện chuyển sang Pha 5.
+- Gate cấu hình offline đã có (`pnpm release:check`), nhưng không thay thế kiểm chứng hạ tầng thật.
 
-Chi tiết và thứ tự xử lý: [16-work-session-roadmap-audit.md](16-work-session-roadmap-audit.md).
+Chi tiết mới nhất: [23-phase-4-readiness-report.md](23-phase-4-readiness-report.md).

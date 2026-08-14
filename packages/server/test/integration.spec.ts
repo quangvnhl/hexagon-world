@@ -41,7 +41,9 @@ class TestClient {
   radarActive = false;
   minimapTerritory: TerritoryCell[] = [];
   totems: TotemWireState[] = [];
+  lobby: Extract<S2CControl, { t: "lobby" }> | null = null;
   readonly events: Extract<S2CControl, { t: "event" }>[] = [];
+  private autoReady = true;
 
   constructor(url: string) {
     this.ws = new WebSocket(url);
@@ -61,7 +63,11 @@ class TestClient {
         }
       } else {
         const msg = decodeControl<S2CControl>(data.toString());
-        if (msg?.t === "welcome") this.welcome = msg;
+        if (msg?.t === "welcome") {
+          this.welcome = msg;
+          if (this.autoReady) this.ready(true);
+        }
+        else if (msg?.t === "lobby") this.lobby = msg;
         else if (msg?.t === "world_ui") this.worldUi = msg.entities;
         else if (msg?.t === "minimap_ui") {
           this.radarActive = msg.radarActive;
@@ -82,8 +88,19 @@ class TestClient {
   join(
     name: string,
     look?: { colorIndex: number; trailPattern: "solid" | "stripes" | "dots" | "chevrons"; shape: "cube" | "cylinder" | "sphere" | "cone" | "fly" | "bee" | "ladybug" },
+    autoReady = true,
+    reconnectToken?: string,
   ): void {
-    this.ws.send(encodeControl({ t: "join", name, ...look, protocolVersion: GAME_PROTOCOL_VERSION }));
+    this.autoReady = autoReady;
+    this.ws.send(encodeControl({ t: "join", name, reconnectToken, ...look, protocolVersion: GAME_PROTOCOL_VERSION }));
+  }
+
+  ready(ready: boolean): void {
+    this.ws.send(encodeControl({ t: "lobby_ready", ready }));
+  }
+
+  cancelLobby(): void {
+    this.ws.send(encodeControl({ t: "lobby_cancel" }));
   }
 
   input(seq: number, heading: number): void {
@@ -175,6 +192,7 @@ describe("NetServer integration (real ws, deterministic ticks)", () => {
     expect(idA).not.toBe(idB);
     expect(a.welcome!.tickRate).toBe(24);
     expect(a.welcome!.arenaRadius).toBeGreaterThan(0);
+    expect(a.welcome!.botCount).toBe(server.activeRoom!.botCapacity);
     await waitFor(() => a.worldUi.length > 0, 3000, "world ui roster");
     const expectedWorldUiIds = [idA, idB];
     expect(a.worldUi.map((e) => e.id).sort((x, y) => x - y)).toEqual(
@@ -451,8 +469,54 @@ describe("NetServer integration (real ws, deterministic ticks)", () => {
     expect(server.activeRoom!.activeBotCount).toBe(3);
   });
 
+  it("chỉ bắt đầu lobby khi người chơi bấm sẵn sàng", async () => {
+    server = new NetServer({ port: 0, onlineBots: 0 });
+    await server.listen();
+    const a = new TestClient(`ws://127.0.0.1:${server.port}`);
+    clients = [a];
+    await a.open();
+    a.join("An", undefined, false);
+    await a.waitWelcome();
+    await waitFor(() => a.lobby !== null, 1000, "lobby chưa ready");
+    expect(a.lobby).toMatchObject({ started: false, readyCount: 0, selfReady: false });
+
+    server.tickOnce();
+    expect(a.snapshots).toHaveLength(0);
+    a.ready(true);
+    await waitFor(() => a.lobby?.started === true, 1000, "lobby bắt đầu sau ready");
+    server.tickOnce();
+    await waitFor(() => a.snapshots.length > 0, 1000, "snapshot sau ready");
+  });
+
+  it("resume đúng room/seat trong grace và cancel giải phóng ghế ngay", async () => {
+    server = new NetServer({ port: 0, onlineBots: 0, reconnectGraceMs: 200 });
+    await server.listen();
+    const url = `ws://127.0.0.1:${server.port}`;
+    const a = new TestClient(url);
+    clients = [a];
+    await a.open();
+    a.join("An", undefined, false);
+    await a.waitWelcome();
+    const firstWelcome = a.welcome!;
+    expect(firstWelcome.reconnectToken).toBeTruthy();
+    a.ws.terminate();
+    await delay(15);
+
+    const resumed = new TestClient(url);
+    clients.push(resumed);
+    await resumed.open();
+    resumed.join("An", undefined, false, firstWelcome.reconnectToken);
+    await resumed.waitWelcome();
+    expect(resumed.welcome).toMatchObject({ playerId: firstWelcome.playerId, resumed: true });
+    expect(server.roomCount).toBe(1);
+    expect(server.activeRoom?.occupied()).toBe(1);
+
+    resumed.cancelLobby();
+    await waitFor(() => server!.roomCount === 0, 1000, "cancel giải phóng room");
+  });
+
   it("VÒNG ĐỜI: phòng tạo khi JOIN, ĐÓNG khi hết người", async () => {
-    server = new NetServer({ port: 0 });
+    server = new NetServer({ port: 0, reconnectGraceMs: 20 });
     await server.listen();
     expect(server.roomCount).toBe(0);
 

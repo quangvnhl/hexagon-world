@@ -344,9 +344,16 @@ export default function NetGameScene({
   const [spectating, setSpectating] = useState(false);
   // Phòng chờ: đã vào trận chưa + số người thật hiện có / cần để bắt đầu.
   const [started, setStarted] = useState(false);
-  const [lobby, setLobby] = useState<{ present: number; needed: number }>({
+  const [lobby, setLobby] = useState<{
+    present: number;
+    needed: number;
+    readyCount: number;
+    selfReady: boolean;
+  }>({
     present: 1,
     needed: 2,
+    readyCount: 0,
+    selfReady: false,
   });
   const [stats, setStats] = useState<Stats>({
     pct: 0,
@@ -468,6 +475,7 @@ export default function NetGameScene({
       onWelcome: (w) => {
         localIdRef.current = w.playerId;
         setPlayerId(w.playerId);
+        if (w.resumed) return;
         // Dựng view khớp số ghế/bot của server.
         const g = makeBlankView(w.maxPlayers, w.botCount);
         gameRef.current = g;
@@ -529,7 +537,12 @@ export default function NetGameScene({
         }
         startedRef.current = l.started;
         setStarted(l.started);
-        setLobby({ present: l.present, needed: l.needed });
+        setLobby({
+          present: l.present,
+          needed: l.needed,
+          readyCount: l.readyCount,
+          selfReady: l.selfReady,
+        });
       },
       onEvent: (ev) => {
         if (ev.kind === "death") {
@@ -605,6 +618,10 @@ export default function NetGameScene({
   }, [appearance, client, url, playerName, gameTicket]);
   const onReturnToLobby = useCallback(() => {
     client.disconnect();
+    onExit?.();
+  }, [client, onExit]);
+  const onCancelLobby = useCallback(() => {
+    client.cancelLobby();
     onExit?.();
   }, [client, onExit]);
 
@@ -754,12 +771,49 @@ export default function NetGameScene({
               animation: "hxspin 0.9s linear infinite",
             }}
           />
-          <div style={{ fontSize: 22, fontWeight: 800 }}>Đang chờ người chơi…</div>
+          <div style={{ fontSize: 22, fontWeight: 800 }}>
+            {lobby.selfReady ? "Đã sẵn sàng · đang chờ phòng…" : "Sẵn sàng tham gia?"}
+          </div>
           <div style={{ fontSize: 16, opacity: 0.85 }}>
             <span style={{ color: "#31b0ff", fontWeight: 800, fontSize: 20 }}>
               {lobby.present}
             </span>{" "}
             / {lobby.needed} người · cần tối thiểu {lobby.needed} người thật để bắt đầu
+          </div>
+          <div style={{ fontSize: 13, opacity: 0.75 }}>
+            {lobby.readyCount}/{lobby.present} người đã sẵn sàng
+          </div>
+          <div style={{ display: "flex", gap: 10, flexWrap: "wrap", justifyContent: "center" }}>
+            <button
+              type="button"
+              onClick={() => client.setLobbyReady(!lobby.selfReady)}
+              style={{
+                border: 0,
+                borderRadius: 999,
+                padding: "11px 22px",
+                background: lobby.selfReady ? "#334155" : "#31b0ff",
+                color: "white",
+                fontWeight: 800,
+                cursor: "pointer",
+              }}
+            >
+              {lobby.selfReady ? "HỦY SẴN SÀNG" : "SẴN SÀNG"}
+            </button>
+            <button
+              type="button"
+              onClick={onCancelLobby}
+              style={{
+                border: "1px solid rgba(255,255,255,0.25)",
+                borderRadius: 999,
+                padding: "11px 20px",
+                background: "rgba(255,255,255,0.06)",
+                color: "#e8eefc",
+                fontWeight: 700,
+                cursor: "pointer",
+              }}
+            >
+              RỜI PHÒNG
+            </button>
           </div>
           <div style={{ fontSize: 13, opacity: 0.6, maxWidth: 420, lineHeight: 1.6 }}>
             Phòng đã được tạo. Mời thêm bạn bè mở{" "}
@@ -790,6 +844,8 @@ export default function NetGameScene({
           <div style={{ fontSize: 20, fontWeight: 700 }}>
             {status === "protocol_mismatch"
               ? "Phiên bản client và server không tương thích"
+              : status === "reconnecting"
+              ? "Mất kết nối · đang thử kết nối lại…"
               : status === "error" || status === "closed"
               ? "Không kết nối được server"
               : "Đang kết nối server…"}
@@ -800,6 +856,8 @@ export default function NetGameScene({
                 Client đang dùng protocol v{GAME_PROTOCOL_VERSION}. Hãy đặt{" "}
                 <code>GAME_PROTOCOL_VERSION={GAME_PROTOCOL_VERSION}</code> trên server rồi khởi động lại.
               </>
+            ) : status === "reconnecting" ? (
+              <>Đang giữ chỗ trong phòng và khôi phục phiên chơi tự động.</>
             ) : (
               <>
                 Máy chủ online cần đang chạy tại <code>{url}</code>. Khởi động bằng:{" "}

@@ -25,7 +25,9 @@ phải đọc và tuân thủ các tài liệu này trước khi code.**
 | [18-telegram-stars-coin-packages.md](18-telegram-stars-coin-packages.md) | Contract mua ba gói coin bằng Telegram Stars | Backend + Frontend + DevOps |
 | [19-speed-totem-room-king-timer-plan.md](19-speed-totem-room-king-timer-plan.md) | Kế hoạch tốc độ theo King, Totem, Radar/minimap, bot quota, multi-room và deadline King | Gameplay + Backend + Frontend |
 | [21-speed-totem-room-king-implementation-report.md](21-speed-totem-room-king-implementation-report.md) | Báo cáo triển khai tốc độ, Totem, Radar privacy, bot quota, multi-room và King countdown | Gameplay + Backend + Frontend |
+| [21-backend-release-gate.md](21-backend-release-gate.md) | Gate offline kiểm tra cấu hình staging/production trước deploy | Backend + DevOps |
 | [22-trail-vector-designs.md](22-trail-vector-designs.md) | Hướng dẫn thay thế và bổ sung thiết kế vệt đuôi bằng SVG 2D | Frontend + Design |
+| [23-phase-4-readiness-report.md](23-phase-4-readiness-report.md) | Trạng thái sẵn sàng đóng Pha 4 và các gate hạ tầng còn lại | PM + Backend + DevOps |
 
 ## Nguyên tắc làm việc cho agents
 
@@ -47,4 +49,4 @@ phải đọc và tuân thủ các tài liệu này trước khi code.**
 - [x] **Pha 1 hoàn thiện gameplay:** cơ chế thắng (giữ King 3 phút), camera zoom theo diện tích, hiệu ứng hạt, joystick mobile, unit test Vitest — xem [05-roadmap.md](05-roadmap.md) & [REPORT-pha-1.md](REPORT-pha-1.md)
 - [x] **Pha 2 nền tảng multiplayer:** monorepo pnpm (`shared`/`client`/`server`), server NestJS authoritative + `ws` (tick 24Hz), protocol nhị phân + snapshot, client prediction/interpolation, spatial hashing — xem [REPORT-pha-2.md](REPORT-pha-2.md)
 - [x] Pha 3: delta/AoI lãnh thổ, entity/spectator lifecycle, backpressure và protocol metrics
-- [ ] Pha 4: backend lõi đã có; còn migration/E2E production và lobby reconnect
+- [ ] Pha 4: code và Lobby beta đã đạt; còn migration/seed và E2E HTTPS trên hạ tầng thật

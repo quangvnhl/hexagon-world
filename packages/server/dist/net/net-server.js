@@ -17,6 +17,7 @@ class NetServer {
         this.nextRoomId = 1;
         this.conns = new Map();
         this.rooms = new Set();
+        this.resumeSessions = new Map();
         this.active = null;
         this.tickRate = opts.tickRate ?? config_1.TICK_RATE;
         this.dt = this.tickRate === config_1.TICK_RATE ? config_1.DT : 1 / this.tickRate;
@@ -31,9 +32,12 @@ class NetServer {
         this.protocolVersion = opts.protocolVersion ?? shared_1.GAME_PROTOCOL_VERSION;
         this.transport = new network_transport_1.NetworkTransport(opts.backpressureBytes ?? config_1.WS_BACKPRESSURE_BYTES, network_transport_1.gameNetworkMetrics);
         this.maxHumans = opts.maxHumans ?? config_1.MAX_HUMAN_PLAYERS;
-        this.onlineBots = opts.onlineBots ?? config_1.ONLINE_BOTS;
+        this.onlineBotsOverride = opts.onlineBots === undefined
+            ? null
+            : Math.min(16, Math.max(0, Math.round(opts.onlineBots)));
         this.botJoinIntervalMs = opts.botJoinIntervalMs ?? config_1.ONLINE_BOT_JOIN_INTERVAL_MS;
         this.kingDurationSeconds = opts.kingDurationSeconds ?? config_1.KING_ROOM_DURATION_SECONDS;
+        this.reconnectGraceMs = Math.max(100, Math.round(opts.reconnectGraceMs ?? config_1.LOBBY_RECONNECT_GRACE_MS));
         this.wss = opts.httpServer
             ? new ws_1.WebSocketServer({ server: opts.httpServer, ...(opts.path ? { path: opts.path } : {}) })
             : new ws_1.WebSocketServer({ port: opts.port ?? 0 });
@@ -106,9 +110,10 @@ class NetServer {
         }
         {
             const roomId = this.nextRoomId++;
+            const botCapacity = this.onlineBotsOverride ?? (0, config_1.onlineBotCapacityForRoom)(roomId);
             const r = {
                 id: roomId,
-                room: new game_room_1.GameRoom(this.maxHumans, this.onlineBots, this.kingDurationSeconds, roomId),
+                room: new game_room_1.GameRoom(this.maxHumans, botCapacity, this.kingDurationSeconds, roomId),
                 conns: new Set(),
                 started: false,
                 ended: false,
@@ -128,6 +133,7 @@ class NetServer {
                 participants: new Map(),
                 matchStats: new Map(),
                 botActivationElapsedMs: 0,
+                readySeats: new Set(),
             };
             r.prevAlive = r.room.gameState.snapshotEntities().map((e) => e.alive);
             this.rooms.add(r);
@@ -135,8 +141,13 @@ class NetServer {
         }
         return this.active;
     }
+    canStart(r) {
+        const present = r.room.occupied();
+        return !r.started && !r.ended && present >= config_1.MIN_PLAYERS &&
+            r.conns.size === present && r.readySeats.size === present;
+    }
     startGame(r) {
-        if (r.started || r.ended)
+        if (!this.canStart(r))
             return;
         r.room.startMatch();
         r.started = true;
@@ -149,6 +160,7 @@ class NetServer {
         r.botActivationElapsedMs = 0;
         r.participants.clear();
         r.matchStats.clear();
+        r.readySeats.clear();
         for (const ws of r.conns) {
             const conn = this.conns.get(ws);
             if (!conn || conn.entityId === null)
@@ -180,12 +192,19 @@ class NetServer {
         this.broadcastLobby(r);
     }
     broadcastLobby(r) {
-        this.broadcastControl(r, {
-            t: "lobby",
-            present: r.room.occupied(),
-            needed: config_1.MIN_PLAYERS,
-            started: r.started,
-        });
+        for (const ws of r.conns) {
+            const conn = this.conns.get(ws);
+            if (!conn || conn.entityId === null)
+                continue;
+            this.send(ws, {
+                t: "lobby",
+                present: r.room.occupied(),
+                needed: config_1.MIN_PLAYERS,
+                started: r.started,
+                readyCount: r.readySeats.size,
+                selfReady: r.readySeats.has(conn.entityId),
+            });
+        }
     }
     broadcastRoster(r) {
         this.broadcastControl(r, { t: "roster", players: r.room.roster() });
@@ -260,6 +279,13 @@ class NetServer {
         this.rooms.delete(r);
         if (this.active === r)
             this.active = null;
+        for (const [token, session] of this.resumeSessions) {
+            if (session.room !== r)
+                continue;
+            if (session.timer)
+                clearTimeout(session.timer);
+            this.resumeSessions.delete(token);
+        }
         for (const ws of r.conns) {
             const c = this.conns.get(ws);
             if (c)
@@ -321,7 +347,7 @@ class NetServer {
     reconcileBots(r, elapsedMs) {
         if (r.room.kingCountdownActive || r.ended)
             return;
-        const target = this.onlineBots;
+        const target = r.room.botCapacity;
         if (r.room.activeBotCount >= target) {
             r.botActivationElapsedMs = 0;
             return;
@@ -341,6 +367,8 @@ class NetServer {
             territoryCells: new Map(),
             territoryInterest: null,
             interestTargetId: null,
+            reconnectToken: null,
+            intentionalClose: false,
         });
         ws.on("message", (data, isBinary) => {
             if (isBinary)
@@ -359,6 +387,102 @@ class NetServer {
         if (!input)
             return;
         conn.room.room.applyInput(conn.entityId, input.seq, input.heading);
+    }
+    issueResumeSession(ws, conn, r, entityId) {
+        const token = (0, node_crypto_1.randomUUID)();
+        conn.reconnectToken = token;
+        this.resumeSessions.set(token, {
+            token,
+            room: r,
+            entityId,
+            identity: conn.identity,
+            socket: ws,
+            timer: null,
+            expiresAt: null,
+        });
+        return token;
+    }
+    sendJoinState(ws, conn, r, resumed) {
+        const id = conn.entityId;
+        if (id === null)
+            return;
+        const reconnectToken = this.issueResumeSession(ws, conn, r, id);
+        this.send(ws, {
+            t: "welcome",
+            playerId: id,
+            arenaRadius: shared_1.CONFIG.ARENA_RADIUS,
+            hexSize: shared_1.CONFIG.HEX_SIZE,
+            tickRate: this.tickRate,
+            seed: r.id,
+            maxPlayers: this.maxHumans,
+            botCount: r.room.botCapacity,
+            reconnectToken,
+            resumed,
+        });
+        this.sendTerritory(ws, r);
+        this.sendMinimapTerritory(ws, r);
+        this.sendTotems(ws, r);
+        this.broadcastRoster(r);
+        this.broadcastLobby(r);
+    }
+    resumeConnection(ws, conn, token) {
+        const session = this.resumeSessions.get(token);
+        if (!session || session.socket || session.room.ended ||
+            session.expiresAt === null || session.expiresAt <= Date.now())
+            return false;
+        if (session.timer)
+            clearTimeout(session.timer);
+        this.resumeSessions.delete(token);
+        conn.entityId = session.entityId;
+        conn.room = session.room;
+        conn.identity = session.identity;
+        conn.interestTargetId = null;
+        session.room.conns.add(ws);
+        this.sendJoinState(ws, conn, session.room, true);
+        if (this.canStart(session.room))
+            this.startGame(session.room);
+        return true;
+    }
+    afterSeatRemoved(r) {
+        if (r.room.occupied() === 0) {
+            this.closeRoom(r);
+        }
+        else if (!r.ended && r.started && r.room.occupied() < config_1.MIN_PLAYERS) {
+            this.handleLastPlayer(r);
+        }
+        else {
+            this.broadcastRoster(r);
+            this.broadcastLobby(r);
+        }
+    }
+    removeConnectionSeat(ws, conn) {
+        const r = conn.room;
+        const entityId = conn.entityId;
+        if (!r || entityId === null)
+            return;
+        if (conn.reconnectToken) {
+            const session = this.resumeSessions.get(conn.reconnectToken);
+            if (session?.timer)
+                clearTimeout(session.timer);
+            this.resumeSessions.delete(conn.reconnectToken);
+        }
+        r.readySeats.delete(entityId);
+        r.room.leave(entityId);
+        r.conns.delete(ws);
+        conn.room = null;
+        conn.entityId = null;
+        conn.reconnectToken = null;
+        this.afterSeatRemoved(r);
+    }
+    expireResumeSession(token) {
+        const session = this.resumeSessions.get(token);
+        if (!session || session.socket)
+            return;
+        this.resumeSessions.delete(token);
+        const r = session.room;
+        r.readySeats.delete(session.entityId);
+        r.room.leave(session.entityId);
+        this.afterSeatRemoved(r);
     }
     onText(ws, text) {
         const msg = (0, shared_1.decodeControl)(text);
@@ -389,6 +513,12 @@ class NetServer {
                 ws.close(4003, "can regional ticket");
                 return;
             }
+            if (msg.reconnectToken) {
+                if (!this.resumeConnection(ws, conn, msg.reconnectToken)) {
+                    ws.close(4003, "reconnect token khong hop le hoac da het han");
+                }
+                return;
+            }
             conn.identity = identity;
             const r = this.ensureActiveRoom();
             const id = r.room.join(identity?.displayName ?? msg.name, {
@@ -404,29 +534,13 @@ class NetServer {
             conn.room = r;
             conn.interestTargetId = null;
             r.conns.add(ws);
+            r.readySeats.delete(id);
             if (r.started) {
                 const joinedIdentity = identity ?? { playerId: null, guestId: `legacy-${r.id}-${id}`, isGuest: true, platform: "web", displayName: r.room.gameState.nameOf(id), appearance: { colorIndex: 0, shape: "cube", trailPattern: "solid" } };
                 r.participants.set(id, joinedIdentity);
                 r.matchStats.set(id, { kills: 0, deaths: 0, deathCause: "" });
             }
-            this.send(ws, {
-                t: "welcome",
-                playerId: id,
-                arenaRadius: shared_1.CONFIG.ARENA_RADIUS,
-                hexSize: shared_1.CONFIG.HEX_SIZE,
-                tickRate: this.tickRate,
-                seed: r.id,
-                maxPlayers: this.maxHumans,
-                botCount: this.onlineBots,
-            });
-            this.sendTerritory(ws, r);
-            this.sendMinimapTerritory(ws, r);
-            this.sendTotems(ws, r);
-            this.broadcastRoster(r);
-            if (!r.started && r.room.occupied() >= config_1.MIN_PLAYERS)
-                this.startGame(r);
-            else
-                this.broadcastLobby(r);
+            this.sendJoinState(ws, conn, r, false);
         }
         else if (msg.t === "interest") {
             if (msg.targetId === null)
@@ -447,6 +561,22 @@ class NetServer {
                 this.sendTerritory(ws, conn.room);
             }
         }
+        else if (msg.t === "lobby_ready") {
+            if (conn.room && conn.entityId !== null && !conn.room.started && !conn.room.ended) {
+                if (msg.ready)
+                    conn.room.readySeats.add(conn.entityId);
+                else
+                    conn.room.readySeats.delete(conn.entityId);
+                this.broadcastLobby(conn.room);
+                if (this.canStart(conn.room))
+                    this.startGame(conn.room);
+            }
+        }
+        else if (msg.t === "lobby_cancel") {
+            conn.intentionalClose = true;
+            this.removeConnectionSeat(ws, conn);
+            ws.close(1000, "roi phong");
+        }
         else if (msg.t === "revive") {
             if (conn.room && conn.entityId !== null) {
                 if (conn.room.room.reviveSeat(conn.entityId))
@@ -458,26 +588,27 @@ class NetServer {
         const conn = this.conns.get(ws);
         if (!conn)
             return;
-        const r = conn.room;
-        if (r && conn.entityId !== null) {
-            r.room.leave(conn.entityId);
-            r.conns.delete(ws);
-            if (r.conns.size === 0) {
-                this.closeRoom(r);
-            }
-            else if (!r.ended && r.started && r.room.occupied() < config_1.MIN_PLAYERS) {
-                this.handleLastPlayer(r);
-            }
-            else if (!r.started) {
-                this.broadcastRoster(r);
-                this.broadcastLobby(r);
-            }
-            else {
-                this.broadcastRoster(r);
-            }
-        }
         this.conns.delete(ws);
         this.transport.remove(ws);
+        const r = conn.room;
+        if (r && conn.entityId !== null) {
+            r.conns.delete(ws);
+            if (conn.intentionalClose || !conn.reconnectToken || r.ended) {
+                this.removeConnectionSeat(ws, conn);
+            }
+            else {
+                const session = this.resumeSessions.get(conn.reconnectToken);
+                if (!session) {
+                    this.removeConnectionSeat(ws, conn);
+                }
+                else {
+                    session.socket = null;
+                    session.expiresAt = Date.now() + this.reconnectGraceMs;
+                    session.timer = setTimeout(() => this.expireResumeSession(session.token), this.reconnectGraceMs);
+                    this.broadcastLobby(r);
+                }
+            }
+        }
     }
     send(ws, msg) {
         this.transport.send(ws, (0, shared_1.encodeControl)(msg), "control");
@@ -646,6 +777,11 @@ class NetServer {
         }
         this.rooms.clear();
         this.active = null;
+        for (const session of this.resumeSessions.values()) {
+            if (session.timer)
+                clearTimeout(session.timer);
+        }
+        this.resumeSessions.clear();
         for (const ws of this.conns.keys()) {
             try {
                 ws.terminate();

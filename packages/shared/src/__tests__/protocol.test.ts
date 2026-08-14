@@ -12,6 +12,7 @@ import {
   decodeTerritory,
   type Snapshot,
   type S2CControl,
+  type C2SControl,
   type TerritoryCell,
 } from "../protocol";
 
@@ -40,6 +41,15 @@ describe("protocol INPUT (nhị phân)", () => {
         encodeSnapshot({ tick: 1, ackSeq: 0, selfPrep: 0, entities: [] })
       )
     ).toBeNull();
+  });
+});
+
+describe("lobby control contract", () => {
+  it("roundtrips ready and intentional cancel", () => {
+    const ready: C2SControl = { t: "lobby_ready", ready: true };
+    const cancel: C2SControl = { t: "lobby_cancel" };
+    expect(decodeControl<C2SControl>(encodeControl(ready))).toEqual(ready);
+    expect(decodeControl<C2SControl>(encodeControl(cancel))).toEqual(cancel);
   });
 });
 
@@ -141,6 +151,16 @@ describe("protocol điều khiển (JSON)", () => {
 
     const pong: S2CControl = { t: "pong", time: 555 };
     expect(decodeControl<S2CControl>(encodeControl(pong))).toEqual(pong);
+
+    const lobby: S2CControl = {
+      t: "lobby",
+      present: 3,
+      needed: 2,
+      started: false,
+      readyCount: 1,
+      selfReady: false,
+    };
+    expect(decodeControl<S2CControl>(encodeControl(lobby))).toEqual(lobby);
 
     const minimap: S2CControl = {
       t: "minimap_ui",

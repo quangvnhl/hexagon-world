@@ -1,7 +1,16 @@
 import { describe, expect, it, vi } from "vitest";
 import { GameRoom } from "../src/game/game-room";
+import { ONLINE_BOT_CAPACITY_MAX, ONLINE_BOT_CAPACITY_MIN, onlineBotCapacityForRoom } from "../src/config";
 
 describe("online room lifecycle", () => {
+  it("selects a stable and distributed default bot capacity in 12..16", () => {
+    const firstPass = Array.from({ length: 50 }, (_, index) => onlineBotCapacityForRoom(index + 1));
+    const secondPass = Array.from({ length: 50 }, (_, index) => onlineBotCapacityForRoom(index + 1));
+    expect(secondPass).toEqual(firstPass);
+    expect(firstPass.every((count) => count >= ONLINE_BOT_CAPACITY_MIN && count <= ONLINE_BOT_CAPACITY_MAX)).toBe(true);
+    expect(new Set(firstPass).size).toBeGreaterThan(1);
+  });
+
   it("parks bot capacity and activates at most one bot per request", () => {
     const room = new GameRoom(8, 3, 180);
     expect(room.botCapacity).toBe(3);

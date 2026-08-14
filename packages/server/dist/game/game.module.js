@@ -45,7 +45,7 @@ let GatewayService = class GatewayService {
         await this.net.start();
         console.log(`[Hexagon] Server AUTHORITATIVE region=${cfg.region} chuẩn bị trên cổng ${port}, ` +
             `${config_1.TICK_RATE} Hz. Phòng tạo khi có người vào ` +
-            `(tối đa ${config_1.MAX_HUMAN_PLAYERS} ghế người + ${config_1.ONLINE_BOTS} bot online), ` +
+            `(tối đa ${config_1.MAX_HUMAN_PLAYERS} ghế người + ${config_1.ONLINE_BOT_CAPACITY_MIN}..${config_1.ONLINE_BOT_CAPACITY_MAX} bot online/room), ` +
             `đóng khi hết người hoặc hết ván.`);
     }
     async onApplicationShutdown() {

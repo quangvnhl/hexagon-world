@@ -3,12 +3,11 @@
 ## Cấu hình
 
 - `MAX_ONLINE_PLAYERS`: mặc định và tối đa 8 người thật, clamp trong `1..8`.
-- `MAX_PLAYERS`: số bot mục tiêu cố định mỗi room, clamp trong `12..16`.
-- `ONLINE_BOTS`: tên cũ chỉ còn được đọc làm fallback tương thích; deployment mới dùng `MAX_PLAYERS`.
+- Bot online không đọc `MAX_PLAYERS` hoặc `ONLINE_BOTS` từ môi trường. Server chọn capacity ổn định `12..16` cho từng room từ `roomId`.
 - `ONLINE_BOT_JOIN_INTERVAL_MS`: khoảng cách kích hoạt bot, mặc định 1.500 ms.
 - `KING_ROOM_DURATION_SECONDS`: deadline cấp room, mặc định 180 giây.
 
-Bot capacity được tạo sẵn nhưng park. Khi room bắt đầu, server kích hoạt lần lượt cho tới đúng `MAX_PLAYERS`, mỗi interval chỉ kích hoạt tối đa một bot để tránh spike. Số bot không còn tăng/giảm theo số người thật trong room.
+Bot capacity thực của room được tạo sẵn nhưng park. Khi room bắt đầu, server kích hoạt lần lượt tới capacity đó, mỗi interval chỉ tối đa một bot để tránh spike. Reconcile và `welcome.botCount` đều dùng chính capacity của room; override `NetOpts.onlineBots` chỉ dành cho test.
 
 ## Admission và nhiều room
 
@@ -27,7 +26,7 @@ Game node tìm room chưa kết thúc, chưa có King countdown và còn ghế. 
 
 ## Vận hành
 
-Sau khi chỉnh biến môi trường phải recreate game container. Theo dõi nhiệt/CPU trước khi tăng `MAX_PLAYERS`; bot được stagger để tránh spike spawn nhưng tổng simulation cost vẫn tăng theo số bot active.
+Khoảng `ONLINE_BOT_CAPACITY_MIN/MAX` được cấu hình trực tiếp trong server để mọi game node nhất quán. Khi thay đổi khoảng này cần build/deploy lại image. Bot được stagger để tránh spike spawn nhưng tổng simulation cost vẫn tăng theo số bot active.
 
 ## King sống cuối cùng
 

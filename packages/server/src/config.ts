@@ -6,7 +6,7 @@ import { CONFIG, GAME_PROTOCOL_VERSION } from "@hexagon/shared";
  * Ghi chú thiết kế:
  *  - TICK_RATE = 24 Hz: đủ mượt cho .io game, nhẹ băng thông. dt cố định = 1/24.
  *  - MAX_HUMAN_PLAYERS giới hạn ghế người thật trong mỗi room (tối đa 8).
- *  - MAX_PLAYERS là số bot mục tiêu cố định của room, clamp trong 12..16.
+ *  - Bot online chọn deterministic một capacity trong khoảng 12..16 theo room id.
  *  - BOT_COUNT giữ lại làm sức chứa bot mặc định cho mô phỏng và tương thích test cũ.
  */
 export const TICK_RATE = 24;
@@ -26,19 +26,20 @@ export const MAX_HUMAN_PLAYERS = boundedIntegerFromEnv("MAX_ONLINE_PLAYERS", 8, 
 /** Sức chứa bot mặc định của GameState; room online truyền mục tiêu bot riêng. */
 export const BOT_COUNT = CONFIG.BOT_COUNT;
 
-/**
- * Số bot mục tiêu cố định của mỗi room online. `ONLINE_BOTS` là fallback tương
- * thích deployment cũ; cấu hình mới dùng `MAX_PLAYERS` và luôn nằm trong 12..16.
- */
-export const MAX_PLAYERS = boundedIntegerFromEnv(
-  "MAX_PLAYERS",
-  boundedIntegerFromEnv("ONLINE_BOTS", 12, 12, 16),
-  12,
-  16,
-);
-export const ONLINE_BOTS = MAX_PLAYERS;
+/** Khoảng bot online là server build config, không phải deployment env. */
+export const ONLINE_BOT_CAPACITY_MIN = 12;
+export const ONLINE_BOT_CAPACITY_MAX = 16;
+
+/** Deterministic per-room distribution without deployment/env drift. */
+export function onlineBotCapacityForRoom(roomId: number): number {
+  const stableId = Number.isFinite(roomId) ? Math.max(1, Math.floor(roomId)) : 1;
+  const hash = Math.imul(stableId ^ 0x9e3779b9, 0x85ebca6b) >>> 0;
+  return ONLINE_BOT_CAPACITY_MIN + hash % (ONLINE_BOT_CAPACITY_MAX - ONLINE_BOT_CAPACITY_MIN + 1);
+}
 export const ONLINE_BOT_JOIN_INTERVAL_MS = boundedIntegerFromEnv("ONLINE_BOT_JOIN_INTERVAL_MS", 1500, 100, 60000);
 export const KING_ROOM_DURATION_SECONDS = boundedIntegerFromEnv("KING_ROOM_DURATION_SECONDS", 180, 1, 3600);
+/** Giữ ghế trong thời gian ngắn khi socket rớt để client có thể nối lại đúng ván. */
+export const LOBBY_RECONNECT_GRACE_MS = 15_000;
 
 /** Số người THẬT tối thiểu để BẮT ĐẦU một ván online. Chưa đủ → phòng ở trạng thái CHỜ. */
 export const MIN_PLAYERS = 1;
