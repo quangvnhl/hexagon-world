@@ -72,23 +72,58 @@ export type S2CControl =
       players: { id: number; name: string }[];
     }
   | {
-      /** Dữ liệu UI toàn cục nhịp thấp (~5 Hz), tách khỏi snapshot entity đã lọc AoI. */
+      /** Scoreboard toàn cục không chứa tọa độ, tránh rò vị trí khi người chơi chưa có Radar. */
       t: "world_ui";
       entities: WorldUiEntity[];
     }
+  | {
+      /** Vị trí minimap đã lọc riêng cho connection: chỉ self, hoặc toàn phòng khi có Radar. */
+      t: "minimap_ui";
+      radarActive: boolean;
+      entities: MinimapUiEntity[];
+    }
+  | {
+      /** Totem là state reliable, chỉ gửi lại khi revision thay đổi. */
+      t: "totems";
+      revision: number;
+      items: TotemWireState[];
+    }
   | { t: "event"; kind: "death"; id: number; cause: DeathCause; killerId: number }
   | { t: "event"; kind: "win"; winnerId: number }
-  | { t: "event"; kind: "king"; kingId: number };
+  | { t: "event"; kind: "king"; kingId: number }
+  | {
+      t: "event";
+      kind: "match_end";
+      winnerId: number;
+      reason: "king_countdown";
+      finalScores: Array<{ id: number; score: number; placement: number }>;
+    };
 
 export interface WorldUiEntity {
   id: number;
-  x: number;
-  y: number;
   alive: boolean;
   score: number;
   colorIndex: number;
   trailPatternIndex: number;
   shapeIndex: number;
+}
+
+export interface MinimapUiEntity {
+  id: number;
+  x: number;
+  y: number;
+  alive: boolean;
+}
+
+export type TotemWireKind = "speed" | "slow" | "radar";
+
+export interface TotemWireState {
+  id: number;
+  kind: TotemWireKind;
+  q: number;
+  r: number;
+  /** -1 khi ô Totem đang trung lập. */
+  ownerId: number;
 }
 
 export const encodeControl = (m: C2SControl | S2CControl): string =>
@@ -128,21 +163,23 @@ export function decodeInput(buf: ArrayBuffer | Uint8Array): InputMsg | null {
 
 // ---- SNAPSHOT (server → client, binary) -----------------------------------
 // Header (15 bytes): u8 tag(102) | u32 tick | u32 ackSeq | u16 selfPrep(ms)
-//                    | u16 kingHold(deciseconds) | u16 count
+//                    | u16 kingRemaining(deciseconds) | u16 count
 //   selfPrep = số ms chuẩn bị còn lại của CHÍNH client nhận (0 nếu đang chơi/chết) →
 //   client hiện đếm ngược "3,2,1" và biết vì sao chưa di chuyển được.
-//   kingHold = số 0.1-giây (deciseconds) còn phải giữ ngôi KING để thắng, do server tính
+//   kingRemaining = số 0.1-giây còn lại của countdown cấp room; đổi trực tiếp KING không reset
 //   (client không chạy mô phỏng nên phải nhận số này để đếm ngược đồng hồ 3 phút).
-// Mỗi entity (20 bytes): u8 id | u8 flags | u8 colorIndex | u8 shapeIndex
+// Mỗi entity (24 bytes): u8 id | u8 flags | u8 colorIndex | u8 shapeIndex
 //                        | f32 x | f32 y | f32 heading | u16 score
-//                        | u8 trailPatternIndex | u8 _pad
+//                        | u8 trailPatternIndex | u8 speedTotemCount
+//                        | u16 effectiveSpeed(cents) | u16 _pad
 export const SNAPSHOT_HEADER = 15;
-export const SNAPSHOT_ENTITY = 20;
+export const SNAPSHOT_ENTITY = 24;
 
 /** Bit cờ của mỗi entity trong snapshot. */
 export const FLAG = {
   ALIVE: 1 << 0,
   HAS_TRAIL: 1 << 1,
+  RADAR_ACTIVE: 1 << 2,
 } as const;
 
 export interface EntitySnap {
@@ -159,6 +196,10 @@ export interface EntitySnap {
   heading: number;
   /** Số ô đất (playable) đang sở hữu — cho HUD/xếp hạng. */
   score: number;
+  /** Tốc độ authoritative dùng cho prediction, wire fixed-point 0.01 world-unit/s. */
+  effectiveSpeed?: number;
+  speedTotemCount?: number;
+  radarActive?: boolean;
 }
 
 export interface Snapshot {
@@ -169,6 +210,8 @@ export interface Snapshot {
   selfPrep: number;
   /** Giây còn phải giữ ngôi KING để thắng (do server tính; 0/đầy khi chưa có KING).
    *  Bỏ trống khi mã hoá → coi là 0. Truyền qua wire dưới dạng deciseconds. */
+  kingRemaining?: number;
+  /** @deprecated Tương thích nội bộ trong lúc chuyển protocol v4. */
   kingHold?: number;
   entities: EntitySnap[];
 }
@@ -181,7 +224,7 @@ export function encodeSnapshot(s: Snapshot): ArrayBuffer {
   dv.setUint32(1, s.tick >>> 0, true);
   dv.setUint32(5, s.ackSeq >>> 0, true);
   dv.setUint16(9, Math.min(0xffff, Math.max(0, s.selfPrep | 0)), true);
-  const kingDs = Math.round((s.kingHold ?? 0) * 10);
+  const kingDs = Math.round((s.kingRemaining ?? s.kingHold ?? 0) * 10);
   dv.setUint16(11, Math.min(0xffff, Math.max(0, kingDs)), true);
   dv.setUint16(13, n, true);
   let o = SNAPSHOT_HEADER;
@@ -189,6 +232,7 @@ export function encodeSnapshot(s: Snapshot): ArrayBuffer {
     let flags = 0;
     if (e.alive) flags |= FLAG.ALIVE;
     if (e.hasTrail) flags |= FLAG.HAS_TRAIL;
+    if (e.radarActive) flags |= FLAG.RADAR_ACTIVE;
     dv.setUint8(o, e.id & 0xff);
     dv.setUint8(o + 1, flags);
     dv.setUint8(o + 2, e.colorIndex & 0xff);
@@ -198,7 +242,13 @@ export function encodeSnapshot(s: Snapshot): ArrayBuffer {
     dv.setFloat32(o + 12, e.heading, true);
     dv.setUint16(o + 16, Math.min(0xffff, Math.max(0, e.score | 0)), true);
     dv.setUint8(o + 18, e.trailPatternIndex & 0xff);
-    dv.setUint8(o + 19, 0);
+    dv.setUint8(o + 19, Math.min(0xff, Math.max(0, e.speedTotemCount ?? 0)));
+    dv.setUint16(
+      o + 20,
+      Math.min(0xffff, Math.max(0, Math.round((e.effectiveSpeed ?? 0) * 100))),
+      true
+    );
+    dv.setUint16(o + 22, 0, true);
     o += SNAPSHOT_ENTITY;
   }
   return buf;
@@ -222,6 +272,7 @@ export function decodeSnapshot(buf: ArrayBuffer | Uint8Array): Snapshot | null {
       id: dv.getUint8(o),
       alive: (flags & FLAG.ALIVE) !== 0,
       hasTrail: (flags & FLAG.HAS_TRAIL) !== 0,
+      radarActive: (flags & FLAG.RADAR_ACTIVE) !== 0,
       colorIndex: dv.getUint8(o + 2),
       shapeIndex: dv.getUint8(o + 3),
       x: dv.getFloat32(o + 4, true),
@@ -229,10 +280,19 @@ export function decodeSnapshot(buf: ArrayBuffer | Uint8Array): Snapshot | null {
       heading: dv.getFloat32(o + 12, true),
       score: dv.getUint16(o + 16, true),
       trailPatternIndex: dv.getUint8(o + 18),
+      speedTotemCount: dv.getUint8(o + 19),
+      effectiveSpeed: dv.getUint16(o + 20, true) / 100,
     });
     o += SNAPSHOT_ENTITY;
   }
-  return { tick, ackSeq, selfPrep, kingHold, entities };
+  return {
+    tick,
+    ackSeq,
+    selfPrep,
+    kingRemaining: kingHold,
+    kingHold,
+    entities,
+  };
 }
 
 // ---- TERRITORY keyframe (server → client, binary) -------------------------

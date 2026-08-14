@@ -50,7 +50,7 @@ describe("protocol SNAPSHOT (nhị phân)", () => {
       ackSeq: 42,
       selfPrep: 1500,
       entities: [
-        { id: 0, alive: true, hasTrail: true, colorIndex: 3, trailPatternIndex: 2, shapeIndex: 4, x: 12.5, y: -7.25, heading: 0.75, score: 1234 },
+        { id: 0, alive: true, hasTrail: true, colorIndex: 3, trailPatternIndex: 2, shapeIndex: 4, x: 12.5, y: -7.25, heading: 0.75, score: 1234, effectiveSpeed: 7.25, speedTotemCount: 3, radarActive: true },
         { id: 5, alive: false, hasTrail: false, colorIndex: 1, trailPatternIndex: 3, shapeIndex: 3, x: -60.1, y: 33.3, heading: -2.9, score: 0 },
       ],
     };
@@ -73,6 +73,9 @@ describe("protocol SNAPSHOT (nhị phân)", () => {
     expect(a.y).toBeCloseTo(-7.25, 3);
     expect(a.heading).toBeCloseTo(0.75, 4);
     expect(a.score).toBe(1234);
+    expect(a.effectiveSpeed).toBe(7.25);
+    expect(a.speedTotemCount).toBe(3);
+    expect(a.radarActive).toBe(true);
 
     const b = d.entities[1];
     expect(b.alive).toBe(false);
@@ -81,6 +84,9 @@ describe("protocol SNAPSHOT (nhị phân)", () => {
     expect(b.shapeIndex).toBe(3);
     expect(b.x).toBeCloseTo(-60.1, 2);
     expect(b.score).toBe(0);
+    expect(b.effectiveSpeed).toBe(0);
+    expect(b.speedTotemCount).toBe(0);
+    expect(b.radarActive).toBe(false);
   });
 
   it("snapshot rỗng hợp lệ", () => {
@@ -135,6 +141,29 @@ describe("protocol điều khiển (JSON)", () => {
 
     const pong: S2CControl = { t: "pong", time: 555 };
     expect(decodeControl<S2CControl>(encodeControl(pong))).toEqual(pong);
+
+    const minimap: S2CControl = {
+      t: "minimap_ui",
+      radarActive: true,
+      entities: [{ id: 2, x: 4.5, y: -3, alive: true }],
+    };
+    expect(decodeControl<S2CControl>(encodeControl(minimap))).toEqual(minimap);
+
+    const totems: S2CControl = {
+      t: "totems",
+      revision: 4,
+      items: [{ id: 1, kind: "slow", q: 3, r: -2, ownerId: -1 }],
+    };
+    expect(decodeControl<S2CControl>(encodeControl(totems))).toEqual(totems);
+
+    const ended: S2CControl = {
+      t: "event",
+      kind: "match_end",
+      winnerId: 2,
+      reason: "king_countdown",
+      finalScores: [{ id: 2, score: 99, placement: 1 }],
+    };
+    expect(decodeControl<S2CControl>(encodeControl(ended))).toEqual(ended);
   });
 
   it("chuỗi JSON hỏng → null", () => {

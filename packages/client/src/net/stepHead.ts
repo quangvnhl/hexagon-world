@@ -25,7 +25,7 @@ export function normalizeAngle(a: number): number {
 /**
  * Một bước động học đầu (thuần, không phụ thuộc trạng thái ngoài):
  *  1) Quay `heading` về `targetHeading`, giới hạn bởi `CONFIG.TURN_RATE * dt`.
- *  2) Dịch theo hướng mới một đoạn `CONFIG.SPEED * dt`, rồi `clampInside` về trong
+ *  2) Dịch theo hướng mới một đoạn `speed * dt`, rồi slide về trong
  *     lục giác. Nếu có di chuyển thực, cập nhật `heading` theo hướng di chuyển thực
  *     (trượt dọc tường) — y hệt server.
  *
@@ -35,6 +35,7 @@ export function stepHead(
   state: HeadState,
   targetHeading: number,
   dt: number,
+  speed: number,
 ): HeadState {
   // 1) Quay đầu có giới hạn.
   const maxTurn = CONFIG.TURN_RATE * dt;
@@ -44,7 +45,7 @@ export function stepHead(
   let heading = state.heading + diff;
 
   // 2) Di chuyển rồi TRƯỢT dọc tường ở tốc độ đầy đủ (khớp updateEntity của server).
-  const dist = CONFIG.SPEED * dt;
+  const dist = Math.max(0, speed) * dt;
   const c = slideMove(state.x, state.y, heading, dist);
   const mdx = c.x - state.x;
   const mdy = c.y - state.y;

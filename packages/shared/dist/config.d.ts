@@ -37,7 +37,28 @@ export declare const CONFIG: {
     /** Cạnh cube nhân vật (người + bot), đơn vị world. Chỉnh to/nhỏ nhân vật ở đây. */
     readonly CUBE_SIZE: 1.2;
     /** Tốc độ di chuyển liên tục (world units / giây). Nhỏ = chậm. */
-    readonly SPEED: 5.5;
+    readonly SPEED: {
+        readonly BY_KING_PCT: {
+            readonly MIN: 5.5;
+            readonly MAX: 7;
+        };
+    };
+    readonly TOTEMS: {
+        readonly SPEED: {
+            readonly COUNT: 32;
+            readonly BONUS_PER_TOTEM: 0.5;
+        };
+        readonly SLOW: {
+            readonly COUNT: 12;
+            readonly RADIUS: 8;
+            readonly ENEMY_SPEED: 3;
+        };
+        readonly RADAR: {
+            readonly COUNT: 30;
+        };
+        readonly MIN_SPAWN_DISTANCE: 18;
+        readonly SPAWN_CLEARANCE: 12;
+    };
     /** Tốc độ quay đầu tối đa (rad / giây) — làm chuyển hướng mượt. */
     readonly TURN_RATE: 4.5;
     /** Khoảng cách tối thiểu giữa 2 điểm ghi vào đường đuôi (để line mượt & gọn). */

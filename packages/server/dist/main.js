@@ -64,6 +64,10 @@ async function bootstrap() {
     });
     app.enableShutdownHooks();
     await app.listen(cfg.port, "0.0.0.0");
+    if (cfg.role !== "control") {
+        const { GatewayService } = await Promise.resolve().then(() => __importStar(require("./game/game.module")));
+        await app.get(GatewayService).start();
+    }
     console.log(`[Hexagon] role=${cfg.role} region=${cfg.region} port=${cfg.port}`);
 }
 void bootstrap();

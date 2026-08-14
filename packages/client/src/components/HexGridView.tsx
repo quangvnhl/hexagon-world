@@ -138,7 +138,8 @@ export const HexGridView = memo(function HexGridView({
       lastRev.current = game.gridRevision;
       for (let slot = 0; slot < visibleCells.current.length; slot++) {
         const cellIndex = visibleCells.current[slot];
-        const rgb = game.cellColor(cells[cellIndex].key);
+        const key = cells[cellIndex].key;
+        const rgb = game.cellColor(key);
         color.setRGB(rgb[0], rgb[1], rgb[2]);
         mesh.setColorAt(slot, color);
       }

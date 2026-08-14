@@ -23,6 +23,7 @@ import { HUD, Stats } from "./HUD";
 import { FpsMeterIfEnabled } from "./FpsMeter";
 import { TelegramGameHaptics } from "./TelegramGameHaptics";
 import { cameraFov, useCameraProfile } from "./cameraProfile";
+import { TotemInstances } from "./TotemInstances";
 
 interface PointerRef {
   x: number;
@@ -179,6 +180,7 @@ function GameLoop({
     if (statAcc.current >= 0.2 || game.phase !== lastPhase.current) {
       statAcc.current = 0;
       lastPhase.current = game.phase;
+      const modifiers = game.gameplayModifiersFor(0);
       onStats({
         pct: game.territoryPct(),
         king: game.isKing,
@@ -213,6 +215,10 @@ function GameLoop({
                 axialToPixel(parseKey(k), CONFIG.HEX_SIZE)
               )
             : [],
+        effectiveSpeed: modifiers.effectiveSpeed,
+        speedTotemCount: modifiers.speedTotemCount,
+        radarActive: modifiers.radarActive,
+        insideEnemySlowZone: modifiers.insideEnemySlowZone,
       });
     }
   });
@@ -320,6 +326,7 @@ export default function GameScene({
         {CONFIG.DISPLAY.TERRITORY_BORDERS && <TerritoryBorders game={game} />}
         <BorderRim game={game} />
         <TrailLine game={game} />
+        <TotemInstances items={game.totemStates()} />
         <PlayerCube game={game} />
         {CONFIG.DISPLAY.PARTICLES && <Effects game={game} />}
         <TelegramGameHaptics game={game} playerId={0} />
@@ -346,7 +353,22 @@ export default function GameScene({
         kingReached={stats.king || Boolean(stats.kingName)}
       />
       {onExit && <MenuButton onExit={onExit} />}
-      {CONFIG.DISPLAY.MINIMAP && <MiniMap game={game} />}
+      {CONFIG.DISPLAY.MINIMAP && (
+        <MiniMap
+          game={game}
+          totems={game.totemStates()}
+          privacy={{
+            radarActive: stats.radarActive ?? false,
+            territory: game.territoryCells(),
+            entities: game.players.map((entity) => ({
+              id: entity.id,
+              x: entity.pos.x,
+              y: entity.pos.y,
+              alive: entity.alive,
+            })),
+          }}
+        />
+      )}
       <FpsMeterIfEnabled statusText={`Local · ${game.players.length} người`} />
       <Joystick dir={joystick} />
       {CONFIG.DEBUG.COLLISION_VECTORS && (

@@ -25,3 +25,4 @@ __exportStar(require("./state"), exports);
 __exportStar(require("./protocol"), exports);
 __exportStar(require("./protocol-version"), exports);
 __exportStar(require("./spatialhash"), exports);
+__exportStar(require("./totems"), exports);

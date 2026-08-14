@@ -34,6 +34,13 @@ async function bootstrap(): Promise<void> {
   });
   app.enableShutdownHooks();
   await app.listen(cfg.port, "0.0.0.0");
+  // Chỉ gắn WebSocket sau khi HTTP server thật đã được tạo và listen. Khởi tạo
+  // gateway trong onModuleInit có thể nhận `undefined` từ ExpressAdapter, khiến
+  // nó mở một listener standalone trùng PORT với Nest.
+  if (cfg.role !== "control") {
+    const { GatewayService } = await import("./game/game.module");
+    await app.get(GatewayService).start();
+  }
   // eslint-disable-next-line no-console
   console.log(`[Hexagon] role=${cfg.role} region=${cfg.region} port=${cfg.port}`);
 }

@@ -1,11 +1,12 @@
 "use client";
 
 import { Suspense, useEffect, useMemo, useRef } from "react";
-import { Canvas, useFrame } from "@react-three/fiber";
+import { Canvas, useFrame, useLoader } from "@react-three/fiber";
 import { useGLTF } from "@react-three/drei";
 import * as THREE from "three";
 import type { PlayerShape, TrailPattern } from "@hexagon/shared";
 import { applyPlayerColorToPrimaryMaterials } from "./modelMaterialColor";
+import { trailVectorAsset } from "./trailVectorAssets";
 
 const MODEL_URLS = {
   fly: "/models/low_poly_house_fly_diptera.glb",
@@ -110,23 +111,31 @@ function TrailDot({
   color: string;
 }) {
   const faded = 1 - index / 20;
-  const visible =
-    pattern === "dots"
-      ? index % 2 === 0
-      : pattern === "stripes"
-        ? index % 4 !== 2
-        : true;
-  const scale = pattern === "chevrons" && index % 2 ? 0.55 : 1;
+  if (pattern !== "solid") {
+    return <VectorTrailDot pattern={pattern} color={color} opacity={0.2 + faded * 0.72} />;
+  }
   return (
-    <mesh scale={[scale, scale, scale]} visible={visible}>
-      {pattern === "solid" ? (
-        <sphereGeometry args={[0.16, 10, 8]} />
-      ) : pattern === "chevrons" ? (
-        <coneGeometry args={[0.2, 0.42, 3]} />
-      ) : (
-        <boxGeometry args={[0.28, 0.14, 0.12]} />
-      )}
+    <mesh>
+      <sphereGeometry args={[0.16, 10, 8]} />
       <meshBasicMaterial color={color} transparent opacity={0.2 + faded * 0.72} />
+    </mesh>
+  );
+}
+
+function VectorTrailDot({ pattern, color, opacity }: { pattern: Exclude<TrailPattern, "solid">; color: string; opacity: number }) {
+  const asset = trailVectorAsset(pattern)!;
+  const texture = useLoader(THREE.TextureLoader, asset);
+  return (
+    <mesh>
+      <planeGeometry args={[0.52, 0.15]} />
+      <meshBasicMaterial
+        map={texture}
+        color={color}
+        transparent
+        opacity={opacity}
+        alphaTest={0.04}
+        depthWrite={false}
+      />
     </mesh>
   );
 }
@@ -178,11 +187,13 @@ function AnimatedPreview({
 
   return (
     <>
-      <group ref={trail}>
-        {points.current.map((_, index) => (
-          <TrailDot key={index} index={index} pattern={pattern} color={color} />
-        ))}
-      </group>
+      <Suspense fallback={null}>
+        <group ref={trail}>
+          {points.current.map((_, index) => (
+            <TrailDot key={index} index={index} pattern={pattern} color={color} />
+          ))}
+        </group>
+      </Suspense>
       <group ref={mover}>
         <Suspense fallback={null}>
           <PreviewShape shape={shape} color={color} />

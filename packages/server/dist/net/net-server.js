@@ -30,6 +30,10 @@ class NetServer {
         this.entityAoiRadius = opts.entityAoiRadius ?? config_1.ENTITY_AOI_RADIUS;
         this.protocolVersion = opts.protocolVersion ?? shared_1.GAME_PROTOCOL_VERSION;
         this.transport = new network_transport_1.NetworkTransport(opts.backpressureBytes ?? config_1.WS_BACKPRESSURE_BYTES, network_transport_1.gameNetworkMetrics);
+        this.maxHumans = opts.maxHumans ?? config_1.MAX_HUMAN_PLAYERS;
+        this.onlineBots = opts.onlineBots ?? config_1.ONLINE_BOTS;
+        this.botJoinIntervalMs = opts.botJoinIntervalMs ?? config_1.ONLINE_BOT_JOIN_INTERVAL_MS;
+        this.kingDurationSeconds = opts.kingDurationSeconds ?? config_1.KING_ROOM_DURATION_SECONDS;
         this.wss = opts.httpServer
             ? new ws_1.WebSocketServer({ server: opts.httpServer, ...(opts.path ? { path: opts.path } : {}) })
             : new ws_1.WebSocketServer({ port: opts.port ?? 0 });
@@ -52,20 +56,32 @@ class NetServer {
         await this.whenListening();
     }
     get activeRoom() {
-        return this.active && !this.active.ended ? this.active.room : null;
+        return this.active && !this.active.ended ? this.active.room : ([...this.rooms].find((room) => !room.ended)?.room ?? null);
     }
     get roomCount() {
         return this.rooms.size;
     }
     get networkMetrics() { return this.transport.snapshot(); }
+    get roomStats() {
+        return [...this.rooms].map((room) => ({
+            id: room.id,
+            humanCount: room.room.occupied(),
+            activeBotCount: room.room.activeBotCount,
+            capacity: room.room.capacity,
+            capacityFull: room.room.occupied() >= room.room.capacity,
+            kingAdmissionLocked: room.room.kingAdmissionLocked,
+            ended: room.ended,
+        }));
+    }
     tickOnce() {
-        const r = this.active;
-        if (!r || !r.started)
-            return;
-        this.stepRoom(r);
-        this.broadcast(r);
-        this.broadcastWorldUiIfDue(r);
-        this.flushTerritoryIfDue(r);
+        for (const r of this.rooms) {
+            if (!r.started || r.ended)
+                continue;
+            this.stepRoom(r);
+            this.broadcast(r);
+            this.broadcastWorldUiIfDue(r);
+            this.flushTerritoryIfDue(r);
+        }
     }
     whenListening() {
         if (this.wss.address())
@@ -75,11 +91,24 @@ class NetServer {
             this.wss.once("error", reject);
         });
     }
+    findJoinableRoom() {
+        for (const room of this.rooms) {
+            if (!room.ended && !room.room.kingAdmissionLocked && room.room.occupied() < room.room.capacity)
+                return room;
+        }
+        return null;
+    }
     ensureActiveRoom() {
-        if (!this.active || this.active.ended) {
+        const joinable = this.findJoinableRoom();
+        if (joinable) {
+            this.active = joinable;
+            return joinable;
+        }
+        {
+            const roomId = this.nextRoomId++;
             const r = {
-                id: this.nextRoomId++,
-                room: new game_room_1.GameRoom(config_1.MAX_PLAYERS, config_1.ONLINE_BOTS),
+                id: roomId,
+                room: new game_room_1.GameRoom(this.maxHumans, this.onlineBots, this.kingDurationSeconds, roomId),
                 conns: new Set(),
                 started: false,
                 ended: false,
@@ -89,6 +118,7 @@ class NetServer {
                 accumulator: 0,
                 running: false,
                 lastTerrRev: -1,
+                lastTotemRev: -1,
                 prevAlive: [],
                 prevWon: false,
                 prevKingId: -1,
@@ -97,6 +127,7 @@ class NetServer {
                 reported: false,
                 participants: new Map(),
                 matchStats: new Map(),
+                botActivationElapsedMs: 0,
             };
             r.prevAlive = r.room.gameState.snapshotEntities().map((e) => e.alive);
             this.rooms.add(r);
@@ -115,6 +146,7 @@ class NetServer {
         r.matchId = (0, node_crypto_1.randomUUID)();
         r.startedAt = new Date().toISOString();
         r.reported = false;
+        r.botActivationElapsedMs = 0;
         r.participants.clear();
         r.matchStats.clear();
         for (const ws of r.conns) {
@@ -130,24 +162,7 @@ class NetServer {
             this.startLoop(r);
     }
     handleLastPlayer(r) {
-        let lastId = -1;
-        for (const ws of r.conns) {
-            const c = this.conns.get(ws);
-            if (c && c.entityId !== null) {
-                lastId = c.entityId;
-                break;
-            }
-        }
-        const alive = lastId >= 0 && r.room.gameState.players[lastId]?.alive === true;
-        if (alive) {
-            r.room.gameState.declareWinner(lastId);
-            this.broadcastControl(r, { t: "event", kind: "win", winnerId: lastId });
-            r.prevWon = true;
-            this.markEnded(r);
-        }
-        else {
-            this.revertToWaiting(r);
-        }
+        this.revertToWaiting(r);
     }
     revertToWaiting(r) {
         if (!r.started || r.ended)
@@ -182,6 +197,32 @@ class NetServer {
     }
     broadcastWorldUi(r) {
         this.broadcastControl(r, { t: "world_ui", entities: r.room.worldUiEntities() });
+        for (const ws of r.conns) {
+            const conn = this.conns.get(ws);
+            if (!conn || conn.entityId === null)
+                continue;
+            const radarActive = r.room.gameState.radarActiveFor(conn.entityId);
+            this.send(ws, {
+                t: "minimap_ui",
+                radarActive,
+                entities: r.room.minimapUiEntitiesFor(conn.entityId),
+            });
+        }
+    }
+    sendTotems(ws, r) {
+        this.send(ws, {
+            t: "totems",
+            revision: r.room.gameState.totemRevision,
+            items: [...r.room.gameState.totemStates()],
+        });
+    }
+    broadcastTotemsIfChanged(r) {
+        const revision = r.room.gameState.totemRevision;
+        if (revision === r.lastTotemRev)
+            return;
+        r.lastTotemRev = revision;
+        for (const ws of r.conns)
+            this.sendTotems(ws, r);
     }
     markEnded(r) {
         if (r.ended)
@@ -242,6 +283,13 @@ class NetServer {
     loop(r) {
         if (!r.running)
             return;
+        if (r.ended) {
+            if (Date.now() - r.endedAt > ENDED_GRACE_MS)
+                this.closeRoom(r);
+            else
+                this.scheduleNext(r);
+            return;
+        }
         const now = Date.now();
         let elapsed = (now - r.lastTime) / 1000;
         r.lastTime = now;
@@ -267,7 +315,22 @@ class NetServer {
     }
     stepRoom(r) {
         r.room.stepTick(this.dt);
+        this.reconcileBots(r, this.dt * 1000);
         this.emitEvents(r);
+    }
+    reconcileBots(r, elapsedMs) {
+        if (r.room.kingCountdownActive || r.ended)
+            return;
+        const target = this.onlineBots;
+        if (r.room.activeBotCount >= target) {
+            r.botActivationElapsedMs = 0;
+            return;
+        }
+        r.botActivationElapsedMs += elapsedMs;
+        if (r.botActivationElapsedMs < this.botJoinIntervalMs)
+            return;
+        r.botActivationElapsedMs -= this.botJoinIntervalMs;
+        r.room.activateNextBot();
     }
     onConnection(ws) {
         this.conns.set(ws, {
@@ -290,7 +353,7 @@ class NetServer {
     }
     onBinary(ws, data) {
         const conn = this.conns.get(ws);
-        if (!conn || conn.entityId === null || !conn.room)
+        if (!conn || conn.entityId === null || !conn.room || conn.room.ended)
             return;
         const input = (0, shared_1.decodeInput)(data);
         if (!input)
@@ -341,18 +404,24 @@ class NetServer {
             conn.room = r;
             conn.interestTargetId = null;
             r.conns.add(ws);
+            if (r.started) {
+                const joinedIdentity = identity ?? { playerId: null, guestId: `legacy-${r.id}-${id}`, isGuest: true, platform: "web", displayName: r.room.gameState.nameOf(id), appearance: { colorIndex: 0, shape: "cube", trailPattern: "solid" } };
+                r.participants.set(id, joinedIdentity);
+                r.matchStats.set(id, { kills: 0, deaths: 0, deathCause: "" });
+            }
             this.send(ws, {
                 t: "welcome",
                 playerId: id,
                 arenaRadius: shared_1.CONFIG.ARENA_RADIUS,
                 hexSize: shared_1.CONFIG.HEX_SIZE,
                 tickRate: this.tickRate,
-                seed: 0,
-                maxPlayers: config_1.MAX_PLAYERS,
-                botCount: config_1.ONLINE_BOTS,
+                seed: r.id,
+                maxPlayers: this.maxHumans,
+                botCount: this.onlineBots,
             });
             this.sendTerritory(ws, r);
             this.sendMinimapTerritory(ws, r);
+            this.sendTotems(ws, r);
             this.broadcastRoster(r);
             if (!r.started && r.room.occupied() >= config_1.MIN_PLAYERS)
                 this.startGame(r);
@@ -429,6 +498,7 @@ class NetServer {
         }
         if (r.room.tick % WORLD_UI_EVERY === 0)
             this.broadcastMinimapTerritory(r);
+        this.broadcastTotemsIfChanged(r);
     }
     broadcastTerritory(r) {
         for (const ws of r.conns) {
@@ -503,7 +573,12 @@ class NetServer {
     sendMinimapTerritory(ws, r) {
         if (ws.readyState !== ws_1.WebSocket.OPEN)
             return;
-        this.transport.send(ws, (0, shared_1.encodeTerritoryMinimap)(r.room.tick, r.room.gameState.territoryCells()), "territory_minimap", { binary: true, droppable: true });
+        const conn = this.conns.get(ws);
+        if (!conn || conn.entityId === null)
+            return;
+        const radarActive = r.room.gameState.radarActiveFor(conn.entityId);
+        const cells = r.room.gameState.territoryCells().filter((cell) => radarActive || cell.owner === conn.entityId);
+        this.transport.send(ws, (0, shared_1.encodeTerritoryMinimap)(r.room.tick, cells), "territory_minimap", { binary: true, droppable: true });
     }
     emitEvents(r) {
         const gs = r.room.gameState;
@@ -541,10 +616,16 @@ class NetServer {
         }
         if (gs.won && !r.prevWon) {
             r.prevWon = true;
+            const finalScores = r.room.worldUiEntities()
+                .map((entity) => ({ id: entity.id, score: entity.score }))
+                .sort((a, b) => b.score - a.score || a.id - b.id)
+                .map((entity, index) => ({ ...entity, placement: index + 1 }));
             this.broadcastControl(r, {
                 t: "event",
-                kind: "win",
+                kind: "match_end",
                 winnerId: gs.winnerId,
+                reason: "king_countdown",
+                finalScores,
             });
             this.markEnded(r);
         }

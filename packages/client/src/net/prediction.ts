@@ -27,6 +27,7 @@ export interface PendingInput {
   seq: number;
   targetHeading: number;
   dt: number;
+  speed: number;
 }
 
 /** Fold `stepHead` lên danh sách input, bắt đầu từ `startState`. */
@@ -36,7 +37,7 @@ export function predict(
 ): HeadState {
   let s = startState;
   for (const inp of inputs) {
-    s = stepHead(s, inp.targetHeading, inp.dt);
+    s = stepHead(s, inp.targetHeading, inp.dt, inp.speed);
   }
   return s;
 }
@@ -98,9 +99,9 @@ export class Predictor {
    * Ghi một input mới rồi dự đoán tức thì. Trả về trạng thái dự đoán mới.
    * `seq` do bên gọi cấp (tăng dần, khớp seq gửi lên server).
    */
-  applyInput(seq: number, targetHeading: number, dt: number): HeadState {
-    this.pending.push({ seq, targetHeading, dt });
-    this.predicted = stepHead(this.predicted, targetHeading, dt);
+  applyInput(seq: number, targetHeading: number, dt: number, speed: number): HeadState {
+    this.pending.push({ seq, targetHeading, dt, speed });
+    this.predicted = stepHead(this.predicted, targetHeading, dt, speed);
     return this.predicted;
   }
 

@@ -50,20 +50,22 @@ function decodeInput(buf) {
 }
 // ---- SNAPSHOT (server → client, binary) -----------------------------------
 // Header (15 bytes): u8 tag(102) | u32 tick | u32 ackSeq | u16 selfPrep(ms)
-//                    | u16 kingHold(deciseconds) | u16 count
+//                    | u16 kingRemaining(deciseconds) | u16 count
 //   selfPrep = số ms chuẩn bị còn lại của CHÍNH client nhận (0 nếu đang chơi/chết) →
 //   client hiện đếm ngược "3,2,1" và biết vì sao chưa di chuyển được.
-//   kingHold = số 0.1-giây (deciseconds) còn phải giữ ngôi KING để thắng, do server tính
+//   kingRemaining = số 0.1-giây còn lại của countdown cấp room; đổi trực tiếp KING không reset
 //   (client không chạy mô phỏng nên phải nhận số này để đếm ngược đồng hồ 3 phút).
-// Mỗi entity (20 bytes): u8 id | u8 flags | u8 colorIndex | u8 shapeIndex
+// Mỗi entity (24 bytes): u8 id | u8 flags | u8 colorIndex | u8 shapeIndex
 //                        | f32 x | f32 y | f32 heading | u16 score
-//                        | u8 trailPatternIndex | u8 _pad
+//                        | u8 trailPatternIndex | u8 speedTotemCount
+//                        | u16 effectiveSpeed(cents) | u16 _pad
 exports.SNAPSHOT_HEADER = 15;
-exports.SNAPSHOT_ENTITY = 20;
+exports.SNAPSHOT_ENTITY = 24;
 /** Bit cờ của mỗi entity trong snapshot. */
 exports.FLAG = {
     ALIVE: 1 << 0,
     HAS_TRAIL: 1 << 1,
+    RADAR_ACTIVE: 1 << 2,
 };
 function encodeSnapshot(s) {
     const n = s.entities.length;
@@ -73,7 +75,7 @@ function encodeSnapshot(s) {
     dv.setUint32(1, s.tick >>> 0, true);
     dv.setUint32(5, s.ackSeq >>> 0, true);
     dv.setUint16(9, Math.min(0xffff, Math.max(0, s.selfPrep | 0)), true);
-    const kingDs = Math.round((s.kingHold ?? 0) * 10);
+    const kingDs = Math.round((s.kingRemaining ?? s.kingHold ?? 0) * 10);
     dv.setUint16(11, Math.min(0xffff, Math.max(0, kingDs)), true);
     dv.setUint16(13, n, true);
     let o = exports.SNAPSHOT_HEADER;
@@ -83,6 +85,8 @@ function encodeSnapshot(s) {
             flags |= exports.FLAG.ALIVE;
         if (e.hasTrail)
             flags |= exports.FLAG.HAS_TRAIL;
+        if (e.radarActive)
+            flags |= exports.FLAG.RADAR_ACTIVE;
         dv.setUint8(o, e.id & 0xff);
         dv.setUint8(o + 1, flags);
         dv.setUint8(o + 2, e.colorIndex & 0xff);
@@ -92,7 +96,9 @@ function encodeSnapshot(s) {
         dv.setFloat32(o + 12, e.heading, true);
         dv.setUint16(o + 16, Math.min(0xffff, Math.max(0, e.score | 0)), true);
         dv.setUint8(o + 18, e.trailPatternIndex & 0xff);
-        dv.setUint8(o + 19, 0);
+        dv.setUint8(o + 19, Math.min(0xff, Math.max(0, e.speedTotemCount ?? 0)));
+        dv.setUint16(o + 20, Math.min(0xffff, Math.max(0, Math.round((e.effectiveSpeed ?? 0) * 100))), true);
+        dv.setUint16(o + 22, 0, true);
         o += exports.SNAPSHOT_ENTITY;
     }
     return buf;
@@ -116,6 +122,7 @@ function decodeSnapshot(buf) {
             id: dv.getUint8(o),
             alive: (flags & exports.FLAG.ALIVE) !== 0,
             hasTrail: (flags & exports.FLAG.HAS_TRAIL) !== 0,
+            radarActive: (flags & exports.FLAG.RADAR_ACTIVE) !== 0,
             colorIndex: dv.getUint8(o + 2),
             shapeIndex: dv.getUint8(o + 3),
             x: dv.getFloat32(o + 4, true),
@@ -123,10 +130,19 @@ function decodeSnapshot(buf) {
             heading: dv.getFloat32(o + 12, true),
             score: dv.getUint16(o + 16, true),
             trailPatternIndex: dv.getUint8(o + 18),
+            speedTotemCount: dv.getUint8(o + 19),
+            effectiveSpeed: dv.getUint16(o + 20, true) / 100,
         });
         o += exports.SNAPSHOT_ENTITY;
     }
-    return { tick, ackSeq, selfPrep, kingHold, entities };
+    return {
+        tick,
+        ackSeq,
+        selfPrep,
+        kingRemaining: kingHold,
+        kingHold,
+        entities,
+    };
 }
 // ---- TERRITORY keyframe (server → client, binary) -------------------------
 // Đồng bộ LÃNH THỔ theo ô cho chế độ online (Pha 2 gửi FULL keyframe, throttle vài Hz;

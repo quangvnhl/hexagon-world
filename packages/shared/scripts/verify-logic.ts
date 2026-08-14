@@ -132,7 +132,9 @@ console.log("[7] GameState: chạm biên LỤC GIÁC → trượt mượt, khôn
   skipPrep(g);
   // Chạy tới khi VỪA chạm biên (còn sống). Ngân sách bước co giãn theo bán kính sân
   // (đi ~SPEED/60 world mỗi bước) để không phụ thuộc ARENA_RADIUS.
-  const maxSteps = Math.ceil((ARENA_INRADIUS / (CONFIG.SPEED / 60)) * 1.4) + 300;
+  const maxSteps = Math.ceil(
+    (ARENA_INRADIUS / (CONFIG.SPEED.BY_KING_PCT.MIN / 60)) * 1.4,
+  ) + 300;
   let reached = false;
   for (let i = 0; i < maxSteps && !reached; i++) {
     g.update(1 / 60);
@@ -351,9 +353,23 @@ console.log("[18] Hồi sinh strict: hết chỗ hợp lệ → không spawn; gi
   g.die();
   check("bản đồ đầy → revive() bị chặn", g.revive() === false);
   check("→ người chơi vẫn chết", g.human.phase === "dead");
-  // Giải phóng vùng rộng > SPAWN_CLEARANCE quanh (0,0).
+  // Chọn một tâm nằm đủ sâu trong sân và ngoài vùng cấm quanh totem, rồi giải phóng
+  // đúng bán kính spawn. Không cố định (0,0): sau khi có totem, tâm bản đồ có thể
+  // chủ động bị loại khỏi tập spawn hợp lệ.
+  const inset = (CONFIG.START_RADIUS + 1) * CONFIG.HEX_SIZE * Math.sqrt(3);
+  const spawnCenter = [...g.playable]
+    .map(parseKey)
+    .find((candidate) => {
+      const cp = axialToPixel(candidate, CONFIG.HEX_SIZE);
+      if (!insideArena(cp.x, cp.y, -inset)) return false;
+      return g.totemStates().every((totem) => {
+        const tp = axialToPixel(totem, CONFIG.HEX_SIZE);
+        return Math.hypot(cp.x - tp.x, cp.y - tp.y) >= CONFIG.TOTEMS.SPAWN_CLEARANCE;
+      });
+    });
+  if (!spawnCenter) throw new Error("Không tìm được tâm spawn hợp lệ cho fixture");
   for (const k of [...g.playable]) {
-    if (cubeDistance(parseKey(k), { q: 0, r: 0 }) <= CONFIG.SPAWN_CLEARANCE + 2) {
+    if (cubeDistance(parseKey(k), spawnCenter) <= CONFIG.SPAWN_CLEARANCE) {
       (g as any).cellOwner.delete(k);
     }
   }

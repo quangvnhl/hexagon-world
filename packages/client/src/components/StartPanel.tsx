@@ -3,17 +3,14 @@
 // Bảng thông tin trang đầu: nhập tên + chọn chế độ chơi. Chọn xong bấm "Bắt đầu" →
 // trang chủ render thẳng scene tương ứng (không đổi route).
 
-import { useEffect, useState } from "react";
+import { useEffect, useState, type CSSProperties } from "react";
 import {
   DEFAULT_PLAYER_APPEARANCE,
   CONFIG,
   PLAYER_COLORS,
   PLAYER_SHAPES,
   TRAIL_PATTERNS,
-  decodeControl,
-  encodeControl,
   sanitizePlayerAppearance,
-  type S2CControl,
   type PlayerAppearance,
   type PlayerShape,
   type TrailPattern,
@@ -23,6 +20,8 @@ import { getTelegramUserName } from "@/lib/telegram";
 import { ensureTelegramSession, getMe, startGoogleLogin, type BackendMe } from "@/lib/backend";
 import { ShopPanel } from "./ShopPanel";
 import { LobbyRewardedAdButton } from "./LobbyRewardedAdButton";
+import { measureServerPing } from "./serverPing";
+import { trailVectorAsset } from "./trailVectorAssets";
 
 export type GameMode = "solo" | "online";
 type AppearanceTab = "color" | "shape" | "trail";
@@ -56,14 +55,18 @@ const PATTERN_LABEL: Record<TrailPattern, string> = {
   chevrons: "Chevron",
 };
 
-function trailPatternCss(pattern: TrailPattern, color: string): string {
-  if (pattern === "stripes")
-    return `repeating-linear-gradient(120deg,${color} 0 8px,${color}44 8px 14px)`;
-  if (pattern === "dots")
-    return `radial-gradient(circle at 7px 50%,${color} 0 4px,${color}33 4.5px) 0 0/14px 100%`;
-  if (pattern === "chevrons")
-    return `repeating-linear-gradient(45deg,${color} 0 5px,${color}33 5px 10px,${color} 10px 15px)`;
-  return color;
+function trailPatternStyle(pattern: TrailPattern, color: string): CSSProperties {
+  const asset = trailVectorAsset(pattern);
+  if (!asset) return { background: color };
+  return {
+    backgroundColor: color,
+    WebkitMaskImage: `url("${asset}")`,
+    maskImage: `url("${asset}")`,
+    WebkitMaskRepeat: "repeat-x",
+    maskRepeat: "repeat-x",
+    WebkitMaskSize: "auto 100%",
+    maskSize: "auto 100%",
+  };
 }
 
 function ShapeGlyph({ shape, color, size = 42 }: { shape: PlayerShape; color: string; size?: number }) {
@@ -160,8 +163,8 @@ export function StartPanel({
     return () => { active = false; };
   }, []);
 
-  // Đo RTT ngay trên màn Welcome mà chưa JOIN phòng. Server hỗ trợ PING/PONG
-  // trước khi gán ghế, vì vậy socket thăm dò này không làm tăng số người chơi.
+  // Đo RTT qua health endpoint của chính game host. Không mở WebSocket thăm dò:
+  // URL nhập ở Welcome có thể là host gốc, còn gateway gameplay nằm tại `/game`.
   useEffect(() => {
     if (mode !== "online") {
       setServerPing(null);
@@ -171,76 +174,33 @@ export function StartPanel({
     setServerPing(null);
     setServerPingStatus("connecting");
 
-    let socket: WebSocket | null = null;
     let pingTimer: ReturnType<typeof setInterval> | null = null;
-    let responseTimer: ReturnType<typeof setTimeout> | null = null;
     let disposed = false;
 
-    const clearResponseTimer = () => {
-      if (responseTimer) clearTimeout(responseTimer);
-      responseTimer = null;
-    };
-
-    const sendPing = () => {
-      if (!socket || socket.readyState !== WebSocket.OPEN) return;
-      const time = performance.now();
-      socket.send(encodeControl({ t: "ping", time }));
-      clearResponseTimer();
-      responseTimer = setTimeout(() => {
-        if (!disposed) {
-          setServerPing(null);
-          setServerPingStatus("error");
-        }
-      }, 2500);
+    const sendPing = async () => {
+      try {
+        const ping = await measureServerPing(serverUrl.trim() || DEFAULT_URL);
+        if (disposed) return;
+        setServerPing(ping);
+        setServerPingStatus("online");
+      } catch {
+        if (disposed) return;
+        setServerPing(null);
+        setServerPingStatus("error");
+      }
     };
 
     // Debounce nhẹ để không tạo socket cho từng ký tự khi sửa URL server.
     const connectTimer = setTimeout(() => {
       if (disposed) return;
-      try {
-        socket = new WebSocket(serverUrl.trim() || DEFAULT_URL);
-        socket.onopen = () => {
-          if (disposed) return;
-          sendPing();
-          pingTimer = setInterval(sendPing, 3000);
-        };
-        socket.onmessage = (event: MessageEvent) => {
-          if (typeof event.data !== "string") return;
-          const message = decodeControl<S2CControl>(event.data);
-          if (message?.t !== "pong" || disposed) return;
-          clearResponseTimer();
-          setServerPing(Math.max(0, Math.round(performance.now() - message.time)));
-          setServerPingStatus("online");
-        };
-        socket.onerror = () => {
-          if (!disposed) {
-            setServerPing(null);
-            setServerPingStatus("error");
-          }
-        };
-        socket.onclose = () => {
-          if (!disposed) {
-            setServerPing(null);
-            setServerPingStatus("error");
-          }
-        };
-      } catch {
-        setServerPingStatus("error");
-      }
+      void sendPing();
+      pingTimer = setInterval(() => void sendPing(), 3000);
     }, 350);
 
     return () => {
       disposed = true;
       clearTimeout(connectTimer);
-      clearResponseTimer();
       if (pingTimer) clearInterval(pingTimer);
-      if (socket) {
-        socket.onopen = null;
-        socket.onmessage = null;
-        socket.onerror = null;
-        socket.onclose = null;
-        socket.close();
-      }
     };
   }, [mode, serverUrl]);
 
@@ -525,10 +485,7 @@ export function StartPanel({
                         height: 9,
                         borderRadius: 99,
                         marginBottom: 3,
-                        background: trailPatternCss(
-                          pattern,
-                          PLAYER_COLORS[appearance.colorIndex].glow
-                        ),
+                        ...trailPatternStyle(pattern, PLAYER_COLORS[appearance.colorIndex].glow),
                       }}
                     />
                     {PATTERN_LABEL[pattern]}

@@ -30,6 +30,8 @@ import {
   type S2CControl,
   type TerritoryCell,
   type WorldUiEntity,
+  type MinimapUiEntity,
+  type TotemWireState,
 } from "@hexagon/shared";
 import { Predictor } from "./prediction";
 import { InterpolationBuffer, InterpState, INTERP_DELAY_MS } from "./interpolation";
@@ -40,7 +42,7 @@ import { shouldSendTerritoryInterest, type TerritoryInterestState } from "./terr
 export const DEFAULT_SERVER_URL =
   process.env.NEXT_PUBLIC_SERVER_URL ?? "ws://localhost:8910";
 
-export type ConnStatus = "idle" | "connecting" | "open" | "closed" | "error";
+export type ConnStatus = "idle" | "connecting" | "open" | "closed" | "error" | "protocol_mismatch";
 
 /** Thông tin trận từ WELCOME. */
 export interface WelcomeInfo {
@@ -65,6 +67,9 @@ export interface RenderEntity {
   alive: boolean;
   hasTrail: boolean;
   score: number;
+  effectiveSpeed: number;
+  speedTotemCount: number;
+  radarActive: boolean;
 }
 
 /** Trạng thái render tổng hợp đọc mỗi frame. */
@@ -103,6 +108,9 @@ export interface NetClientHandlers {
   /** Danh sách tên người chơi theo ghế (id → name). */
   onRoster?: (players: { id: number; name: string }[]) => void;
   onWorldUi?: (entities: WorldUiEntity[]) => void;
+  onMinimapUi?: (radarActive: boolean, entities: MinimapUiEntity[]) => void;
+  onMinimapTerritory?: (cells: TerritoryCell[]) => void;
+  onTotems?: (revision: number, items: TotemWireState[]) => void;
 }
 
 export class NetClient {
@@ -115,6 +123,10 @@ export class NetClient {
   private roster: { id: number; name: string }[] = [];
   /** Toàn bộ người tham gia phục vụ UI nhịp thấp; độc lập với entity AoI của scene 3D. */
   private worldUi: WorldUiEntity[] = [];
+  private minimapUi: MinimapUiEntity[] = [];
+  private radarActive = false;
+  private totems: TotemWireState[] = [];
+  private totemRevision = 0;
 
   private readonly predictor = new Predictor();
   private readonly interp = new InterpolationBuffer();
@@ -180,7 +192,7 @@ export class NetClient {
       this.sendPing();
       this.pingTimer = setInterval(() => this.sendPing(), 1000);
     };
-    ws.onclose = () => this.setStatus("closed");
+    ws.onclose = (event) => this.setStatus(event.code === 4002 ? "protocol_mismatch" : "closed");
     ws.onerror = () => this.setStatus("error");
     ws.onmessage = (ev: MessageEvent) => this.onMessage(ev.data);
   }
@@ -223,9 +235,15 @@ export class NetClient {
     this.lobby = null;
     this.roster = [];
     this.worldUi = [];
+    this.minimapUi = [];
+    this.radarActive = false;
+    this.totems = [];
+    this.totemRevision = 0;
     this.territory = [];
     this.territoryVersion++;
     this.territoryRevision = 0;
+    this.minimapTerritory = [];
+    this.minimapTerritoryVersion++;
   }
 
   /**
@@ -234,7 +252,10 @@ export class NetClient {
    */
   sendInput(targetHeading: number, dt: number): void {
     this.seq = (this.seq + 1) >>> 0;
-    this.predictor.applyInput(this.seq, targetHeading, dt);
+    const speed = this.latest?.entities.find(
+      (entity) => entity.id === this.welcome?.playerId
+    )?.effectiveSpeed ?? 0;
+    this.predictor.applyInput(this.seq, targetHeading, dt, speed);
     if (this.ws && this.ws.readyState === WebSocket.OPEN) {
       this.ws.send(encodeInput(this.seq, targetHeading));
     }
@@ -297,6 +318,7 @@ export class NetClient {
       if (keyframe) {
         this.minimapTerritory = keyframe.cells;
         this.minimapTerritoryVersion++;
+        this.handlers.onMinimapTerritory?.(keyframe.cells);
       }
     }
   }
@@ -346,6 +368,10 @@ export class NetClient {
         this.lobby = null; // ván mới → chờ trạng thái phòng chờ tiếp theo
         this.roster = [];
         this.worldUi = [];
+        this.minimapUi = [];
+        this.radarActive = false;
+        this.totems = [];
+        this.totemRevision = 0;
         this.handlers.onWelcome?.(this.welcome);
         break;
       }
@@ -377,6 +403,23 @@ export class NetClient {
       case "world_ui": {
         this.worldUi = msg.entities;
         this.handlers.onWorldUi?.(msg.entities);
+        break;
+      }
+      case "minimap_ui": {
+        this.radarActive = msg.radarActive;
+        const selfId = this.welcome?.playerId;
+        this.minimapUi = msg.radarActive
+          ? msg.entities
+          : msg.entities.filter((entity) => entity.id === selfId);
+        this.handlers.onMinimapUi?.(this.radarActive, this.minimapUi);
+        break;
+      }
+      case "totems": {
+        if (msg.revision >= this.totemRevision) {
+          this.totemRevision = msg.revision;
+          this.totems = msg.items;
+          this.handlers.onTotems?.(msg.revision, msg.items);
+        }
         break;
       }
       case "event":
@@ -461,6 +504,9 @@ export class NetClient {
         alive: m.alive,
         hasTrail: m.hasTrail,
         score: m.score,
+        effectiveSpeed: m.effectiveSpeed ?? 0,
+        speedTotemCount: m.speedTotemCount ?? 0,
+        radarActive: m.radarActive ?? false,
       };
     }
 
@@ -485,14 +531,16 @@ export class NetClient {
         alive: m.alive,
         hasTrail: m.hasTrail,
         score: m.score,
+        effectiveSpeed: m.effectiveSpeed ?? 0,
+        speedTotemCount: m.speedTotemCount ?? 0,
+        radarActive: m.radarActive ?? false,
       });
     }
 
-    // Snapshot đã được server lọc theo AoI, vì vậy entities.length chỉ là số thực thể gần.
-    // Roster là tổng người thật trong phòng; botCount là số bot authoritative của phòng.
-    const playerCount = this.roster.length + (this.welcome?.botCount ?? 0);
+    // world_ui chỉ chứa human đang ngồi + bot đã được activate, nên đây là tổng active authoritative.
+    const playerCount = this.worldUi.length || this.roster.length;
     const selfPrep = this.latest ? this.latest.selfPrep : 0;
-    const kingHold = this.latest?.kingHold ?? 0;
+    const kingHold = this.latest?.kingRemaining ?? this.latest?.kingHold ?? 0;
     return {
       status: this.status,
       playerId,
@@ -525,6 +573,14 @@ export class NetClient {
 
   getWorldUi(): readonly WorldUiEntity[] {
     return this.worldUi;
+  }
+
+  getMinimapUi(): { radarActive: boolean; entities: readonly MinimapUiEntity[] } {
+    return { radarActive: this.radarActive, entities: this.minimapUi };
+  }
+
+  getTotems(): { revision: number; items: readonly TotemWireState[] } {
+    return { revision: this.totemRevision, items: this.totems };
   }
 
   /** Đặt lại mốc dự đoán khi (re)spawn — bên gọi cấp trạng thái đầu authoritative. */

@@ -13,27 +13,36 @@ describe("normalizeAngle", () => {
 });
 
 describe("stepHead", () => {
+  const speed = CONFIG.SPEED.BY_KING_PCT.MIN;
   it("giới hạn quay đầu đúng bằng CONFIG.TURN_RATE * dt", () => {
     const dt = 0.1;
     const maxTurn = CONFIG.TURN_RATE * dt;
     // targetHeading lệch rất lớn (pi) → chỉ được quay tối đa maxTurn trong 1 bước.
     // Đặt ở tâm sân, hướng ban đầu 0, target = pi.
     const s0 = { x: 0, y: 0, heading: 0 };
-    const s1 = stepHead(s0, Math.PI, dt);
+    const s1 = stepHead(s0, Math.PI, dt, speed);
     // Sau khi quay maxTurn (chưa tính wall-slide vì ở tâm sân), rồi di chuyển →
     // heading thực = hướng di chuyển = maxTurn (vì ở giữa sân, không clamp).
     expect(s1.heading).toBeCloseTo(maxTurn, 6);
   });
 
-  it("đi thẳng tiến ~CONFIG.SPEED * dt khi đã đúng hướng", () => {
+  it("đi thẳng tiến ~speed * dt khi đã đúng hướng", () => {
     const dt = 0.1;
     const s0 = { x: 0, y: 0, heading: 0 }; // hướng +x, target trùng
-    const s1 = stepHead(s0, 0, dt);
+    const s1 = stepHead(s0, 0, dt, speed);
     const dist = Math.hypot(s1.x - s0.x, s1.y - s0.y);
-    expect(dist).toBeCloseTo(CONFIG.SPEED * dt, 6);
-    expect(s1.x).toBeCloseTo(CONFIG.SPEED * dt, 6);
+    expect(dist).toBeCloseTo(speed * dt, 6);
+    expect(s1.x).toBeCloseTo(speed * dt, 6);
     expect(s1.y).toBeCloseTo(0, 6);
     expect(s1.heading).toBeCloseTo(0, 6);
+  });
+
+  it("dùng đúng tốc độ authoritative khi Speed/Slow Totem thay đổi", () => {
+    const start = { x: 0, y: 0, heading: 0 };
+    const slowed = stepHead(start, 0, 0.25, 1);
+    const boosted = stepHead(start, 0, 0.25, 8);
+    expect(slowed.x).toBeCloseTo(0.25, 6);
+    expect(boosted.x).toBeCloseTo(2, 6);
   });
 
   it("giữ kết quả BÊN TRONG sân khi lao vào tường (clampInside)", () => {
@@ -43,7 +52,7 @@ describe("stepHead", () => {
     const s0 = { x: 0.0, y: 0.0, heading: 0 };
     // Đẩy nhiều bước về phía +x để ép chạm tường rồi trượt.
     let s = { ...s0 };
-    for (let i = 0; i < 200; i++) s = stepHead(s, 0, dt);
+    for (let i = 0; i < 200; i++) s = stepHead(s, 0, dt, speed);
     expect(insideArena(s.x, s.y, 1e-6)).toBe(true);
     // Sanity: đã đi xa hơn 1 hex nhưng vẫn không vượt bán kính ngoại tiếp.
     expect(Math.hypot(s.x, s.y)).toBeLessThan(near);
@@ -52,7 +61,7 @@ describe("stepHead", () => {
   it("không đột biến trạng thái đầu vào", () => {
     const s0 = { x: 1, y: 2, heading: 0.5 };
     const copy = { ...s0 };
-    stepHead(s0, 1.2, 0.05);
+    stepHead(s0, 1.2, 0.05, speed);
     expect(s0).toEqual(copy);
   });
 });

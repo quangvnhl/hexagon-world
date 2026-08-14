@@ -1,10 +1,11 @@
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import { WebSocket } from "ws";
 import {
   decodeControl,
   decodeSnapshot,
   decodeTerritory,
   decodeTerritoryDelta,
+  decodeTerritoryMinimap,
   encodeControl,
   encodeInput,
   peekTag,
@@ -13,10 +14,12 @@ import {
   type S2CControl,
   type Snapshot,
   type WorldUiEntity,
+  type MinimapUiEntity,
+  type TerritoryCell,
+  type TotemWireState,
 } from "@hexagon/shared";
 import { NetServer } from "../src/net/net-server";
 import { GameRoom } from "../src/game/game-room";
-import { MAX_PLAYERS, ONLINE_BOTS } from "../src/config";
 
 /**
  * Integration test: dựng GameRoom + NetServer THẬT trên cổng tạm (port 0), dùng gói `ws`
@@ -34,6 +37,11 @@ class TestClient {
   territoryKeyframes = 0;
   territoryDeltas = 0;
   worldUi: WorldUiEntity[] = [];
+  minimapUi: MinimapUiEntity[] = [];
+  radarActive = false;
+  minimapTerritory: TerritoryCell[] = [];
+  totems: TotemWireState[] = [];
+  readonly events: Extract<S2CControl, { t: "event" }>[] = [];
 
   constructor(url: string) {
     this.ws = new WebSocket(url);
@@ -47,11 +55,19 @@ class TestClient {
           if (decodeTerritory(data)) this.territoryKeyframes++;
         } else if (peekTag(data) === TAG.TERRITORY_DELTA) {
           if (decodeTerritoryDelta(data)) this.territoryDeltas++;
+        } else if (peekTag(data) === TAG.TERRITORY_MINIMAP) {
+          const minimap = decodeTerritoryMinimap(data);
+          if (minimap) this.minimapTerritory = minimap.cells;
         }
       } else {
         const msg = decodeControl<S2CControl>(data.toString());
         if (msg?.t === "welcome") this.welcome = msg;
         else if (msg?.t === "world_ui") this.worldUi = msg.entities;
+        else if (msg?.t === "minimap_ui") {
+          this.radarActive = msg.radarActive;
+          this.minimapUi = msg.entities;
+        } else if (msg?.t === "totems") this.totems = msg.items;
+        else if (msg?.t === "event") this.events.push(msg);
       }
     });
   }
@@ -160,11 +176,7 @@ describe("NetServer integration (real ws, deterministic ticks)", () => {
     expect(a.welcome!.tickRate).toBe(24);
     expect(a.welcome!.arenaRadius).toBeGreaterThan(0);
     await waitFor(() => a.worldUi.length > 0, 3000, "world ui roster");
-    const expectedWorldUiIds = [
-      idA,
-      idB,
-      ...Array.from({ length: ONLINE_BOTS }, (_, i) => MAX_PLAYERS + i),
-    ].sort((x, y) => x - y);
+    const expectedWorldUiIds = [idA, idB];
     expect(a.worldUi.map((e) => e.id).sort((x, y) => x - y)).toEqual(
       expectedWorldUiIds,
     );
@@ -209,8 +221,8 @@ describe("NetServer integration (real ws, deterministic ticks)", () => {
     expect(lastA.ackSeq).toBe(LAST_SEQ);
     expect(b.snapshots[b.snapshots.length - 1].ackSeq).toBe(LAST_SEQ);
 
-    // Snapshot liệt kê đủ MAX_PLAYERS ghế người + ONLINE_BOTS bot (ghế trống = đã "đỗ").
-    expect(lastA.entities.length).toBe(MAX_PLAYERS + ONLINE_BOTS);
+    // Snapshot chỉ liệt kê người/bot đang thực sự tham gia, không có ghế trống đã park.
+    expect(lastA.entities.length).toBe(2 + server.activeRoom!.activeBotCount);
 
     // Vị trí thực thể của CHÍNH client thay đổi theo thời gian (đã qua prep, đang chạy).
     const ownFirst = firstA.entities.find((e) => e.id === idA)!;
@@ -351,6 +363,92 @@ describe("NetServer integration (real ws, deterministic ticks)", () => {
     await delay(10);
     expect(a.snapshots.at(-1)!.entities.some((e) => e.id === idA)).toBe(true);
     expect(a.snapshots.at(-1)!.entities.some((e) => e.id === idC)).toBe(false);
+  });
+
+  it("routes the ninth human to a new room instead of closing a full-room join", async () => {
+    server = new NetServer({ port: 0, maxHumans: 8, onlineBots: 0 });
+    await server.listen();
+    const url = `ws://127.0.0.1:${server.port}`;
+    clients = Array.from({ length: 9 }, () => new TestClient(url));
+    await Promise.all(clients.map((client) => client.open()));
+    clients.forEach((client, index) => client.join(`P${index + 1}`));
+    await Promise.all(clients.map((client) => client.waitWelcome()));
+    expect(server.roomCount).toBe(2);
+    expect(server.roomStats.map((room) => room.humanCount).sort((a, b) => b - a)).toEqual([8, 1]);
+    expect(server.roomStats.some((room) => room.capacityFull)).toBe(true);
+    expect(clients.slice(0, 8).map((client) => client.welcome!.playerId).sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
+    expect(clients[8].welcome!.playerId).toBe(0);
+  });
+
+  it("filters minimap payload without Radar and reveals the room with Radar", async () => {
+    server = new NetServer({ port: 0, maxHumans: 8, onlineBots: 0 });
+    await server.listen();
+    const url = `ws://127.0.0.1:${server.port}`;
+    const a = new TestClient(url);
+    const b = new TestClient(url);
+    clients = [a, b];
+    await Promise.all([a.open(), b.open()]);
+    a.join("A"); b.join("B");
+    await Promise.all([a.waitWelcome(), b.waitWelcome()]);
+    const idA = a.welcome!.playerId;
+    const idB = b.welcome!.playerId;
+    const game = server.activeRoom!.gameState;
+    game.applyTerritory([
+      { q: 0, r: 0, owner: idA, kind: 0 },
+      { q: 0, r: 1, owner: idA, kind: 1 },
+      { q: 2, r: 0, owner: idB, kind: 0 },
+      { q: 2, r: 1, owner: idB, kind: 1 },
+    ]);
+    for (let i = 0; i < 5; i++) server.tickOnce();
+    await delay(15);
+
+    expect(a.radarActive).toBe(false);
+    expect(a.minimapUi.map((entity) => entity.id)).toEqual([idA]);
+    expect(new Set(a.minimapTerritory.map((cell) => cell.owner))).toEqual(new Set([idA]));
+    expect(a.totems.length).toBeGreaterThan(0);
+    expect(a.worldUi.every((entity) => !("x" in entity) && !("y" in entity))).toBe(true);
+
+    vi.spyOn(game, "radarActiveFor").mockReturnValue(true);
+    for (let i = 0; i < 5; i++) server.tickOnce();
+    await delay(15);
+    expect(a.radarActive).toBe(true);
+    expect(new Set(a.minimapUi.map((entity) => entity.id))).toEqual(new Set([idA, idB]));
+    expect(new Set(a.minimapTerritory.map((cell) => cell.owner))).toEqual(new Set([idA, idB]));
+  });
+
+  it("routes joins away from a room with active King countdown", async () => {
+    server = new NetServer({ port: 0, maxHumans: 8, onlineBots: 0, kingDurationSeconds: 10 });
+    await server.listen();
+    const url = `ws://127.0.0.1:${server.port}`;
+    const a = new TestClient(url);
+    const b = new TestClient(url);
+    clients = [a, b];
+    await Promise.all([a.open(), b.open()]);
+    a.join("King"); await a.waitWelcome();
+    const firstRoom = server.activeRoom!;
+    vi.spyOn(firstRoom.gameState, "kingId").mockReturnValue(a.welcome!.playerId);
+    server.tickOnce();
+    expect(firstRoom.kingAdmissionLocked).toBe(true);
+    b.join("Late"); await b.waitWelcome();
+    expect(server.roomCount).toBe(2);
+    expect(server.roomStats.some((room) => room.kingAdmissionLocked)).toBe(true);
+    expect(b.welcome!.playerId).toBe(0);
+  });
+
+  it("activates the fixed room bot target one per configured interval", async () => {
+    server = new NetServer({ port: 0, maxHumans: 8, onlineBots: 16, botJoinIntervalMs: 100 });
+    await server.listen();
+    const client = new TestClient(`ws://127.0.0.1:${server.port}`);
+    clients = [client];
+    await client.open(); client.join("A"); await client.waitWelcome();
+    server.tickOnce(); server.tickOnce();
+    expect(server.activeRoom!.activeBotCount).toBe(0);
+    server.tickOnce();
+    expect(server.activeRoom!.activeBotCount).toBe(1);
+    server.tickOnce(); server.tickOnce(); server.tickOnce();
+    expect(server.activeRoom!.activeBotCount).toBe(2);
+    server.tickOnce(); server.tickOnce(); server.tickOnce();
+    expect(server.activeRoom!.activeBotCount).toBe(3);
   });
 
   it("VÒNG ĐỜI: phòng tạo khi JOIN, ĐÓNG khi hết người", async () => {

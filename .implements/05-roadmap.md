@@ -43,7 +43,9 @@ Xem báo cáo: [REPORT-pha-2.md](REPORT-pha-2.md).
 Xem báo cáo đóng pha: [17-phase-3-completion-report.md](17-phase-3-completion-report.md).
 
 ## Pha 4 — Meta & vật phẩm — ĐANG THỰC HIỆN
-- [ ] **Hoãn khỏi gate beta:** Totem: teleport gate, slow totem, spy radar
+- [x] Totem Speed/Slow/Radar authoritative, Radar kiểm soát quyền xem minimap
+- [x] Room lifecycle: 12..16 bot cố định theo cấu hình; KING sống cuối cùng thắng ngay
+- [ ] **Hoãn khỏi gate beta:** Totem teleport gate
 - [ ] **Hoãn tới khi chạy nhiều node:** Redis matchmaking + leaderboard realtime
 - [x] Supabase PostgreSQL: account đa nguồn, session, match history, catalog, wallet, inventory, loadout
 - [x] XP/progression: rule cấu hình trong DB, level curve, ledger idempotent và API `/v1/me`
@@ -63,13 +65,13 @@ Xem báo cáo đóng pha: [17-phase-3-completion-report.md](17-phase-3-completio
 Chỉ chuyển pha khi pha trước có: build xanh, demo chạy, và (từ Pha 2) test tự động
 cho phần logic chia sẻ.
 
-### Trạng thái gate ngày 2026-08-13
+### Trạng thái gate ngày 2026-08-14
 
 - Build production toàn monorepo: đạt.
 - Runtime smoke test server: đạt (`/health/live`, `/health/network`, role `all`, region `sea`).
-- Vitest: đạt 54 shared + 31 client + 13 server.
+- Vitest: đạt 60 shared + 55 client + 32 server.
 - `verify:logic`: đạt 93/0.
 - Pha 3: **đã đóng, đủ điều kiện tiếp tục Pha 4**.
-- Pha 4 còn migration, E2E production và lobby reconnect; chưa đủ điều kiện chuyển sang Pha 5.
+- Pha 4 còn migration/seed thật, E2E production và lobby ready/cancel/reconnect; chưa đủ điều kiện chuyển sang Pha 5.
 
 Chi tiết và thứ tự xử lý: [16-work-session-roadmap-audit.md](16-work-session-roadmap-audit.md).

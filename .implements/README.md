@@ -23,6 +23,9 @@ phải đọc và tuân thủ các tài liệu này trước khi code.**
 | [16-work-session-roadmap-audit.md](16-work-session-roadmap-audit.md) | Tổng kết cửa sổ làm việc, tồn đọng Pha 3–4 và gate chuyển Pha 5 | PM + Tech lead |
 | [17-phase-3-completion-report.md](17-phase-3-completion-report.md) | Báo cáo đóng Pha 3: AoI, lifecycle, backpressure, protocol metrics | Backend + Frontend + DevOps |
 | [18-telegram-stars-coin-packages.md](18-telegram-stars-coin-packages.md) | Contract mua ba gói coin bằng Telegram Stars | Backend + Frontend + DevOps |
+| [19-speed-totem-room-king-timer-plan.md](19-speed-totem-room-king-timer-plan.md) | Kế hoạch tốc độ theo King, Totem, Radar/minimap, bot quota, multi-room và deadline King | Gameplay + Backend + Frontend |
+| [21-speed-totem-room-king-implementation-report.md](21-speed-totem-room-king-implementation-report.md) | Báo cáo triển khai tốc độ, Totem, Radar privacy, bot quota, multi-room và King countdown | Gameplay + Backend + Frontend |
+| [22-trail-vector-designs.md](22-trail-vector-designs.md) | Hướng dẫn thay thế và bổ sung thiết kế vệt đuôi bằng SVG 2D | Frontend + Design |
 
 ## Nguyên tắc làm việc cho agents
 

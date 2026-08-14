@@ -3,12 +3,13 @@ import { stepHead } from "../stepHead";
 import { predict, reconcile, Predictor, PendingInput } from "../prediction";
 
 describe("reconcile", () => {
+  const speed = 5.5;
   const serverState = { x: 3, y: -2, heading: 0.2 };
   const inputs: PendingInput[] = [
-    { seq: 1, targetHeading: 0.5, dt: 0.05 },
-    { seq: 2, targetHeading: 1.0, dt: 0.05 },
-    { seq: 3, targetHeading: 0.8, dt: 0.05 },
-    { seq: 4, targetHeading: -0.3, dt: 0.05 },
+    { seq: 1, targetHeading: 0.5, dt: 0.05, speed },
+    { seq: 2, targetHeading: 1.0, dt: 0.05, speed },
+    { seq: 3, targetHeading: 0.8, dt: 0.05, speed },
+    { seq: 4, targetHeading: -0.3, dt: 0.05, speed },
   ];
 
   it("bỏ input đã ack và cho kết quả GIỐNG hệt fold stepHead trên input còn lại", () => {
@@ -36,16 +37,17 @@ describe("reconcile", () => {
     const { state, pending } = reconcile(serverState, 0, inputs);
     expect(pending.map((p) => p.seq)).toEqual([1, 2, 3, 4]);
     let s = serverState;
-    for (const i of inputs) s = stepHead(s, i.targetHeading, i.dt);
+    for (const i of inputs) s = stepHead(s, i.targetHeading, i.dt, i.speed);
     expect(state).toEqual(s);
   });
 });
 
 describe("Predictor", () => {
+  const speed = 5.5;
   it("respawn reset drops old-life inputs and renders exactly at spawn", () => {
     const p = new Predictor();
     p.reset({ x: 2, y: 3, heading: 0 });
-    p.applyInput(1, 0.5, 0.05);
+    p.applyInput(1, 0.5, 0.05, speed);
     expect(p.pendingCount()).toBe(1);
 
     const spawn = { x: 35, y: -18, heading: 1.1 };
@@ -62,16 +64,16 @@ describe("Predictor", () => {
     p.reset(start);
 
     // Người chơi bấm 3 input.
-    p.applyInput(1, 0.5, 0.05);
-    p.applyInput(2, 0.7, 0.05);
-    const afterThree = p.applyInput(3, 0.9, 0.05);
+    p.applyInput(1, 0.5, 0.05, speed);
+    p.applyInput(2, 0.7, 0.05, speed);
+    const afterThree = p.applyInput(3, 0.9, 0.05, speed);
     expect(p.pendingCount()).toBe(3);
 
     // Kiểm tra dự đoán = fold stepHead từ start.
     const manual = predict(start, [
-      { seq: 1, targetHeading: 0.5, dt: 0.05 },
-      { seq: 2, targetHeading: 0.7, dt: 0.05 },
-      { seq: 3, targetHeading: 0.9, dt: 0.05 },
+      { seq: 1, targetHeading: 0.5, dt: 0.05, speed },
+      { seq: 2, targetHeading: 0.7, dt: 0.05, speed },
+      { seq: 3, targetHeading: 0.9, dt: 0.05, speed },
     ]);
     expect(afterThree).toEqual(manual);
 
@@ -80,7 +82,18 @@ describe("Predictor", () => {
     const corrected = p.onServerState(serverState, 2);
     expect(p.pendingCount()).toBe(1); // chỉ còn seq 3
 
-    const expected = stepHead(serverState, 0.9, 0.05);
+    const expected = stepHead(serverState, 0.9, 0.05, speed);
     expect(corrected).toEqual(expected);
+  });
+
+  it("replay giữ tốc độ của từng input khi modifier đổi", () => {
+    const start = { x: 0, y: 0, heading: 0 };
+    const inputs: PendingInput[] = [
+      { seq: 1, targetHeading: 0, dt: 0.1, speed: 1 },
+      { seq: 2, targetHeading: 0, dt: 0.1, speed: 8 },
+    ];
+    const predicted = predict(start, inputs);
+    expect(predicted.x).toBeCloseTo(0.9, 6);
+    expect(reconcile(start, 1, inputs).state.x).toBeCloseTo(0.8, 6);
   });
 });

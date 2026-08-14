@@ -76,9 +76,19 @@ export type S2CControl = {
         name: string;
     }[];
 } | {
-    /** Dữ liệu UI toàn cục nhịp thấp (~5 Hz), tách khỏi snapshot entity đã lọc AoI. */
+    /** Scoreboard toàn cục không chứa tọa độ, tránh rò vị trí khi người chơi chưa có Radar. */
     t: "world_ui";
     entities: WorldUiEntity[];
+} | {
+    /** Vị trí minimap đã lọc riêng cho connection: chỉ self, hoặc toàn phòng khi có Radar. */
+    t: "minimap_ui";
+    radarActive: boolean;
+    entities: MinimapUiEntity[];
+} | {
+    /** Totem là state reliable, chỉ gửi lại khi revision thay đổi. */
+    t: "totems";
+    revision: number;
+    items: TotemWireState[];
 } | {
     t: "event";
     kind: "death";
@@ -93,16 +103,39 @@ export type S2CControl = {
     t: "event";
     kind: "king";
     kingId: number;
+} | {
+    t: "event";
+    kind: "match_end";
+    winnerId: number;
+    reason: "king_countdown";
+    finalScores: Array<{
+        id: number;
+        score: number;
+        placement: number;
+    }>;
 };
 export interface WorldUiEntity {
     id: number;
-    x: number;
-    y: number;
     alive: boolean;
     score: number;
     colorIndex: number;
     trailPatternIndex: number;
     shapeIndex: number;
+}
+export interface MinimapUiEntity {
+    id: number;
+    x: number;
+    y: number;
+    alive: boolean;
+}
+export type TotemWireKind = "speed" | "slow" | "radar";
+export interface TotemWireState {
+    id: number;
+    kind: TotemWireKind;
+    q: number;
+    r: number;
+    /** -1 khi ô Totem đang trung lập. */
+    ownerId: number;
 }
 export declare const encodeControl: (m: C2SControl | S2CControl) => string;
 export declare function decodeControl<T = C2SControl | S2CControl>(s: string): T | null;
@@ -114,11 +147,12 @@ export interface InputMsg {
 }
 export declare function decodeInput(buf: ArrayBuffer | Uint8Array): InputMsg | null;
 export declare const SNAPSHOT_HEADER = 15;
-export declare const SNAPSHOT_ENTITY = 20;
+export declare const SNAPSHOT_ENTITY = 24;
 /** Bit cờ của mỗi entity trong snapshot. */
 export declare const FLAG: {
     readonly ALIVE: number;
     readonly HAS_TRAIL: number;
+    readonly RADAR_ACTIVE: number;
 };
 export interface EntitySnap {
     id: number;
@@ -134,6 +168,10 @@ export interface EntitySnap {
     heading: number;
     /** Số ô đất (playable) đang sở hữu — cho HUD/xếp hạng. */
     score: number;
+    /** Tốc độ authoritative dùng cho prediction, wire fixed-point 0.01 world-unit/s. */
+    effectiveSpeed?: number;
+    speedTotemCount?: number;
+    radarActive?: boolean;
 }
 export interface Snapshot {
     tick: number;
@@ -143,6 +181,8 @@ export interface Snapshot {
     selfPrep: number;
     /** Giây còn phải giữ ngôi KING để thắng (do server tính; 0/đầy khi chưa có KING).
      *  Bỏ trống khi mã hoá → coi là 0. Truyền qua wire dưới dạng deciseconds. */
+    kingRemaining?: number;
+    /** @deprecated Tương thích nội bộ trong lúc chuyển protocol v4. */
     kingHold?: number;
     entities: EntitySnap[];
 }

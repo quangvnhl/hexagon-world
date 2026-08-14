@@ -42,7 +42,16 @@ exports.CONFIG = {
     /** Cạnh cube nhân vật (người + bot), đơn vị world. Chỉnh to/nhỏ nhân vật ở đây. */
     CUBE_SIZE: 1.2,
     /** Tốc độ di chuyển liên tục (world units / giây). Nhỏ = chậm. */
-    SPEED: 5.5,
+    SPEED: {
+        BY_KING_PCT: { MIN: 5.5, MAX: 7.0 },
+    },
+    TOTEMS: {
+        SPEED: { COUNT: 32, BONUS_PER_TOTEM: 0.5 },
+        SLOW: { COUNT: 12, RADIUS: 8, ENEMY_SPEED: 3 },
+        RADAR: { COUNT: 30 },
+        MIN_SPAWN_DISTANCE: 18,
+        SPAWN_CLEARANCE: 12,
+    },
     /** Tốc độ quay đầu tối đa (rad / giây) — làm chuyển hướng mượt. */
     TURN_RATE: 4.5,
     /** Khoảng cách tối thiểu giữa 2 điểm ghi vào đường đuôi (để line mượt & gọn). */

@@ -1,6 +1,7 @@
 import { PlayerColor, PlayerAppearance, PlayerShape, TrailPattern } from "./config";
 import { Axial, HexKey } from "./hex";
 import type { EntitySnap, TerritoryCell } from "./protocol";
+import { type EntityGameplayModifiers, type TotemState } from "./totems";
 export interface Vec2 {
     x: number;
     y: number;
@@ -88,6 +89,12 @@ export declare class GameState {
     /** Tăng CHỈ khi CHỦ SỞ HỮU ô đổi (không kể đuôi) — cho lớp vạch ranh giới tô lại HIẾM
      *  hơn nhiều (đuôi đổi ~56% frame nhưng KHÔNG ảnh hưởng vạch ranh). */
     territoryRevision: number;
+    private totemItems;
+    private reconciledTotemTerritoryRevision;
+    private totemStateRevision;
+    private readonly speedTotemsByOwner;
+    private readonly radarOwners;
+    private readonly playableOwnedByOwner;
     /** Thời gian (giây) còn lại phải giữ ngôi King liên tục để thắng. */
     kingHoldRemaining: number;
     /** Đã kết thúc chưa (có người thắng) → đóng băng game. */
@@ -98,7 +105,7 @@ export declare class GameState {
     private kingHolderId;
     /** Người chơi đã chọn XEM (khán giả): không hồi sinh nữa tới khi hết ván. */
     spectating: boolean;
-    constructor(spawnAt?: Axial, botCount?: number, humanCount?: number);
+    constructor(spawnAt?: Axial, botCount?: number, humanCount?: number, matchSeed?: number);
     get human(): Entity;
     get owned(): Set<HexKey>;
     set owned(v: Set<HexKey>);
@@ -172,8 +179,19 @@ export declare class GameState {
     private ownedPlayable;
     /** Id chủ sở hữu ô (owned), hoặc -1 nếu trung lập. */
     cellOwnerId(k: HexKey): number;
+    get totemRevision(): number;
+    /** Bản sao read-only cho server/protocol; authoritative state không bị lộ để sửa trực tiếp. */
+    totemStates(): readonly TotemState[];
+    speedTotemCountFor(entityId: number): number;
+    radarActiveFor(entityId: number): boolean;
+    insideEnemySlowZoneFor(entityId: number): boolean;
+    gameplayModifiersFor(entityId: number): EntityGameplayModifiers;
+    effectiveSpeedFor(entityId: number): number;
+    private reconcileTotems;
     /** Màu RGB của 1 ô để render lưới. */
     cellColor(k: HexKey): [number, number, number];
+    /** Ô đang là đuôi; renderer dùng để tách nền lưới khỏi lớp pattern vector. */
+    isTrailCell(k: HexKey): boolean;
     /** Duyệt các ô ĐẤT (owned) kèm id chủ sở hữu — cho minimap & vạch ranh giới. */
     forEachOwned(cb: (k: HexKey, ownerId: number) => void): void;
     private inMap;

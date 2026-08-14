@@ -30,6 +30,12 @@ import {
 import { captureEnclosed } from "./floodfill";
 import { SpatialHash } from "./spatialhash";
 import type { EntitySnap, TerritoryCell } from "./protocol";
+import {
+  createTotems,
+  effectiveSpeedWithTotems,
+  type EntityGameplayModifiers,
+  type TotemState,
+} from "./totems";
 
 export interface Vec2 {
   x: number;
@@ -145,6 +151,13 @@ export class GameState {
    *  hơn nhiều (đuôi đổi ~56% frame nhưng KHÔNG ảnh hưởng vạch ranh). */
   territoryRevision = 0;
 
+  private totemItems: TotemState[] = [];
+  private reconciledTotemTerritoryRevision = -1;
+  private totemStateRevision = 0;
+  private readonly speedTotemsByOwner = new Map<number, number>();
+  private readonly radarOwners = new Set<number>();
+  private readonly playableOwnedByOwner = new Map<number, number>();
+
   /** Thời gian (giây) còn lại phải giữ ngôi King liên tục để thắng. */
   kingHoldRemaining: number = CONFIG.WIN_HOLD_TIME;
   /** Đã kết thúc chưa (có người thắng) → đóng băng game. */
@@ -159,7 +172,8 @@ export class GameState {
   constructor(
     spawnAt?: Axial,
     botCount: number = CONFIG.BOT_COUNT,
-    humanCount = 1
+    humanCount = 1,
+    matchSeed = 0,
   ) {
     this.fixedSpawn = spawnAt;
     this.humanCount = Math.max(1, humanCount);
@@ -176,6 +190,8 @@ export class GameState {
     for (const k of this.playable) {
       for (const nb of neighbors(keyToAxial(k))) this.map.add(keyOf(nb));
     }
+
+    this.totemItems = createTotems(this.playable, matchSeed);
 
     const n = this.humanCount + Math.max(0, botCount);
     this.players = [];
@@ -408,7 +424,9 @@ export class GameState {
 
   /** Ảnh chụp trạng thái thực thể để mã hoá SNAPSHOT (server→client). */
   snapshotEntities(): EntitySnap[] {
-    return this.players.map((e) => ({
+    return this.players.map((e) => {
+      const modifiers = this.gameplayModifiersFor(e.id);
+      return {
       id: e.id,
       alive: e.alive,
       hasTrail: e.trailHexes.length > 0,
@@ -419,7 +437,11 @@ export class GameState {
       y: e.pos.y,
       heading: e.heading,
       score: this.ownedPlayable(e),
-    }));
+      effectiveSpeed: modifiers.effectiveSpeed,
+      speedTotemCount: modifiers.speedTotemCount,
+      radarActive: modifiers.radarActive,
+    };
+    });
   }
 
   hasTrail(k: HexKey): boolean {
@@ -508,6 +530,85 @@ export class GameState {
     return oid === undefined ? -1 : oid;
   }
 
+  get totemRevision(): number {
+    this.reconcileTotems();
+    return this.totemStateRevision;
+  }
+
+  /** Bản sao read-only cho server/protocol; authoritative state không bị lộ để sửa trực tiếp. */
+  totemStates(): readonly TotemState[] {
+    this.reconcileTotems();
+    return this.totemItems.map((item) => ({ ...item }));
+  }
+
+  speedTotemCountFor(entityId: number): number {
+    this.reconcileTotems();
+    return this.speedTotemsByOwner.get(entityId) ?? 0;
+  }
+
+  radarActiveFor(entityId: number): boolean {
+    this.reconcileTotems();
+    return this.radarOwners.has(entityId);
+  }
+
+  insideEnemySlowZoneFor(entityId: number): boolean {
+    this.reconcileTotems();
+    const entity = this.players[entityId];
+    if (!entity) return false;
+    const radiusSq = CONFIG.TOTEMS.SLOW.RADIUS ** 2;
+    return this.totemItems.some((totem) => {
+      if (totem.kind !== "slow" || totem.ownerId < 0 || totem.ownerId === entityId) return false;
+      const p = axialToPixel(totem, CONFIG.HEX_SIZE);
+      return (entity.pos.x - p.x) ** 2 + (entity.pos.y - p.y) ** 2 <= radiusSq;
+    });
+  }
+
+  gameplayModifiersFor(entityId: number): EntityGameplayModifiers {
+    const speedTotemCount = this.speedTotemCountFor(entityId);
+    const radarActive = this.radarActiveFor(entityId);
+    const insideEnemySlowZone = this.insideEnemySlowZoneFor(entityId);
+    return {
+      effectiveSpeed: effectiveSpeedWithTotems(
+        ((this.playableOwnedByOwner.get(entityId) ?? 0) / this.playable.size) * 100,
+        speedTotemCount,
+        insideEnemySlowZone,
+      ),
+      speedTotemCount,
+      radarActive,
+      insideEnemySlowZone,
+    };
+  }
+
+  effectiveSpeedFor(entityId: number): number {
+    return this.gameplayModifiersFor(entityId).effectiveSpeed;
+  }
+
+  private reconcileTotems(): void {
+    if (this.reconciledTotemTerritoryRevision === this.territoryRevision) return;
+    this.reconciledTotemTerritoryRevision = this.territoryRevision;
+    this.speedTotemsByOwner.clear();
+    this.radarOwners.clear();
+    this.playableOwnedByOwner.clear();
+    for (const [cell, ownerId] of this.cellOwner) {
+      if (this.playable.has(cell)) {
+        this.playableOwnedByOwner.set(ownerId, (this.playableOwnedByOwner.get(ownerId) ?? 0) + 1);
+      }
+    }
+    let changed = false;
+    this.totemItems = this.totemItems.map((totem) => {
+      const ownerId = this.cellOwner.get(keyOf(totem)) ?? -1;
+      if (ownerId >= 0 && totem.kind === "speed") {
+        this.speedTotemsByOwner.set(ownerId, (this.speedTotemsByOwner.get(ownerId) ?? 0) + 1);
+      } else if (ownerId >= 0 && totem.kind === "radar") {
+        this.radarOwners.add(ownerId);
+      }
+      if (ownerId === totem.ownerId) return totem;
+      changed = true;
+      return { ...totem, ownerId };
+    });
+    if (changed) this.totemStateRevision++;
+  }
+
   /** Màu RGB của 1 ô để render lưới. */
   cellColor(k: HexKey): [number, number, number] {
     const tid = this.cellTrail.get(k);
@@ -515,6 +616,11 @@ export class GameState {
     const oid = this.cellOwner.get(k);
     if (oid !== undefined) return this.players[oid].color.owned;
     return COLORS.neutral;
+  }
+
+  /** Ô đang là đuôi; renderer dùng để tách nền lưới khỏi lớp pattern vector. */
+  isTrailCell(k: HexKey): boolean {
+    return this.cellTrail.has(k);
   }
 
   /** Duyệt các ô ĐẤT (owned) kèm id chủ sở hữu — cho minimap & vạch ranh giới. */
@@ -719,6 +825,11 @@ export class GameState {
     // BỘ ô owned (O(owned)) — bản cũ khiến bước quét dự phòng tốn ~29 TRIỆU phép/​lần lúc bản
     // đồ đông ⇒ đơ ~500 ms mỗi lần bot hồi sinh / mỗi 0.2s khi người chơi đang chết.
     const clearAround = (c: Axial): boolean => {
+      const cp = axialToPixel(c, CONFIG.HEX_SIZE);
+      if (this.totemItems.some((totem) => {
+        const tp = axialToPixel(totem, CONFIG.HEX_SIZE);
+        return Math.hypot(cp.x - tp.x, cp.y - tp.y) < CONFIG.TOTEMS.SPAWN_CLEARANCE;
+      })) return false;
       for (let dq = -clearance; dq <= clearance; dq++) {
         const lo = Math.max(-clearance, -dq - clearance);
         const hi = Math.min(clearance, -dq + clearance);
@@ -823,7 +934,7 @@ export class GameState {
       return;
     }
 
-    const dist = CONFIG.SPEED * dt;
+    const dist = this.effectiveSpeedFor(e.id) * dt;
 
     // Va chạm tường: dịch theo hướng nhìn rồi TRƯỢT dọc biên ở TỐC ĐỘ ĐẦY ĐỦ (slideMove).
     // Không sinh vận tốc LÙI (tránh đầu bị đẩy ngược vào ô đuôi của chính mình → chết oan).

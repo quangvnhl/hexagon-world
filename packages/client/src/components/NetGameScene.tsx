@@ -14,12 +14,16 @@ import * as THREE from "three";
 import {
   GameState,
   CONFIG,
+  GAME_PROTOCOL_VERSION,
   PLAYER_SHAPES,
   TRAIL_PATTERNS,
   axialToPixel,
   parseKey,
   type PlayerAppearance,
   type WorldUiEntity,
+  type MinimapUiEntity,
+  type TerritoryCell,
+  type TotemWireState,
 } from "@hexagon/shared";
 import { HexGridView } from "./HexGridView";
 import { TerritoryBorders } from "./TerritoryBorders";
@@ -37,6 +41,7 @@ import { GameCamera, MenuButton } from "./GameScene";
 import { notifyTelegramHaptic } from "@/lib/telegram";
 import { TelegramGameHaptics } from "./TelegramGameHaptics";
 import { EndGameInterstitial } from "./EndGameInterstitial";
+import { TotemInstances } from "./TotemInstances";
 import { useCameraProfile } from "./cameraProfile";
 import {
   NetClient,
@@ -105,7 +110,11 @@ function NetLoop({
     alive: boolean,
     prepMs: number,
     kingHold: number,
-    localScore: number
+    localScore: number,
+    effectiveSpeed: number,
+    speedTotemCount: number,
+    radarActive: boolean,
+    insideEnemySlowZone: boolean
   ) => void;
   onPing: (ms: number) => void;
   onPlayerCount: (count: number) => void;
@@ -257,7 +266,18 @@ function NetLoop({
     statAcc.current += dt;
     if (statAcc.current >= 0.2) {
       statAcc.current = 0;
-      onStats(game, localId, alive, rs.selfPrep, rs.kingHold, localScore);
+      onStats(
+        game,
+        localId,
+        alive,
+        rs.selfPrep,
+        rs.kingHold,
+        localScore,
+        self?.effectiveSpeed ?? 0,
+        self?.speedTotemCount ?? 0,
+        self?.radarActive ?? false,
+        (self?.effectiveSpeed ?? 0) === CONFIG.TOTEMS.SLOW.ENEMY_SPEED
+      );
       onPing(client.getPing());
       onPlayerCount(rs.playerCount);
     }
@@ -280,14 +300,14 @@ export default function NetGameScene({
   onExit?: () => void;
 }) {
   const client = useMemo(() => new NetClient(), []);
-  const minimapTerritorySource = useCallback(
-    () => client.getMinimapTerritory().cells,
-    [client]
-  );
   // View-state dựng theo WELCOME (số ghế/bot của server). Tạo khi nhận WELCOME.
   const [game, setGame] = useState<GameState | null>(null);
   const [playerCount, setPlayerCount] = useState(0);
   const [worldUi, setWorldUi] = useState<WorldUiEntity[]>([]);
+  const [minimapEntities, setMinimapEntities] = useState<MinimapUiEntity[]>([]);
+  const [minimapTerritory, setMinimapTerritory] = useState<TerritoryCell[]>([]);
+  const [radarActive, setRadarActive] = useState(false);
+  const [totems, setTotems] = useState<TotemWireState[]>([]);
   const gameRef = useRef<GameState | null>(null);
   const authoritativeScoresRef = useRef<ReadonlyMap<number, number>>(new Map());
   const captureHapticEnabledRef = useRef(false);
@@ -359,7 +379,11 @@ export default function NetGameScene({
       alive: boolean,
       prepMs: number,
       kingHold: number,
-      localScore: number
+      localScore: number,
+      effectiveSpeed: number,
+      speedTotemCount: number,
+      radarActiveNow: boolean,
+      insideEnemySlowZone: boolean
     ) => {
       // Phát hiện chuyển sống→chết để chốt "ảnh lãnh thổ" cho bản đồ popup.
       if (wasAliveRef.current && !alive) {
@@ -428,6 +452,10 @@ export default function NetGameScene({
         killerName: deathInfoRef.current.killerName,
         lastPct: deathInfoRef.current.lastPct,
         deathCells: deathInfoRef.current.cells,
+        effectiveSpeed,
+        speedTotemCount,
+        radarActive: radarActiveNow,
+        insideEnemySlowZone,
       });
     },
     []
@@ -445,6 +473,10 @@ export default function NetGameScene({
         gameRef.current = g;
         setGame(g);
         setWorldUi([]);
+        setMinimapEntities([]);
+        setMinimapTerritory([]);
+        setRadarActive(false);
+        setTotems([]);
         authoritativeScoresRef.current = new Map();
         rosterIdsRef.current = new Set();
         // Reset trạng thái vòng chơi mới (quay lại phòng chờ).
@@ -479,6 +511,12 @@ export default function NetGameScene({
         }
         setWorldUi(entities);
       },
+      onMinimapUi: (enabled, entities) => {
+        setRadarActive(enabled);
+        setMinimapEntities(entities);
+      },
+      onMinimapTerritory: (cells) => setMinimapTerritory(cells),
+      onTotems: (_revision, items) => setTotems(items),
       onLobby: (l) => {
         // Chuyển CHỜ→VÀO TRẬN (ván mới) → dọn sạch trạng thái chết/thắng của ván trước.
         if (l.started && !startedRef.current) {
@@ -506,7 +544,7 @@ export default function NetGameScene({
           } else if (ev.killerId === localIdRef.current) {
             notifyTelegramHaptic("success");
           }
-        } else if (ev.kind === "win") {
+        } else if (ev.kind === "win" || ev.kind === "match_end") {
           wonRef.current = { won: true, winnerId: ev.winnerId };
         }
       },
@@ -565,6 +603,10 @@ export default function NetGameScene({
     wonRef.current = { won: false, winnerId: -1 };
     client.connect(url, playerName || "Bạn", appearance, gameTicket);
   }, [appearance, client, url, playerName, gameTicket]);
+  const onReturnToLobby = useCallback(() => {
+    client.disconnect();
+    onExit?.();
+  }, [client, onExit]);
 
   const connected = status === "open" && playerId >= 0;
 
@@ -606,6 +648,7 @@ export default function NetGameScene({
             {CONFIG.DISPLAY.TERRITORY_BORDERS && <TerritoryBorders game={game} />}
             <BorderRim game={game} />
             <TrailLine game={game} />
+            <TotemInstances items={totems} />
             <PlayerCube game={game} visibleEntityIds={visibleEntityIdsRef} />
             {CONFIG.DISPLAY.PARTICLES && (
               <Effects
@@ -643,14 +686,20 @@ export default function NetGameScene({
               onSpectateNext={onSpectateNext}
               localId={playerId}
               playerName={playerName}
+              endMode="online"
+              onReturnToLobby={onReturnToLobby}
             />
           )}
           {CONFIG.DISPLAY.MINIMAP && (
             <MiniMap
               game={game}
               localId={playerId}
-              entities={worldUi}
-              territorySource={minimapTerritorySource}
+              totems={totems}
+              privacy={{
+                radarActive,
+                territory: minimapTerritory,
+                entities: minimapEntities,
+              }}
             />
           )}
           <Joystick dir={joystick} />
@@ -739,13 +788,24 @@ export default function NetGameScene({
           }}
         >
           <div style={{ fontSize: 20, fontWeight: 700 }}>
-            {status === "error" || status === "closed"
+            {status === "protocol_mismatch"
+              ? "Phiên bản client và server không tương thích"
+              : status === "error" || status === "closed"
               ? "Không kết nối được server"
               : "Đang kết nối server…"}
           </div>
           <div style={{ fontSize: 13, opacity: 0.7, maxWidth: 420, lineHeight: 1.6 }}>
-            Máy chủ online cần đang chạy tại <code>{url}</code>. Khởi động bằng:{" "}
-            <code>pnpm --filter @hexagon/server start:dev</code>
+            {status === "protocol_mismatch" ? (
+              <>
+                Client đang dùng protocol v{GAME_PROTOCOL_VERSION}. Hãy đặt{" "}
+                <code>GAME_PROTOCOL_VERSION={GAME_PROTOCOL_VERSION}</code> trên server rồi khởi động lại.
+              </>
+            ) : (
+              <>
+                Máy chủ online cần đang chạy tại <code>{url}</code>. Khởi động bằng:{" "}
+                <code>pnpm --filter @hexagon/server start:dev</code>
+              </>
+            )}
           </div>
         </div>
       )}

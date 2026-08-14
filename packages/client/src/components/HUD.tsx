@@ -4,6 +4,7 @@ import { useEffect, useRef, useState, type CSSProperties } from "react";
 import { CONFIG, PLAYER_COLORS } from "@hexagon/shared";
 import type { DeathCause, Phase } from "@hexagon/shared";
 import { ARENA_R, ARENA_INRADIUS } from "@hexagon/shared";
+import { endActionForMode, type EndScreenMode } from "./endAction";
 
 export interface Score {
   id: number;
@@ -46,6 +47,10 @@ export interface Stats {
   lastPct: number;
   /** Toạ độ world các ô lãnh thổ NGAY TRƯỚC khi chết — vẽ bản đồ trong popup. */
   deathCells: { x: number; y: number }[];
+  effectiveSpeed?: number;
+  speedTotemCount?: number;
+  radarActive?: boolean;
+  insideEnemySlowZone?: boolean;
 }
 
 /** Nút tròn nhỏ ◀ ▶ để chuyển người đang xem (khán giả). */
@@ -64,6 +69,16 @@ const spectateBtnStyle: CSSProperties = {
   alignItems: "center",
   justifyContent: "center",
   pointerEvents: "auto",
+};
+
+const statusChipStyle: CSSProperties = {
+  padding: "2px 5px",
+  borderRadius: 999,
+  background: "rgba(255,255,255,0.1)",
+  color: "#ffd76b",
+  fontSize: 9,
+  fontWeight: 800,
+  whiteSpace: "nowrap",
 };
 
 /** Câu mô tả lý do chết (tiếng Việt) cho popup. */
@@ -187,6 +202,8 @@ export function HUD({
   onSpectateNext,
   localId = 0,
   playerName,
+  endMode = "single",
+  onReturnToLobby,
 }: {
   stats: Stats;
   onRevive: () => void;
@@ -199,6 +216,8 @@ export function HUD({
   localId?: number;
   /** Tên hiển thị của người chơi cục bộ (thay cho tên màu mặc định). */
   playerName?: string;
+  endMode?: EndScreenMode;
+  onReturnToLobby?: () => void;
 }) {
   const isMobile = useIsMobile();
   // Trên điện thoại: thu nhỏ 2 bảng thông số về góc để không đè lên vùng chơi.
@@ -238,6 +257,7 @@ export function HUD({
   const top = sorted.slice(0, 5);
   const humanRank = sorted.findIndex((s) => s.id === localId);
   const humanInTop = humanRank > -1 && humanRank < 5;
+  const endAction = endActionForMode(endMode);
 
   const rankRow = (s: Score, rank: number, highlight = false) => (
     <div
@@ -325,6 +345,25 @@ export function HUD({
         <div style={{ fontSize: 9, opacity: 0.6, marginTop: 4 }}>
           Mục tiêu King: {CONFIG.KING_PCT}% · Chết: {stats.deaths}
         </div>
+        {(stats.effectiveSpeed !== undefined ||
+          stats.speedTotemCount ||
+          stats.radarActive ||
+          stats.insideEnemySlowZone) && (
+          <div style={{ display: "flex", gap: 5, flexWrap: "wrap", marginTop: 7 }}>
+            {stats.effectiveSpeed !== undefined && (
+              <span style={statusChipStyle}>⚡ {stats.effectiveSpeed.toFixed(1)}</span>
+            )}
+            {(stats.speedTotemCount ?? 0) > 0 && (
+              <span style={statusChipStyle}>◆ ×{stats.speedTotemCount}</span>
+            )}
+            {stats.insideEnemySlowZone && (
+              <span style={{ ...statusChipStyle, color: "#8ecbff" }}>❄ CHẬM</span>
+            )}
+            {stats.radarActive && (
+              <span style={{ ...statusChipStyle, color: "#dda8ff" }}>◉ RADAR</span>
+            )}
+          </div>
+        )}
       </div>
 
       {/* Bảng xếp hạng (góc trên phải) — TOP 5, + dòng người chơi nếu hạng > 5 */}
@@ -744,7 +783,11 @@ export function HUD({
                 : `${stats.winnerName || "Đối thủ"} đã chiến thắng`}
             </div>
             <button
-              onClick={onRestart}
+              onClick={
+                endAction.kind === "lobby"
+                  ? (onReturnToLobby ?? onRestart)
+                  : onRestart
+              }
               style={{
                 marginTop: 24,
                 padding: "12px 30px",
@@ -759,7 +802,8 @@ export function HUD({
                 boxShadow: "0 6px 20px rgba(255,180,46,0.45)",
               }}
             >
-              ▶ CHƠI LẠI
+              {endAction.kind === "restart" ? "▶ " : "← "}
+              {endAction.label}
             </button>
           </div>
         </div>

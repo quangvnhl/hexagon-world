@@ -6,3 +6,4 @@ export * from "./state";
 export * from "./protocol";
 export * from "./protocol-version";
 export * from "./spatialhash";
+export * from "./totems";

@@ -114,7 +114,7 @@ describe("GameState: chạm biên LỤC GIÁC → trượt mượt, không lọt
       g.update(1 / 60);
     }
     // 30 frame trượt dọc biên: quãng đường/ frame gần bằng SPEED/60 (đầy đủ), không crawl.
-    const full = CONFIG.SPEED / 60;
+    const full = g.effectiveSpeedFor(0) / 60;
     let moved = 0;
     let frames = 0;
     for (let j = 0; j < 30 && g.phase === "playing"; j++) {

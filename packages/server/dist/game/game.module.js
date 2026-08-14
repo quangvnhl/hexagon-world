@@ -24,14 +24,16 @@ let GatewayService = class GatewayService {
         this.results = results;
         this.net = null;
     }
-    async onModuleInit() {
+    async start() {
+        if (this.net)
+            return;
         const cfg = (0, runtime_config_1.runtimeConfig)();
         const port = Number(process.env.PORT ?? config_1.DEFAULT_PORT);
         this.net = new net_server_1.NetServer({
             port,
             tickRate: config_1.TICK_RATE,
             httpServer: this.adapter.httpAdapter.getHttpServer(),
-            path: cfg.role === "all" ? undefined : "/game",
+            path: "/game",
             requireTicket: cfg.role === "game",
             authenticateTicket: (token) => this.tickets.verify(token, cfg.region),
             region: cfg.region,
@@ -43,7 +45,7 @@ let GatewayService = class GatewayService {
         await this.net.start();
         console.log(`[Hexagon] Server AUTHORITATIVE region=${cfg.region} chuẩn bị trên cổng ${port}, ` +
             `${config_1.TICK_RATE} Hz. Phòng tạo khi có người vào ` +
-            `(tối đa ${config_1.MAX_PLAYERS} ghế người + ${config_1.BOT_COUNT} bot), ` +
+            `(tối đa ${config_1.MAX_HUMAN_PLAYERS} ghế người + ${config_1.ONLINE_BOTS} bot online), ` +
             `đóng khi hết người hoặc hết ván.`);
     }
     async onApplicationShutdown() {
@@ -64,6 +66,7 @@ exports.GameModule = GameModule;
 exports.GameModule = GameModule = __decorate([
     (0, common_1.Module)({
         providers: [GatewayService, ticket_service_1.TicketService, match_result_reporter_service_1.MatchResultReporter],
+        exports: [GatewayService],
     })
 ], GameModule);
 //# sourceMappingURL=game.module.js.map
