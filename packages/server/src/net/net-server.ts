@@ -19,7 +19,7 @@ import {
 } from "@hexagon/shared";
 import { GameRoom } from "../game/game-room";
 import { filterTerritoryAoi } from "./territory-aoi";
-import { DT, TICK_RATE, MAX_HUMAN_PLAYERS, ONLINE_BOT_JOIN_INTERVAL_MS, KING_ROOM_DURATION_SECONDS, MIN_PLAYERS, ENTITY_AOI_RADIUS, TERRITORY_AOI_RADIUS, TERRITORY_AOI_HYSTERESIS, WS_BACKPRESSURE_BYTES, onlineBotCapacityForRoom, LOBBY_RECONNECT_GRACE_MS } from "../config";
+import { DT, TICK_RATE, MAX_HUMAN_PLAYERS, ONLINE_BOT_JOIN_INTERVAL_MS, KING_ROOM_DURATION_SECONDS, MIN_PLAYERS, ENTITY_AOI_RADIUS, TERRITORY_AOI_RADIUS, TERRITORY_AOI_HYSTERESIS, WS_BACKPRESSURE_BYTES, onlineBotCapacityForRoom, LOBBY_RECONNECT_GRACE_MS, WS_HEARTBEAT_INTERVAL_MS } from "../config";
 import { NetworkTransport, gameNetworkMetrics, type NetworkMetricsSnapshot } from "./network-transport";
 
 /** Gửi keyframe TERRITORY mỗi bao nhiêu tick (throttle). 6 tick @24Hz ≈ 4 Hz. */
@@ -169,6 +169,8 @@ export class NetServer {
   private readonly conns = new Map<WebSocket, ConnState>();
   private readonly rooms = new Set<Room>();
   private readonly resumeSessions = new Map<string, ResumeSession>();
+  private readonly socketAlive = new WeakMap<WebSocket, boolean>();
+  private readonly heartbeatTimer: NodeJS.Timeout;
   /** Phòng đang mở nhận người mới (null nếu chưa có / vừa kết thúc). */
   private active: Room | null = null;
 
@@ -196,6 +198,8 @@ export class NetServer {
       ? new WebSocketServer({ server: opts.httpServer, ...(opts.path ? { path: opts.path } : {}) })
       : new WebSocketServer({ port: opts.port ?? 0 });
     this.wss.on("connection", (ws) => this.onConnection(ws));
+    this.heartbeatTimer = setInterval(() => this.heartbeatSockets(), WS_HEARTBEAT_INTERVAL_MS);
+    this.heartbeatTimer.unref();
   }
 
   get port(): number {
@@ -530,6 +534,7 @@ export class NetServer {
 
   // ---- Kết nối ----
   private onConnection(ws: WebSocket): void {
+    this.socketAlive.set(ws, true);
     this.conns.set(ws, {
       entityId: null,
       room: null,
@@ -547,6 +552,18 @@ export class NetServer {
     });
     ws.on("close", () => this.onClose(ws));
     ws.on("error", () => this.onClose(ws));
+    ws.on("pong", () => this.socketAlive.set(ws, true));
+  }
+
+  private heartbeatSockets(): void {
+    for (const ws of this.conns.keys()) {
+      if (!this.socketAlive.get(ws)) {
+        ws.terminate();
+        continue;
+      }
+      this.socketAlive.set(ws, false);
+      try { ws.ping(); } catch { ws.terminate(); }
+    }
   }
 
   private onBinary(ws: WebSocket, data: Buffer): void {
@@ -597,8 +614,24 @@ export class NetServer {
 
   private resumeConnection(ws: WebSocket, conn: ConnState, token: string): boolean {
     const session = this.resumeSessions.get(token);
-    if (!session || session.socket || session.room.ended ||
-        session.expiresAt === null || session.expiresAt <= Date.now()) return false;
+    if (!session || session.room.ended ||
+        (!session.socket && (session.expiresAt === null || session.expiresAt <= Date.now()))) return false;
+    if (session.socket && session.socket !== ws) {
+      // Mobile/proxy có thể giữ socket cũ ở trạng thái OPEN giả. Token là bearer
+      // capability: kết nối mới hợp lệ được quyền thay thế socket cũ nhưng giữ nguyên ghế.
+      const staleSocket = session.socket;
+      const staleConn = this.conns.get(staleSocket);
+      session.room.conns.delete(staleSocket);
+      if (staleConn) {
+        staleConn.room = null;
+        staleConn.entityId = null;
+        staleConn.reconnectToken = null;
+        staleConn.intentionalClose = true;
+      }
+      this.conns.delete(staleSocket);
+      this.transport.remove(staleSocket);
+      try { staleSocket.terminate(); } catch { /* đã đóng */ }
+    }
     if (session.timer) clearTimeout(session.timer);
     this.resumeSessions.delete(token);
     conn.entityId = session.entityId;
@@ -725,7 +758,17 @@ export class NetServer {
       ws.close(1000, "roi phong");
     } else if (msg.t === "revive") {
       if (conn.room && conn.entityId !== null) {
-        if (conn.room.room.reviveSeat(conn.entityId)) conn.interestTargetId = null;
+        const entity = conn.room.room.gameState.players[conn.entityId];
+        if (!entity || entity.phase !== "dead") {
+          this.send(ws, { t: "revive_result", ok: false, reason: "not_dead" });
+        } else if (conn.room.room.kingCountdownActive) {
+          this.send(ws, { t: "revive_result", ok: false, reason: "king_locked" });
+        } else if (conn.room.room.reviveSeat(conn.entityId)) {
+          conn.interestTargetId = null;
+          this.send(ws, { t: "revive_result", ok: true });
+        } else {
+          this.send(ws, { t: "revive_result", ok: false, reason: "no_spawn" });
+        }
       }
     }
   }
@@ -936,6 +979,7 @@ export class NetServer {
 
   /** Dừng mọi phòng + đóng socket + đóng server (không sót handle). */
   close(): Promise<void> {
+    clearInterval(this.heartbeatTimer);
     for (const r of this.rooms) {
       r.running = false;
       if (r.timer) {

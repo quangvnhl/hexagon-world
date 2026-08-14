@@ -52,7 +52,8 @@ export default function Home() {
         appearance={session.appearance}
         serverUrl={session.serverUrl}
         gameTicket={session.gameTicket}
-        onExit={isTelegram ? undefined : back}
+        onExit={back}
+        showMenu={!isTelegram}
       />
     );
   }
@@ -60,7 +61,8 @@ export default function Home() {
     <GameScene
       playerName={session.name}
       appearance={session.appearance}
-      onExit={isTelegram ? undefined : back}
+      onExit={back}
+      showMenu={!isTelegram}
     />
   );
 }

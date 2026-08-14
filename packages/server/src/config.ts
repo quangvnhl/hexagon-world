@@ -39,7 +39,9 @@ export function onlineBotCapacityForRoom(roomId: number): number {
 export const ONLINE_BOT_JOIN_INTERVAL_MS = boundedIntegerFromEnv("ONLINE_BOT_JOIN_INTERVAL_MS", 1500, 100, 60000);
 export const KING_ROOM_DURATION_SECONDS = boundedIntegerFromEnv("KING_ROOM_DURATION_SECONDS", 180, 1, 3600);
 /** Giữ ghế trong thời gian ngắn khi socket rớt để client có thể nối lại đúng ván. */
-export const LOBBY_RECONNECT_GRACE_MS = 15_000;
+export const LOBBY_RECONNECT_GRACE_MS = 30_000;
+/** Chủ động phát hiện socket chết thay vì chờ TCP timeout của mobile browser/proxy. */
+export const WS_HEARTBEAT_INTERVAL_MS = 5_000;
 
 /** Số người THẬT tối thiểu để BẮT ĐẦU một ván online. Chưa đủ → phòng ở trạng thái CHỜ. */
 export const MIN_PLAYERS = 1;

@@ -4,7 +4,7 @@ import { memo, useEffect, useRef } from "react";
 import { CONFIG } from "@hexagon/shared";
 
 /**
- * Đồng hồ FPS + thời gian khung (ms) — overlay DOM góc trên-trái, KHÔNG re-render React
+ * Đồng hồ FPS + thời gian khung (ms) — overlay DOM góc dưới-trái, KHÔNG re-render React
  * (ghi thẳng textContent trong vòng rAF riêng). Dùng để đo tụt khung khi đông bot. Màu
  * đổi theo mức: ≥50 xanh, ≥30 vàng, <30 đỏ. Bật/tắt qua CONFIG.DISPLAY.FPS.
  */
@@ -57,14 +57,14 @@ export const FpsMeter = memo(function FpsMeter({
         position: "absolute",
         left:
           "max(10px, env(safe-area-inset-left, 0px), var(--tg-safe-area-inset-left, 0px), var(--tg-content-safe-area-inset-left, 0px), var(--telegram-safe-left, 0px))",
-        top:
-          "calc(max(env(safe-area-inset-top, 0px), var(--tg-safe-area-inset-top, 0px), var(--tg-content-safe-area-inset-top, 0px), var(--telegram-safe-top, 0px)) + 8px + var(--telegram-hud-portrait-offset, 0px))",
-        padding: "4px 8px",
+        bottom:
+          "max(10px, env(safe-area-inset-bottom, 0px), var(--tg-safe-area-inset-bottom, 0px), var(--tg-content-safe-area-inset-bottom, 0px))",
+        padding: "3px 7px",
         borderRadius: 999,
         background: "rgba(10,14,22,0.72)",
         color: "#7CFFB0",
         fontFamily: "ui-monospace, SFMono-Regular, Menlo, monospace",
-        fontSize: 10,
+        fontSize: "clamp(7px, 2.25vw, 10px)",
         fontWeight: 700,
         letterSpacing: 0.2,
         pointerEvents: "none",

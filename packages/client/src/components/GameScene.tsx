@@ -2,7 +2,7 @@
 
 import { useMemo, useRef, useState, useCallback, useEffect } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
-import { PerspectiveCamera } from "@react-three/drei";
+import { OrthographicCamera, PerspectiveCamera } from "@react-three/drei";
 import * as THREE from "three";
 import { GameState } from "@hexagon/shared";
 import { CONFIG } from "@hexagon/shared";
@@ -38,6 +38,24 @@ export function GameCamera() {
   const { width, height } = useThree((state) => state.size);
   const profile = useCameraProfile(width, height);
   const fov = cameraFov(profile.name, width, height);
+  const aspect = width / Math.max(height, 1);
+  const cameraDistance = Math.hypot(...CONFIG.CAMERA.OFFSET);
+  const halfHeight = Math.tan((fov * Math.PI) / 360) * cameraDistance;
+
+  if (CONFIG.CAMERA.TYPE === "ORTHOGRAPHIC") {
+    return (
+      <OrthographicCamera
+        makeDefault
+        position={CONFIG.CAMERA.OFFSET}
+        left={-halfHeight * aspect}
+        right={halfHeight * aspect}
+        top={halfHeight}
+        bottom={-halfHeight}
+        near={0.1}
+        far={1000}
+      />
+    );
+  }
 
   return (
     <PerspectiveCamera
@@ -50,7 +68,7 @@ export function GameCamera() {
   );
 }
 
-/** Nút quay lại menu (góc dưới-trái). Dùng chung cho scene chơi đơn & online. */
+/** Nút quay lại menu, đặt ngay phía trên thống kê FPS ở góc dưới-trái. */
 export function MenuButton({ onExit }: { onExit: () => void }) {
   return (
     <button
@@ -58,7 +76,7 @@ export function MenuButton({ onExit }: { onExit: () => void }) {
       style={{
         position: "absolute",
         left: "max(16px, env(safe-area-inset-left))",
-        bottom: "max(16px, env(safe-area-inset-bottom))",
+        bottom: "calc(max(10px, env(safe-area-inset-bottom, 0px)) + 34px)",
         padding: "8px 16px",
         borderRadius: 999,
         border: "1px solid rgba(255,255,255,0.2)",
@@ -173,6 +191,13 @@ function GameLoop({
     camera.position.x += (fx + ox - camera.position.x) * k;
     camera.position.y += (fy + oy * z - camera.position.y) * k;
     camera.position.z += (oz * z - camera.position.z) * k;
+    if (camera instanceof THREE.OrthographicCamera) {
+      const nextZoom = 1 / z;
+      if (Math.abs(camera.zoom - nextZoom) > 0.0001) {
+        camera.zoom = nextZoom;
+        camera.updateProjectionMatrix();
+      }
+    }
 
     statAcc.current += dt;
     // Đẩy stats định kỳ; đẩy NGAY khi đổi phase (chết/hồi sinh/vào trận) để popup
@@ -184,6 +209,7 @@ function GameLoop({
       onStats({
         pct: game.territoryPct(),
         king: game.isKing,
+        kingId: game.kingId(),
         deaths: game.deaths,
         phase: game.phase,
         prep: game.prepRemaining,
@@ -230,10 +256,12 @@ export default function GameScene({
   playerName,
   appearance,
   onExit,
+  showMenu = true,
 }: {
   playerName?: string;
   appearance?: PlayerAppearance;
   onExit?: () => void;
+  showMenu?: boolean;
 } = {}) {
   const game = useMemo(() => new GameState(), []);
   // Gán tên người chơi vào ghế 0 (hiển thị ở xếp hạng / KING / thắng).
@@ -304,14 +332,14 @@ export default function GameScene({
       style={{
         position: "fixed",
         inset: 0,
-        background: "#0a0e16",
+        background: CONFIG.MAP_COLORS.BACKGROUND,
         cursor: "crosshair",
         touchAction: "none",
       }}
     >
       <Canvas dpr={[1, 1.5]}>
         <GameCamera />
-        <color attach="background" args={["#0a0e16"]} />
+        <color attach="background" args={[CONFIG.MAP_COLORS.BACKGROUND]} />
         <ambientLight intensity={0.8} />
         <directionalLight position={[4, 6, 12]} intensity={1.15} />
 
@@ -352,7 +380,7 @@ export default function GameScene({
         won={stats.won}
         kingReached={stats.king || Boolean(stats.kingName)}
       />
-      {onExit && <MenuButton onExit={onExit} />}
+      {showMenu && onExit && <MenuButton onExit={onExit} />}
       {CONFIG.DISPLAY.MINIMAP && (
         <MiniMap
           game={game}

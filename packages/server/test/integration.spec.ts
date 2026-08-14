@@ -43,6 +43,7 @@ class TestClient {
   totems: TotemWireState[] = [];
   lobby: Extract<S2CControl, { t: "lobby" }> | null = null;
   readonly events: Extract<S2CControl, { t: "event" }>[] = [];
+  readonly reviveResults: Extract<S2CControl, { t: "revive_result" }>[] = [];
   private autoReady = true;
 
   constructor(url: string) {
@@ -73,6 +74,7 @@ class TestClient {
           this.radarActive = msg.radarActive;
           this.minimapUi = msg.entities;
         } else if (msg?.t === "totems") this.totems = msg.items;
+        else if (msg?.t === "revive_result") this.reviveResults.push(msg);
         else if (msg?.t === "event") this.events.push(msg);
       }
     });
@@ -383,6 +385,23 @@ describe("NetServer integration (real ws, deterministic ticks)", () => {
     expect(a.snapshots.at(-1)!.entities.some((e) => e.id === idC)).toBe(false);
   });
 
+  it("trả lý do no_spawn khi server không tìm được vị trí hồi sinh", async () => {
+    server = new NetServer({ port: 0, onlineBots: 0 });
+    await server.listen();
+    const a = new TestClient(`ws://127.0.0.1:${server.port}`);
+    clients = [a];
+    await a.open();
+    a.join("A");
+    await a.waitWelcome();
+    const room = server.activeRoom!;
+    room.gameState.players[a.welcome!.playerId].phase = "dead";
+    vi.spyOn(room, "reviveSeat").mockReturnValue(false);
+
+    a.revive();
+    await waitFor(() => a.reviveResults.length > 0, 1000, "revive result");
+    expect(a.reviveResults.at(-1)).toEqual({ t: "revive_result", ok: false, reason: "no_spawn" });
+  });
+
   it("routes the ninth human to a new room instead of closing a full-room join", async () => {
     server = new NetServer({ port: 0, maxHumans: 8, onlineBots: 0 });
     await server.listen();
@@ -513,6 +532,27 @@ describe("NetServer integration (real ws, deterministic ticks)", () => {
 
     resumed.cancelLobby();
     await waitFor(() => server!.roomCount === 0, 1000, "cancel giải phóng room");
+  });
+
+  it("resume thay thế socket cũ đang OPEN giả mà không tạo ghế mới", async () => {
+    server = new NetServer({ port: 0, onlineBots: 0 });
+    await server.listen();
+    const url = `ws://127.0.0.1:${server.port}`;
+    const stale = new TestClient(url);
+    clients = [stale];
+    await stale.open();
+    stale.join("An", undefined, false);
+    await stale.waitWelcome();
+    const first = stale.welcome!;
+
+    const resumed = new TestClient(url);
+    clients.push(resumed);
+    await resumed.open();
+    resumed.join("An", undefined, false, first.reconnectToken);
+    await resumed.waitWelcome();
+    expect(resumed.welcome).toMatchObject({ playerId: first.playerId, resumed: true });
+    expect(server.activeRoom?.occupied()).toBe(1);
+    await waitFor(() => stale.ws.readyState === WebSocket.CLOSED, 1000, "socket cũ bị thay thế");
   });
 
   it("VÒNG ĐỜI: phòng tạo khi JOIN, ĐÓNG khi hết người", async () => {

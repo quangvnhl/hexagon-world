@@ -2,7 +2,25 @@
 // Cấu hình tập trung cho MVP. Chỉnh gameplay/hiển thị tại đây.
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.DEFAULT_PLAYER_APPEARANCE = exports.TRAIL_PATTERNS = exports.PLAYER_SHAPES = exports.PLAYER_COLORS = exports.COLORS = exports.CONFIG = void 0;
+exports.hexToLinearRgb = hexToLinearRgb;
 exports.sanitizePlayerAppearance = sanitizePlayerAppearance;
+/** Chuyển mã màu sRGB #RGB/#RRGGBB thành RGB tuyến tính dùng trực tiếp bởi renderer. */
+function hexToLinearRgb(hex) {
+    const match = /^#([0-9a-f]{3}|[0-9a-f]{6})$/i.exec(hex.trim());
+    if (!match) {
+        throw new Error(`Invalid HEX color "${hex}"; expected #RGB or #RRGGBB`);
+    }
+    const digits = match[1].length === 3
+        ? match[1].split("").map((digit) => digit + digit).join("")
+        : match[1];
+    const toLinear = (offset) => {
+        const srgb = Number.parseInt(digits.slice(offset, offset + 2), 16) / 255;
+        return srgb <= 0.04045
+            ? srgb / 12.92
+            : Math.pow((srgb + 0.055) / 1.055, 2.4);
+    };
+    return [toLinear(0), toLinear(2), toLinear(4)];
+}
 exports.CONFIG = {
     /** Bán kính NGOẠI TIẾP (tâm → đỉnh) của SÂN CHƠI hình LỤC GIÁC (flat-top), world
      *  units. Biên là 6 tường nghiêng 120° → không còn góc vuông gây kẹt. */
@@ -38,6 +56,12 @@ exports.CONFIG = {
         PRESS_SCALE: 0.95,
         /** Tổng thời gian nhún xuống rồi trở lại vị trí ban đầu (giây). */
         PRESS_DURATION: 0.2,
+    },
+    /** Màu nền của bàn chơi và màu các ô lục giác chưa có chủ. */
+    MAP_COLORS: {
+        BACKGROUND: "#0e1013",
+        /** Nhập màu sRGB dạng #RRGGBB; hệ thống tự chuyển sang RGB tuyến tính khi khởi động. */
+        NEUTRAL_HEX: "#2a2b2e",
     },
     /** Cạnh cube nhân vật (người + bot), đơn vị world. Chỉnh to/nhỏ nhân vật ở đây. */
     CUBE_SIZE: 1.2,
@@ -99,11 +123,13 @@ exports.CONFIG = {
         { label: "Thường", aggression: 4, vision: 16, skill: 0.5, reaction: 0.2 },
         { label: "Khó", aggression: 10, vision: 20, skill: 1, reaction: 0.1 },
     ],
-    /** Camera perspective: vị trí lệch so với người chơi (x, sau, cao) + fov + độ mượt pan.
+    /** Camera: vị trí lệch so với người chơi (x, sau, cao) + projection + độ mượt pan.
      *  Rotation KHOÁ cố định (chỉ pan theo người chơi, không xoay theo chuột). */
     CAMERA: {
-        OFFSET: [0, -4, 20],
-        FOV: 70,
+        /** Đổi thành "ORTHOGRAPHIC" để dùng camera trực giao; mặc định giữ phối cảnh hiện tại. */
+        TYPE: "ORTHOGRAPHIC",
+        OFFSET: [0, -6, 20],
+        FOV: 60,
         LERP: 0.15,
         /**
          * Cấu hình vùng nhìn riêng cho từng kiểu màn hình.
@@ -116,7 +142,7 @@ exports.CONFIG = {
                 ZOOM: { MIN: 1, MAX: 1.4 },
             },
             MOBILE_PORTRAIT: {
-                VIEW_SCALE: 1.15,
+                VIEW_SCALE: 1.2,
                 ZOOM: { MIN: 1, MAX: 1.8 },
             },
             MOBILE_LANDSCAPE: {
@@ -135,6 +161,14 @@ exports.CONFIG = {
         DEATH_GRAVITY: 12,
         /** Chờ hiệu ứng chết kết thúc rồi mới phủ popup hồi sinh/xem (giây). */
         DEATH_POPUP_DELAY: 2,
+        /**
+         * Kích thước sparkle chiếm đất. Perspective dùng world/attenuated size;
+         * Orthographic dùng pixel size để không bị thu nhỏ li ti.
+         */
+        CAPTURE_SPARK_SIZE: {
+            PERSPECTIVE: 0.5,
+            ORTHOGRAPHIC: 5,
+        },
     },
     /** Vạch vàng ngăn cách hai vùng ĐẤT cùng màu khác chủ: bề rộng (world units), màu, và
      *  độ phát sáng (dùng blending cộng dồn) — WIDTH lớn = vạch dày, GLOW lớn = sáng hơn. */
@@ -198,7 +232,7 @@ exports.CONFIG = {
 };
 // Bảng màu (r,g,b trong [0,1]).
 exports.COLORS = {
-    neutral: [0.16, 0.18, 0.23],
+    neutral: hexToLinearRgb(exports.CONFIG.MAP_COLORS.NEUTRAL_HEX),
     /** Tường biên (hex string cho three.js). */
     wall: "#3a4358",
     wallEdge: "#5b6b8c",

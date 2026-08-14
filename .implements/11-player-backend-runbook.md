@@ -34,6 +34,20 @@ Chỉ webhook `successful_payment` cấp item hoặc cộng coin; trạng thái 
 không có quyền cấp tài sản. Luồng coin package và checklist đối soát nằm tại
 [`18-telegram-stars-coin-packages.md`](18-telegram-stars-coin-packages.md).
 
+Route webhook là **POST-only** tại `/v1/webhooks/telegram`. Mở URL bằng trình duyệt gửi GET
+không phải phép thử hợp lệ. Có thể xác nhận route đã được deploy mà không gửi secret thật:
+
+```powershell
+Invoke-WebRequest -Method Post `
+  -Uri https://api.example.com/v1/webhooks/telegram `
+  -ContentType application/json `
+  -Body '{}'
+```
+
+Kết quả `401 invalid_telegram_webhook_secret` chứng minh route tồn tại. Nếu trả `404`, kiểm tra
+request đang đi tới control plane (`SERVER_ROLE=control|all`), image mới đã được recreate và
+reverse proxy không loại bỏ path `/v1/webhooks/telegram`.
+
 ## 4. Admin coin và retention
 
 Tạo admin token ngẫu nhiên, lưu SHA-256 vào `ADMIN_API_KEY_SHA256`. Gửi token thật trong header `x-admin-key`. Không cập nhật `player_wallets` trực tiếp.

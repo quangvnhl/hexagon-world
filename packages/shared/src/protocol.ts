@@ -96,6 +96,7 @@ export type S2CControl =
       revision: number;
       items: TotemWireState[];
     }
+  | { t: "revive_result"; ok: boolean; reason?: "no_spawn" | "king_locked" | "not_dead" }
   | { t: "event"; kind: "death"; id: number; cause: DeathCause; killerId: number }
   | { t: "event"; kind: "win"; winnerId: number }
   | { t: "event"; kind: "king"; kingId: number }

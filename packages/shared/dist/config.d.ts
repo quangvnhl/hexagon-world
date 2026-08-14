@@ -1,3 +1,5 @@
+/** Chuyển mã màu sRGB #RGB/#RRGGBB thành RGB tuyến tính dùng trực tiếp bởi renderer. */
+export declare function hexToLinearRgb(hex: string): [number, number, number];
 export declare const CONFIG: {
     /** Bán kính NGOẠI TIẾP (tâm → đỉnh) của SÂN CHƠI hình LỤC GIÁC (flat-top), world
      *  units. Biên là 6 tường nghiêng 120° → không còn góc vuông gây kẹt. */
@@ -33,6 +35,12 @@ export declare const CONFIG: {
         readonly PRESS_SCALE: 0.95;
         /** Tổng thời gian nhún xuống rồi trở lại vị trí ban đầu (giây). */
         readonly PRESS_DURATION: 0.2;
+    };
+    /** Màu nền của bàn chơi và màu các ô lục giác chưa có chủ. */
+    readonly MAP_COLORS: {
+        readonly BACKGROUND: "#0e1013";
+        /** Nhập màu sRGB dạng #RRGGBB; hệ thống tự chuyển sang RGB tuyến tính khi khởi động. */
+        readonly NEUTRAL_HEX: "#2a2b2e";
     };
     /** Cạnh cube nhân vật (người + bot), đơn vị world. Chỉnh to/nhỏ nhân vật ở đây. */
     readonly CUBE_SIZE: 1.2;
@@ -120,11 +128,13 @@ export declare const CONFIG: {
         readonly skill: 1;
         readonly reaction: 0.1;
     }];
-    /** Camera perspective: vị trí lệch so với người chơi (x, sau, cao) + fov + độ mượt pan.
+    /** Camera: vị trí lệch so với người chơi (x, sau, cao) + projection + độ mượt pan.
      *  Rotation KHOÁ cố định (chỉ pan theo người chơi, không xoay theo chuột). */
     readonly CAMERA: {
+        /** Đổi thành "ORTHOGRAPHIC" để dùng camera trực giao; mặc định giữ phối cảnh hiện tại. */
+        readonly TYPE: "PERSPECTIVE" | "ORTHOGRAPHIC";
         readonly OFFSET: [number, number, number];
-        readonly FOV: 70;
+        readonly FOV: 60;
         readonly LERP: 0.15;
         /**
          * Cấu hình vùng nhìn riêng cho từng kiểu màn hình.
@@ -140,7 +150,7 @@ export declare const CONFIG: {
                 };
             };
             readonly MOBILE_PORTRAIT: {
-                readonly VIEW_SCALE: 1.15;
+                readonly VIEW_SCALE: 1.2;
                 readonly ZOOM: {
                     readonly MIN: 1;
                     readonly MAX: 1.8;
@@ -165,6 +175,14 @@ export declare const CONFIG: {
         readonly DEATH_GRAVITY: 12;
         /** Chờ hiệu ứng chết kết thúc rồi mới phủ popup hồi sinh/xem (giây). */
         readonly DEATH_POPUP_DELAY: 2;
+        /**
+         * Kích thước sparkle chiếm đất. Perspective dùng world/attenuated size;
+         * Orthographic dùng pixel size để không bị thu nhỏ li ti.
+         */
+        readonly CAPTURE_SPARK_SIZE: {
+            readonly PERSPECTIVE: 0.5;
+            readonly ORTHOGRAPHIC: 5;
+        };
     };
     /** Vạch vàng ngăn cách hai vùng ĐẤT cùng màu khác chủ: bề rộng (world units), màu, và
      *  độ phát sáng (dùng blending cộng dồn) — WIDTH lớn = vạch dày, GLOW lớn = sáng hơn. */

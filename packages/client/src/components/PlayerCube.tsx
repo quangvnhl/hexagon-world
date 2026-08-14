@@ -16,6 +16,59 @@ const MODEL_URLS = {
 
 type ModelShape = keyof typeof MODEL_URLS;
 
+const LABEL_HEIGHT = 0.62;
+const LABEL_MAX_WIDTH = 3.35;
+
+function makeLabelTexture(text: string, king: boolean): {
+  texture: THREE.CanvasTexture;
+  width: number;
+} {
+  const canvas = document.createElement("canvas");
+  const height = 96;
+  const horizontalPadding = 28;
+  const font = "700 40px system-ui, -apple-system, sans-serif";
+  const measure = canvas.getContext("2d");
+  if (!measure) throw new Error("Canvas 2D is unavailable");
+  measure.font = font;
+  const measuredWidth = measure.measureText(text).width;
+  canvas.width = Math.ceil(Math.min(512, Math.max(128, measuredWidth + horizontalPadding * 2)));
+  canvas.height = height;
+
+  const ctx = canvas.getContext("2d");
+  if (!ctx) throw new Error("Canvas 2D is unavailable");
+  ctx.font = font;
+  ctx.textAlign = "center";
+  ctx.textBaseline = "middle";
+
+  const radius = height / 2;
+  ctx.beginPath();
+  ctx.moveTo(radius, 1);
+  ctx.lineTo(canvas.width - radius, 1);
+  ctx.arc(canvas.width - radius, radius, radius - 1, -Math.PI / 2, Math.PI / 2);
+  ctx.lineTo(radius, height - 1);
+  ctx.arc(radius, radius, radius - 1, Math.PI / 2, -Math.PI / 2);
+  ctx.closePath();
+  ctx.fillStyle = king ? "rgba(64,45,5,0.88)" : "rgba(7,10,18,0.82)";
+  ctx.fill();
+  ctx.lineWidth = 3;
+  ctx.strokeStyle = king ? "rgba(255,210,63,0.92)" : "rgba(255,255,255,0.28)";
+  ctx.stroke();
+
+  ctx.fillStyle = king ? "#ffe47a" : "#ffffff";
+  ctx.shadowColor = "rgba(0,0,0,0.9)";
+  ctx.shadowBlur = 5;
+  ctx.fillText(text, canvas.width / 2, height / 2 + 1, canvas.width - horizontalPadding * 2);
+
+  const texture = new THREE.CanvasTexture(canvas);
+  texture.colorSpace = THREE.SRGBColorSpace;
+  texture.minFilter = THREE.LinearFilter;
+  texture.magFilter = THREE.LinearFilter;
+  return {
+    texture,
+    width: Math.min(LABEL_MAX_WIDTH, LABEL_HEIGHT * (canvas.width / height)),
+  };
+}
+
 function disposeModelObject(root: THREE.Object3D): void {
   root.traverse((obj) => {
     if (!(obj instanceof THREE.Mesh)) return;
@@ -60,10 +113,14 @@ function makeModelObject(
 export const PlayerCube = memo(function PlayerCube({
   game,
   visibleEntityIds,
+  localId = 0,
+  kingId: authoritativeKingId,
 }: {
   game: GameState;
   /** Online AoI: chỉ render entity có mặt trong snapshot hiện tại. Chơi đơn để trống. */
   visibleEntityIds?: MutableRefObject<ReadonlySet<number>>;
+  localId?: number;
+  kingId?: number;
 }) {
   const { scene: flySource } = useGLTF(MODEL_URLS.fly);
   const { scene: beeSource } = useGLTF(MODEL_URLS.bee);
@@ -77,6 +134,9 @@ export const PlayerCube = memo(function PlayerCube({
   const appearanceSig = useRef<string[]>([]);
   const modelObjects = useRef<(THREE.Group | null)[]>([]);
   const lastAlive = useRef<boolean[]>([]);
+  const labelSprites = useRef<(THREE.Sprite | null)[]>([]);
+  const labelTextures = useRef<(THREE.CanvasTexture | null)[]>([]);
+  const labelSignatures = useRef<string[]>([]);
   const view = useRef<GroundView>({ x: 0, y: 0, radius: 0 });
 
   useEffect(
@@ -84,12 +144,14 @@ export const PlayerCube = memo(function PlayerCube({
       for (const root of modelObjects.current) {
         if (root) disposeModelObject(root);
       }
+      for (const texture of labelTextures.current) texture?.dispose();
     },
     []
   );
 
   useFrame(({ camera, size }) => {
     getCameraGroundView(camera, size.width, size.height, view.current, 3);
+    const kingId = authoritativeKingId ?? game.kingId();
     for (let i = 0; i < game.players.length; i++) {
       const g = refs.current[i];
       const e = game.players[i];
@@ -108,7 +170,6 @@ export const PlayerCube = memo(function PlayerCube({
         }
       }
       lastAlive.current[i] = e.alive;
-
       // Luôn cập nhật transform TRƯỚC rồi mới cho visible để frame hồi sinh đầu tiên không
       // thể vẽ group ở transform của mạng sống cũ.
       g.position.set(e.pos.x, e.pos.y, 0);
@@ -117,6 +178,22 @@ export const PlayerCube = memo(function PlayerCube({
       g.visible =
         present && e.alive && isInGroundView(view.current, e.pos.x, e.pos.y, 2);
       if (!g.visible) continue;
+
+      const label = labelSprites.current[i];
+      if (label) {
+        const isKing = kingId === e.id;
+        const name = game.nameOf(e.id);
+        const nextSignature = `${isKing ? "king" : "player"}:${name}`;
+        if (labelSignatures.current[i] !== nextSignature) {
+          labelSignatures.current[i] = nextSignature;
+          labelTextures.current[i]?.dispose();
+          const next = makeLabelTexture(`${isKing ? "♛ " : ""}${name}`, isKing);
+          labelTextures.current[i] = next.texture;
+          label.material.map = next.texture;
+          label.material.needsUpdate = true;
+          label.scale.set(next.width, LABEL_HEIGHT, 1);
+        }
+      }
 
       if (
         e.shape in MODEL_URLS &&
@@ -134,7 +211,10 @@ export const PlayerCube = memo(function PlayerCube({
         appearanceSig.current[i] = "";
       }
 
-      for (const child of g.children) child.visible = child.name === e.shape;
+      for (const child of g.children) {
+        child.visible =
+          child.name === "player-label" || (e.alive && child.name === e.shape);
+      }
 
       const sig = `${e.colorIndex}:${e.shape}`;
       if (appearanceSig.current[i] !== sig) {
@@ -189,6 +269,19 @@ export const PlayerCube = memo(function PlayerCube({
             <coneGeometry args={[CONFIG.CUBE_SIZE * 0.56, CONFIG.CUBE_SIZE, 12]} />
             <meshStandardMaterial color={e.color.glow} emissive={e.color.glow} emissiveIntensity={0.35} metalness={0.35} roughness={0.3} />
           </mesh>
+          {e.id !== localId && (
+            <sprite
+              name="player-label"
+              ref={(sprite) => {
+                labelSprites.current[i] = sprite;
+              }}
+              position={[0, 0, CONFIG.CUBE_SIZE * 2.15]}
+              scale={[1, LABEL_HEIGHT, 1]}
+              renderOrder={20}
+            >
+              <spriteMaterial transparent depthWrite={false} toneMapped={false} />
+            </sprite>
+          )}
         </group>
       ))}
     </>

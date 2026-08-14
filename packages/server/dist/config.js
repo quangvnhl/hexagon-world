@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DEFAULT_PORT = exports.TERRITORY_AOI_HYSTERESIS = exports.TERRITORY_AOI_RADIUS = exports.SERVER_PROTOCOL_VERSION = exports.WS_BACKPRESSURE_BYTES = exports.ENTITY_AOI_RADIUS = exports.MIN_PLAYERS = exports.LOBBY_RECONNECT_GRACE_MS = exports.KING_ROOM_DURATION_SECONDS = exports.ONLINE_BOT_JOIN_INTERVAL_MS = exports.ONLINE_BOT_CAPACITY_MAX = exports.ONLINE_BOT_CAPACITY_MIN = exports.BOT_COUNT = exports.MAX_HUMAN_PLAYERS = exports.DT = exports.TICK_RATE = void 0;
+exports.DEFAULT_PORT = exports.TERRITORY_AOI_HYSTERESIS = exports.TERRITORY_AOI_RADIUS = exports.SERVER_PROTOCOL_VERSION = exports.WS_BACKPRESSURE_BYTES = exports.ENTITY_AOI_RADIUS = exports.MIN_PLAYERS = exports.WS_HEARTBEAT_INTERVAL_MS = exports.LOBBY_RECONNECT_GRACE_MS = exports.KING_ROOM_DURATION_SECONDS = exports.ONLINE_BOT_JOIN_INTERVAL_MS = exports.ONLINE_BOT_CAPACITY_MAX = exports.ONLINE_BOT_CAPACITY_MIN = exports.BOT_COUNT = exports.MAX_HUMAN_PLAYERS = exports.DT = exports.TICK_RATE = void 0;
 exports.onlineBotCapacityForRoom = onlineBotCapacityForRoom;
 const shared_1 = require("@hexagon/shared");
 exports.TICK_RATE = 24;
@@ -22,7 +22,8 @@ function onlineBotCapacityForRoom(roomId) {
 }
 exports.ONLINE_BOT_JOIN_INTERVAL_MS = boundedIntegerFromEnv("ONLINE_BOT_JOIN_INTERVAL_MS", 1500, 100, 60000);
 exports.KING_ROOM_DURATION_SECONDS = boundedIntegerFromEnv("KING_ROOM_DURATION_SECONDS", 180, 1, 3600);
-exports.LOBBY_RECONNECT_GRACE_MS = 15_000;
+exports.LOBBY_RECONNECT_GRACE_MS = 30_000;
+exports.WS_HEARTBEAT_INTERVAL_MS = 5_000;
 exports.MIN_PLAYERS = 1;
 function positiveNumberFromEnv(name, fallback) {
     const raw = process.env[name];

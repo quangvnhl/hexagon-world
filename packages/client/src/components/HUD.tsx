@@ -17,6 +17,8 @@ export interface Score {
 export interface Stats {
   pct: number;
   king: boolean;
+  /** Id KING authoritative hiện tại; -1/undefined nếu chưa có. */
+  kingId?: number;
   deaths: number;
   phase: Phase;
   prep: number;
@@ -204,6 +206,7 @@ export function HUD({
   playerName,
   endMode = "single",
   onReturnToLobby,
+  reviveNotice,
 }: {
   stats: Stats;
   onRevive: () => void;
@@ -218,6 +221,7 @@ export function HUD({
   playerName?: string;
   endMode?: EndScreenMode;
   onReturnToLobby?: () => void;
+  reviveNotice?: string;
 }) {
   const isMobile = useIsMobile();
   // Trên điện thoại: thu nhỏ 2 bảng thông số về góc để không đè lên vùng chơi.
@@ -290,6 +294,7 @@ export function HUD({
         }}
       />
       <span style={{ flex: 1, fontWeight: s.id === localId ? 700 : 400 }}>
+        {s.id === stats.kingId ? "👑 " : ""}
         {s.id === localId && playerName ? playerName : s.name}
         {!s.alive ? " 💀" : ""}
       </span>
@@ -645,6 +650,23 @@ export function HUD({
                 chờ khi có chỗ
               </div>
             ) : null}
+            {reviveNotice && (
+              <div
+                role="status"
+                style={{
+                  marginTop: 12,
+                  padding: "8px 12px",
+                  borderRadius: 10,
+                  background: "rgba(255,157,92,0.14)",
+                  border: "1px solid rgba(255,157,92,0.35)",
+                  color: "#ffc49c",
+                  fontSize: 13,
+                  fontWeight: 700,
+                }}
+              >
+                {reviveNotice}
+              </div>
+            )}
             <div
               style={{
                 marginTop: 20,
@@ -708,7 +730,7 @@ export function HUD({
         <div
           style={{
             position: "absolute",
-            top: `calc(${hudSafeTop} + 16px)`,
+            top: `calc(${hudSafeTop} + 118px + var(--telegram-hud-portrait-offset, 0px))`,
             left: "50%",
             transform: "translateX(-50%)",
             display: "flex",

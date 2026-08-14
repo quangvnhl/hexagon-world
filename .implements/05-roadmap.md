@@ -69,7 +69,7 @@ cho phần logic chia sẻ.
 
 - Build production toàn monorepo: đạt.
 - Runtime smoke test server: đạt (`/health/live`, `/health/network`, role `all`, region `sea`).
-- Vitest: đạt 61 shared + 57 client + 35 server; release gate 5/5.
+- Vitest: đạt 61 shared + 58 client + 37 server; release gate 5/5.
 - `verify:logic`: đạt 93/0.
 - Pha 3: **đã đóng, đủ điều kiện tiếp tục Pha 4**.
 - Pha 4 còn migration/seed thật và E2E HTTPS production; chưa đủ điều kiện chuyển sang Pha 5.

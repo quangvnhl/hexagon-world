@@ -17,8 +17,10 @@ Pha 4 và chưa chuyển chính thức sang Pha 5 vì còn hai gate chỉ có th
 - Lobby không tự bắt đầu sau JOIN. Người chơi có thể Sẵn sàng, Hủy sẵn sàng hoặc Rời phòng;
   trận chỉ bắt đầu khi đủ người và toàn bộ người đang kết nối đã ready.
 - Socket rớt được tự reconnect theo backoff 0,5/1/2/4/8 giây. Server giữ room, seat và state
-  trong grace 15 giây bằng opaque token chỉ lưu trong memory; protocol/ticket/token lỗi không retry.
+  trong grace 30 giây bằng opaque token chỉ lưu trong memory; protocol/ticket/token lỗi không retry.
 - Cancel chủ động không reconnect và giải phóng ghế ngay.
+- Client có watchdog và server có heartbeat 5 giây để phát hiện socket `OPEN` giả sau khi mất
+  mạng; reconnect token được phép thay thế socket cũ đang treo mà không tạo thêm ghế.
 - Có release gate offline kiểm tra role split, secret isolation, HTTPS/WSS, OAuth path, region,
   Ed25519 key pair, match-result secret và protocol version mà không gọi mạng hoặc in secret.
 
@@ -26,9 +28,9 @@ Pha 4 và chưa chuyển chính thức sang Pha 5 vì còn hai gate chỉ có th
 
 | Gate | Kết quả |
 |---|---|
-| Shared Vitest | 61/61 |
-| Client Vitest | 57/57 |
-| Server Vitest/integration | 35/35 |
+| Shared Vitest | 64/64 |
+| Client Vitest | 58/58 |
+| Server Vitest/integration | 37/37 |
 | Release gate tests | 5/5 |
 | Shared logic verification | 93/93 |
 | Typecheck toàn workspace | Đạt |

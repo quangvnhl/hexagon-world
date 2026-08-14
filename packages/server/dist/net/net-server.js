@@ -18,6 +18,7 @@ class NetServer {
         this.conns = new Map();
         this.rooms = new Set();
         this.resumeSessions = new Map();
+        this.socketAlive = new WeakMap();
         this.active = null;
         this.tickRate = opts.tickRate ?? config_1.TICK_RATE;
         this.dt = this.tickRate === config_1.TICK_RATE ? config_1.DT : 1 / this.tickRate;
@@ -42,6 +43,8 @@ class NetServer {
             ? new ws_1.WebSocketServer({ server: opts.httpServer, ...(opts.path ? { path: opts.path } : {}) })
             : new ws_1.WebSocketServer({ port: opts.port ?? 0 });
         this.wss.on("connection", (ws) => this.onConnection(ws));
+        this.heartbeatTimer = setInterval(() => this.heartbeatSockets(), config_1.WS_HEARTBEAT_INTERVAL_MS);
+        this.heartbeatTimer.unref();
     }
     get port() {
         const addr = this.wss.address();
@@ -359,6 +362,7 @@ class NetServer {
         r.room.activateNextBot();
     }
     onConnection(ws) {
+        this.socketAlive.set(ws, true);
         this.conns.set(ws, {
             entityId: null,
             room: null,
@@ -378,6 +382,22 @@ class NetServer {
         });
         ws.on("close", () => this.onClose(ws));
         ws.on("error", () => this.onClose(ws));
+        ws.on("pong", () => this.socketAlive.set(ws, true));
+    }
+    heartbeatSockets() {
+        for (const ws of this.conns.keys()) {
+            if (!this.socketAlive.get(ws)) {
+                ws.terminate();
+                continue;
+            }
+            this.socketAlive.set(ws, false);
+            try {
+                ws.ping();
+            }
+            catch {
+                ws.terminate();
+            }
+        }
     }
     onBinary(ws, data) {
         const conn = this.conns.get(ws);
@@ -427,9 +447,26 @@ class NetServer {
     }
     resumeConnection(ws, conn, token) {
         const session = this.resumeSessions.get(token);
-        if (!session || session.socket || session.room.ended ||
-            session.expiresAt === null || session.expiresAt <= Date.now())
+        if (!session || session.room.ended ||
+            (!session.socket && (session.expiresAt === null || session.expiresAt <= Date.now())))
             return false;
+        if (session.socket && session.socket !== ws) {
+            const staleSocket = session.socket;
+            const staleConn = this.conns.get(staleSocket);
+            session.room.conns.delete(staleSocket);
+            if (staleConn) {
+                staleConn.room = null;
+                staleConn.entityId = null;
+                staleConn.reconnectToken = null;
+                staleConn.intentionalClose = true;
+            }
+            this.conns.delete(staleSocket);
+            this.transport.remove(staleSocket);
+            try {
+                staleSocket.terminate();
+            }
+            catch { }
+        }
         if (session.timer)
             clearTimeout(session.timer);
         this.resumeSessions.delete(token);
@@ -579,8 +616,20 @@ class NetServer {
         }
         else if (msg.t === "revive") {
             if (conn.room && conn.entityId !== null) {
-                if (conn.room.room.reviveSeat(conn.entityId))
+                const entity = conn.room.room.gameState.players[conn.entityId];
+                if (!entity || entity.phase !== "dead") {
+                    this.send(ws, { t: "revive_result", ok: false, reason: "not_dead" });
+                }
+                else if (conn.room.room.kingCountdownActive) {
+                    this.send(ws, { t: "revive_result", ok: false, reason: "king_locked" });
+                }
+                else if (conn.room.room.reviveSeat(conn.entityId)) {
                     conn.interestTargetId = null;
+                    this.send(ws, { t: "revive_result", ok: true });
+                }
+                else {
+                    this.send(ws, { t: "revive_result", ok: false, reason: "no_spawn" });
+                }
             }
         }
     }
@@ -768,6 +817,7 @@ class NetServer {
         }
     }
     close() {
+        clearInterval(this.heartbeatTimer);
         for (const r of this.rooms) {
             r.running = false;
             if (r.timer) {

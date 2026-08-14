@@ -37,7 +37,7 @@ import { Predictor } from "./prediction";
 import { InterpolationBuffer, InterpState, INTERP_DELAY_MS } from "./interpolation";
 import { HeadState } from "./stepHead";
 import { shouldSendTerritoryInterest, type TerritoryInterestState } from "./territoryInterest";
-import { reconnectDelayMs, shouldReconnect } from "./reconnectPolicy";
+import { isConnectionStale, reconnectDelayMs, shouldReconnect } from "./reconnectPolicy";
 
 /** URL server mặc định (override qua biến môi trường build-time của Next). */
 export const DEFAULT_SERVER_URL =
@@ -122,6 +122,7 @@ export interface NetClientHandlers {
   onMinimapUi?: (radarActive: boolean, entities: MinimapUiEntity[]) => void;
   onMinimapTerritory?: (cells: TerritoryCell[]) => void;
   onTotems?: (revision: number, items: TotemWireState[]) => void;
+  onReviveResult?: (result: Extract<S2CControl, { t: "revive_result" }>) => void;
 }
 
 export class NetClient {
@@ -153,6 +154,7 @@ export class NetClient {
   /** Ping (RTT) đã đo tới server (ms, làm mượt nhẹ). */
   private ping = 0;
   private pingTimer: ReturnType<typeof setInterval> | null = null;
+  private lastServerMessageAt = 0;
 
   /** Snapshot mới nhất — nguồn thông tin hiển thị (color/alive/score) cho mọi entity. */
   private latest: Snapshot | null = null;
@@ -211,6 +213,7 @@ export class NetClient {
 
     ws.onopen = () => {
       this.setStatus("open");
+      this.lastServerMessageAt = this.now();
       const look = sanitizePlayerAppearance(args.appearance);
       ws.send(encodeControl({
         t: "join",
@@ -221,8 +224,8 @@ export class NetClient {
         protocolVersion: GAME_PROTOCOL_VERSION,
       }));
       // Đo ping định kỳ (mỗi 1s) để hiển thị độ trễ mạng.
-      this.sendPing();
-      this.pingTimer = setInterval(() => this.sendPing(), 1000);
+      this.heartbeatTick(ws);
+      this.pingTimer = setInterval(() => this.heartbeatTick(ws), 1000);
     };
     ws.onclose = (event) => {
       if (this.ws === ws) this.ws = null;
@@ -236,11 +239,12 @@ export class NetClient {
         this.setStatus("closed");
       }
     };
-    ws.onerror = () => this.setStatus("error");
+    ws.onerror = () => this.forceReconnect(ws);
     ws.onmessage = (ev: MessageEvent) => this.onMessage(ev.data);
   }
 
   private scheduleReconnect(): void {
+    if (this.manuallyClosed || this.reconnectTimer) return;
     const delay = reconnectDelayMs(this.reconnectAttempt++);
     if (delay === null) {
       this.setStatus("closed");
@@ -253,11 +257,27 @@ export class NetClient {
     }, delay);
   }
 
-  /** Gửi PING đo RTT. */
-  private sendPing(): void {
-    if (this.ws && this.ws.readyState === WebSocket.OPEN) {
-      this.ws.send(encodeControl({ t: "ping", time: this.now() }));
+  private forceReconnect(ws: WebSocket): void {
+    if (this.manuallyClosed || this.ws !== ws) return;
+    ws.onopen = null;
+    ws.onclose = null;
+    ws.onerror = null;
+    ws.onmessage = null;
+    this.ws = null;
+    if (this.pingTimer) clearInterval(this.pingTimer);
+    this.pingTimer = null;
+    try { ws.close(); } catch { /* socket mạng có thể đã hỏng */ }
+    this.scheduleReconnect();
+  }
+
+  private heartbeatTick(ws: WebSocket): void {
+    if (this.ws !== ws || ws.readyState !== WebSocket.OPEN) return;
+    const now = this.now();
+    if (isConnectionStale(this.lastServerMessageAt, now)) {
+      this.forceReconnect(ws);
+      return;
     }
+    ws.send(encodeControl({ t: "ping", time: now }));
   }
 
   /** Ping (RTT) mới nhất tới server (ms). */
@@ -271,6 +291,7 @@ export class NetClient {
     this.connectionArgs = null;
     this.reconnectToken = null;
     this.reconnectAttempt = 0;
+    this.lastServerMessageAt = 0;
     if (this.reconnectTimer) {
       clearTimeout(this.reconnectTimer);
       this.reconnectTimer = null;
@@ -359,6 +380,7 @@ export class NetClient {
   }
 
   private onMessage(data: unknown): void {
+    this.lastServerMessageAt = this.now();
     if (typeof data === "string") {
       this.onControl(data);
       return;
@@ -511,6 +533,9 @@ export class NetClient {
         }
         break;
       }
+      case "revive_result":
+        this.handlers.onReviveResult?.(msg);
+        break;
       case "event":
         if (msg.kind === "death") this.lastAlive.set(msg.id, false);
         this.handlers.onEvent?.(msg);

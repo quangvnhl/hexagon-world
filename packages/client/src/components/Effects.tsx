@@ -269,8 +269,12 @@ export const Effects = memo(function Effects({
       <points geometry={sparkGeometry} frustumCulled={false}>
         <pointsMaterial
           vertexColors
-          size={0.5}
-          sizeAttenuation
+          size={
+            CONFIG.CAMERA.TYPE === "ORTHOGRAPHIC"
+              ? CONFIG.EFFECTS.CAPTURE_SPARK_SIZE.ORTHOGRAPHIC
+              : CONFIG.EFFECTS.CAPTURE_SPARK_SIZE.PERSPECTIVE
+          }
+          sizeAttenuation={CONFIG.CAMERA.TYPE === "PERSPECTIVE"}
           transparent
           depthWrite={false}
           blending={THREE.AdditiveBlending}

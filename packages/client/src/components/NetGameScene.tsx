@@ -262,6 +262,13 @@ function NetLoop({
     camera.position.x += (fx + ox - camera.position.x) * k;
     camera.position.y += (fy + oy * z - camera.position.y) * k;
     camera.position.z += (oz * z - camera.position.z) * k;
+    if (camera instanceof THREE.OrthographicCamera) {
+      const nextZoom = 1 / z;
+      if (Math.abs(camera.zoom - nextZoom) > 0.0001) {
+        camera.zoom = nextZoom;
+        camera.updateProjectionMatrix();
+      }
+    }
 
     statAcc.current += dt;
     if (statAcc.current >= 0.2) {
@@ -292,12 +299,14 @@ export default function NetGameScene({
   serverUrl,
   gameTicket,
   onExit,
+  showMenu = true,
 }: {
   playerName?: string;
   appearance?: PlayerAppearance;
   serverUrl?: string;
   gameTicket?: string;
   onExit?: () => void;
+  showMenu?: boolean;
 }) {
   const client = useMemo(() => new NetClient(), []);
   // View-state dựng theo WELCOME (số ghế/bot của server). Tạo khi nhận WELCOME.
@@ -342,6 +351,7 @@ export default function NetGameScene({
   const [playerId, setPlayerId] = useState<number>(-1);
   const [ping, setPing] = useState(0);
   const [spectating, setSpectating] = useState(false);
+  const [reviveNotice, setReviveNotice] = useState("");
   // Phòng chờ: đã vào trận chưa + số người thật hiện có / cần để bắt đầu.
   const [started, setStarted] = useState(false);
   const [lobby, setLobby] = useState<{
@@ -429,6 +439,7 @@ export default function NetGameScene({
       setStats({
         pct: (localScore / g.playable.size) * 100,
         king: kid === localId,
+        kingId: kid,
         deaths: deathCountRef.current,
         phase: inPrep ? "prep" : alive ? "playing" : "dead",
         prep: prepMs / 1000,
@@ -476,6 +487,7 @@ export default function NetGameScene({
         localIdRef.current = w.playerId;
         setPlayerId(w.playerId);
         if (w.resumed) return;
+        setReviveNotice("");
         // Dựng view khớp số ghế/bot của server.
         const g = makeBlankView(w.maxPlayers, w.botCount);
         gameRef.current = g;
@@ -525,6 +537,19 @@ export default function NetGameScene({
       },
       onMinimapTerritory: (cells) => setMinimapTerritory(cells),
       onTotems: (_revision, items) => setTotems(items),
+      onReviveResult: (result) => {
+        if (result.ok) {
+          setReviveNotice("");
+          return;
+        }
+        setReviveNotice(
+          result.reason === "no_spawn"
+            ? "🧱 Không đủ ô đất trống hợp lệ để hồi sinh. Hãy chờ bản đồ có chỗ rồi thử lại."
+            : result.reason === "king_locked"
+              ? "🔒 Phòng đang có King nên tạm thời không thể hồi sinh."
+              : "Không thể hồi sinh ở trạng thái hiện tại."
+        );
+      },
       onLobby: (l) => {
         // Chuyển CHỜ→VÀO TRẬN (ván mới) → dọn sạch trạng thái chết/thắng của ván trước.
         if (l.started && !startedRef.current) {
@@ -547,6 +572,7 @@ export default function NetGameScene({
       onEvent: (ev) => {
         if (ev.kind === "death") {
           if (ev.id === localIdRef.current) {
+            setReviveNotice("");
             notifyTelegramHaptic("error");
             deathInfoRef.current = {
               ...deathInfoRef.current,
@@ -586,7 +612,10 @@ export default function NetGameScene({
     };
   }, []);
 
-  const onRevive = useCallback(() => client.sendRevive(), [client]);
+  const onRevive = useCallback(() => {
+    setReviveNotice("");
+    client.sendRevive();
+  }, [client]);
   const onSpectate = useCallback(() => {
     spectatingRef.current = true;
     const target = gameRef.current?.leaderId() ?? -1;
@@ -618,11 +647,13 @@ export default function NetGameScene({
   }, [appearance, client, url, playerName, gameTicket]);
   const onReturnToLobby = useCallback(() => {
     client.disconnect();
-    onExit?.();
+    if (onExit) onExit();
+    else window.location.assign("/");
   }, [client, onExit]);
   const onCancelLobby = useCallback(() => {
     client.cancelLobby();
-    onExit?.();
+    if (onExit) onExit();
+    else window.location.assign("/");
   }, [client, onExit]);
 
   const connected = status === "open" && playerId >= 0;
@@ -633,14 +664,14 @@ export default function NetGameScene({
       style={{
         position: "fixed",
         inset: 0,
-        background: "#0a0e16",
+        background: CONFIG.MAP_COLORS.BACKGROUND,
         cursor: "crosshair",
         touchAction: "none",
       }}
     >
       <Canvas dpr={[1, 1.5]}>
         <GameCamera />
-        <color attach="background" args={["#0a0e16"]} />
+        <color attach="background" args={[CONFIG.MAP_COLORS.BACKGROUND]} />
         <ambientLight intensity={0.8} />
         <directionalLight position={[4, 6, 12]} intensity={1.15} />
 
@@ -666,7 +697,12 @@ export default function NetGameScene({
             <BorderRim game={game} />
             <TrailLine game={game} />
             <TotemInstances items={totems} />
-            <PlayerCube game={game} visibleEntityIds={visibleEntityIdsRef} />
+            <PlayerCube
+              game={game}
+              visibleEntityIds={visibleEntityIdsRef}
+              localId={playerId}
+              kingId={stats.kingId}
+            />
             {CONFIG.DISPLAY.PARTICLES && (
               <Effects
                 game={game}
@@ -705,6 +741,7 @@ export default function NetGameScene({
               playerName={playerName}
               endMode="online"
               onReturnToLobby={onReturnToLobby}
+              reviveNotice={reviveNotice}
             />
           )}
           {CONFIG.DISPLAY.MINIMAP && (
@@ -740,7 +777,7 @@ export default function NetGameScene({
         }
       />
 
-      {onExit && <MenuButton onExit={onExit} />}
+      {showMenu && onExit && <MenuButton onExit={onExit} />}
 
       {/* Phòng chờ: đã kết nối, đã có ghế, nhưng chưa đủ người để bắt đầu. */}
       {connected && game && !started && (
