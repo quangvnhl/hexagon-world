@@ -28,6 +28,8 @@ phải đọc và tuân thủ các tài liệu này trước khi code.**
 | [21-backend-release-gate.md](21-backend-release-gate.md) | Gate offline kiểm tra cấu hình staging/production trước deploy | Backend + DevOps |
 | [22-trail-vector-designs.md](22-trail-vector-designs.md) | Hướng dẫn thay thế và bổ sung thiết kế vệt đuôi bằng SVG 2D | Frontend + Design |
 | [23-phase-4-readiness-report.md](23-phase-4-readiness-report.md) | Trạng thái sẵn sàng đóng Pha 4 và các gate hạ tầng còn lại | PM + Backend + DevOps |
+| [24-render-perf-research.md](24-render-perf-research.md) | Tổng hợp nghiên cứu hiệu năng render: đổi material hex, UI HTML/CSS, đuôi 2D, flood fill, overdraw, sơ đồ kiến trúc lai | Frontend + Gameplay + Design |
+| [25-game-modes-plan.md](25-game-modes-plan.md) | Quy hoạch Luyện tập/Tournament/Cấp độ + hệ năng lượng + admin level editor; nút thắt `CONFIG`→`MatchConfig` | Gameplay + Backend + Frontend + Product |
 
 ## Nguyên tắc làm việc cho agents
 
