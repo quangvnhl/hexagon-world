@@ -19,7 +19,7 @@ function go(g: GameState, q: number, r: number) {
 
 describe("GameState: đi vòng khép kín → chiếm đất", () => {
   it("khép vòng quanh (1,0) → owned = 7, không chết, đuôi đã dọn", () => {
-    const g = new GameState({ q: 0, r: 0 }, 0);
+    const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 } } });
     g.owned = new Set([key(0, 0)]);
     for (const [q, r] of [
       [1, -1],
@@ -41,7 +41,7 @@ describe("GameState: đi vòng khép kín → chiếm đất", () => {
 
 describe("GameState: tự cắt đuôi → chết, rồi hồi sinh", () => {
   it("đâm vào đuôi của mình → chết, mất hết đất", () => {
-    const g = new GameState({ q: 0, r: 0 }, 0);
+    const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 } } });
     g.owned = new Set([key(0, 0)]);
     const before = g.deaths;
     for (const [q, r] of [
@@ -60,7 +60,7 @@ describe("GameState: tự cắt đuôi → chết, rồi hồi sinh", () => {
   });
 
   it("revive() → cụm 7 ô, vào lại pha chuẩn bị", () => {
-    const g = new GameState({ q: 0, r: 0 }, 0);
+    const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 } } });
     g.owned = new Set([key(0, 0)]);
     for (const [q, r] of [
       [1, 0],
@@ -80,7 +80,7 @@ describe("GameState: tự cắt đuôi → chết, rồi hồi sinh", () => {
 
 describe("GameState: chạm biên LỤC GIÁC → trượt mượt, không lọt/đứng", () => {
   it("tới sát biên khi còn sống rồi trượt dọc biên, không lọt ra ngoài", () => {
-    const g = new GameState({ q: 0, r: 0 }, 0);
+    const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 } } });
     g.setHeadingTarget(0.3); // chếch lên phải → ép vào 1 cạnh rồi trượt dọc cạnh
     skipPrep(g);
 
@@ -106,7 +106,7 @@ describe("GameState: chạm biên LỤC GIÁC → trượt mượt, không lọt
   });
 
   it("trượt dọc biên giữ TỐC ĐỘ đầy đủ (không bị chậm/kẹt khi men theo tường)", () => {
-    const g = new GameState({ q: 0, r: 0 }, 0);
+    const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 } } });
     g.setHeadingTarget(0.35); // đâm chếch vào cạnh rồi trượt dọc
     skipPrep(g);
     // Chạy tới khi áp sát biên.
@@ -130,7 +130,7 @@ describe("GameState: chạm biên LỤC GIÁC → trượt mượt, không lọt
 
 describe("GameState: pha chuẩn bị đứng yên nhưng xoay được", () => {
   it("prep = đứng yên, chỉ xoay hướng; hết giờ → playing", () => {
-    const g = new GameState({ q: 0, r: 0 }, 0);
+    const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 } } });
     const p0 = { x: g.pos.x, y: g.pos.y };
     g.setHeadingTarget(1.2);
     for (let i = 0; i < 30; i++) g.update(1 / 60); // 0.5s trong pha prep
@@ -146,7 +146,7 @@ describe("GameState: pha chuẩn bị đứng yên nhưng xoay được", () => 
 
 describe("GameState: bots khởi tạo & hoạt động (đa thực thể)", () => {
   it("3 bot → tổng 4 thực thể, mỗi thực thể 7 ô lúc đầu", () => {
-    const g = new GameState(undefined, 3);
+    const g = new GameState({ config: { bots: { count: 3 } } });
     expect(g.players.length).toBe(4);
     expect(g.players[0].isBot).toBe(false);
     expect(g.players.slice(1).every((e) => e.isBot)).toBe(true);
@@ -155,7 +155,7 @@ describe("GameState: bots khởi tạo & hoạt động (đa thực thể)", () 
   });
 
   it("qua ~600 frame → bot có hoạt động và mọi thực thể vẫn trong sân", () => {
-    const g = new GameState(undefined, 3);
+    const g = new GameState({ config: { bots: { count: 3 } } });
     const before = g.players.map((e) => ({ x: e.pos.x, y: e.pos.y }));
     for (let i = 0; i < 600; i++) g.update(1 / 60); // ~10s: qua prep + chơi
 
@@ -177,7 +177,7 @@ describe("GameState: bots khởi tạo & hoạt động (đa thực thể)", () 
 
 describe("GameState: neutral head collisions", () => {
   it("kills players in the same neutral hex even when farther apart than KILL_RADIUS", () => {
-    const g = new GameState(undefined, 0, 2);
+    const g = new GameState({ humanCount: 2, config: { bots: { count: 0 } } });
     g.applyTerritory([
       { q: -10, r: 0, owner: 0, kind: 0 },
       { q: 10, r: 0, owner: 1, kind: 0 },
@@ -202,7 +202,7 @@ describe("GameState: neutral head collisions", () => {
   });
 
   it("does not use physical distance for heads in different neutral hexes", () => {
-    const g = new GameState(undefined, 0, 2);
+    const g = new GameState({ humanCount: 2, config: { bots: { count: 0 } } });
     g.applyTerritory([
       { q: -10, r: 0, owner: 0, kind: 0 },
       { q: 10, r: 0, owner: 1, kind: 0 },
@@ -226,7 +226,7 @@ describe("GameState: neutral head collisions", () => {
   });
 
   it("kills both players before either one can be treated as a trail cutter", () => {
-    const g = new GameState(undefined, 0, 2);
+    const g = new GameState({ humanCount: 2, config: { bots: { count: 0 } } });
     const neutral = { q: 0, r: 0 };
     const neutralPoint = axialToPixel(neutral, CONFIG.HEX_SIZE);
     const approach = { q: 1, r: 0 };
@@ -260,7 +260,7 @@ describe("GameState: neutral head collisions", () => {
   });
 
   it("kills every player in a three-player neutral collision group", () => {
-    const g = new GameState(undefined, 0, 3);
+    const g = new GameState({ humanCount: 3, config: { bots: { count: 0 } } });
     const neutralPoint = axialToPixel({ q: 0, r: 0 }, CONFIG.HEX_SIZE);
     g.applyTerritory([
       { q: -10, r: 0, owner: 0, kind: 0 },

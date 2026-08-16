@@ -1,5 +1,6 @@
 import { PlayerColor, PlayerAppearance, PlayerShape, TrailPattern } from "./config";
 import { Axial, HexKey } from "./hex";
+import { type MatchConfig, type MatchConfigInput } from "./match-config";
 import type { EntitySnap, TerritoryCell } from "./protocol";
 import { type EntityGameplayModifiers, type TotemState } from "./totems";
 export interface Vec2 {
@@ -60,6 +61,16 @@ export declare class Entity {
     constructor(id: number, isBot: boolean, color: PlayerColor);
     get alive(): boolean;
 }
+/** Tuỳ chọn tạo GameState — GỘP các tham số rời cũ (botCount/humanCount/matchSeed) vào
+ *  MỘT object cùng `config` (MatchConfig overrides). Không truyền gì ⇒ hành vi mặc định. */
+export interface GameStateOptions {
+    /** Số ghế NGƯỜI (players[0..humanCount-1]); mặc định 1 (single-player). */
+    humanCount?: number;
+    /** Ô spawn cố định cho người chơi (test/deterministic). */
+    spawnAt?: Axial;
+    /** Override cấu hình ván (map/bots/rules/win/seed). Số bot: `config.bots.count`. */
+    config?: MatchConfigInput;
+}
 /**
  * Trạng thái game thuần TypeScript, deterministic — không phụ thuộc render.
  *
@@ -78,8 +89,15 @@ export declare class GameState {
     /** Chủ sở hữu / chủ đuôi của từng ô (id thực thể) — cho render nhanh & va chạm. */
     private cellOwner;
     private cellTrail;
-    /** Broad-phase va chạm đầu (spatial hash theo toạ độ liên tục). */
+    /** Broad-phase va chạm đầu (spatial hash theo toạ độ liên tục). Cellsize theo killRadius
+     *  của ván → gán trong constructor sau khi config resolve. */
     private headHash;
+    /** Cấu hình VÁN NÀY (map/bots/rules/win) — thay cho việc đọc thẳng CONFIG (doc 25 §1.1). */
+    readonly config: MatchConfig;
+    /** Hình học sân PER-INSTANCE (bán kính/biên riêng cho ván) — thay hằng module arena.ts. */
+    private readonly arena;
+    /** Kích thước hex của ván (tiện đọc; = config.map.hexSize). */
+    private readonly hexSize;
     private fixedSpawn?;
     private rng;
     /** Tăng khi thực thể đổi (vị trí/đuôi) — cho renderer cube/line. */
@@ -95,7 +113,7 @@ export declare class GameState {
     private readonly speedTotemsByOwner;
     private readonly radarOwners;
     private readonly playableOwnedByOwner;
-    /** Thời gian (giây) còn lại phải giữ ngôi King liên tục để thắng. */
+    /** Thời gian (giây) còn lại phải giữ ngôi King liên tục để thắng (gán từ config). */
     kingHoldRemaining: number;
     /** Đã kết thúc chưa (có người thắng) → đóng băng game. */
     won: boolean;
@@ -105,7 +123,7 @@ export declare class GameState {
     private kingHolderId;
     /** Người chơi đã chọn XEM (khán giả): không hồi sinh nữa tới khi hết ván. */
     spectating: boolean;
-    constructor(spawnAt?: Axial, botCount?: number, humanCount?: number, matchSeed?: number);
+    constructor(options?: GameStateOptions);
     get human(): Entity;
     get owned(): Set<HexKey>;
     set owned(v: Set<HexKey>);
@@ -235,8 +253,14 @@ export declare class GameState {
     private pickSpawnHex;
     /** Gọi mỗi frame với dt (giây). */
     update(dt: number): void;
-    /** Điều kiện thắng: (a) đấu loại — có KING và chỉ còn 1 thực thể sống; hoặc (b) một
-     *  KING giữ ngôi liên tục đủ WIN_HOLD_TIME giây. */
+    /**
+     * Điều kiện thắng — theo `config.win.kind` (doc 25 §1.2). P0 hiện thực:
+     *  - `none`      : Luyện tập, không bao giờ thắng/thua (endless).
+     *  - `king_hold` : (mặc định) (a) đấu loại — có KING & chỉ còn 1 thực thể sống → thắng
+     *                  ngay; hoặc (b) một KING giữ ngôi liên tục đủ winHoldTime giây.
+     *  Các loại territory_pct/survive/capture_totems khai báo sẵn ở WinCondition, sẽ cắm
+     *  evaluator ở P1 (khi làm Campaign) — hiện dùng nhánh king_hold làm mặc định an toàn.
+     */
     private checkWin;
     private updateEntity;
     /** API cho test: di chuyển người chơi tới (x,y) nếu ô đích hợp lệ. */

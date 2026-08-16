@@ -12,6 +12,7 @@ const game_module_1 = require("./game/game.module");
 const control_module_1 = require("./control/control.module");
 const database_module_1 = require("./database/database.module");
 const health_controller_1 = require("./health.controller");
+const metrics_controller_1 = require("./metrics.controller");
 const role = process.env.SERVER_ROLE ?? "all";
 let AppModule = class AppModule {
 };
@@ -19,7 +20,7 @@ exports.AppModule = AppModule;
 exports.AppModule = AppModule = __decorate([
     (0, common_1.Module)({
         imports: [database_module_1.DatabaseModule, ...(role === "game" ? [] : [control_module_1.ControlModule]), ...(role === "control" ? [] : [game_module_1.GameModule])],
-        controllers: [health_controller_1.HealthController],
+        controllers: [health_controller_1.HealthController, metrics_controller_1.MetricsController],
     })
 ], AppModule);
 //# sourceMappingURL=app.module.js.map

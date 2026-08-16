@@ -56,10 +56,12 @@ Xem báo cáo đóng pha: [17-phase-3-completion-report.md](17-phase-3-completio
 - [x] **Gate:** Áp migration + seed trên Supabase staging/production (xác minh 2026-08-16)
 - [x] **Gate:** Google OAuth, Telegram auth/Stars webhook và match-result E2E trên HTTPS production (xác minh 2026-08-16)
 
-## Pha 5 — Vận hành — CHƯA BẮT ĐẦU (đủ điều kiện khởi động)
-- [ ] Chống gian lận (server authoritative + sanity check)
-- [ ] Horizontal scale GameRoom (nhiều instance + Redis pub/sub)
-- [ ] Telemetry, metrics, load test (k6/artillery cho ws)
+## Pha 5 — Vận hành — ĐANG THỰC HIỆN (wave 1: B1+B3 code xong · wave 2: doc 25 P0 code xong — chờ review)
+- [x] **doc 25 P0 — nền `MatchConfig`** (refactor thuần, không đổi trải nghiệm): `MatchConfig`/`WinCondition`/`ArenaGeometry` per-instance; `GameState` nhận 1 object config. *typecheck+build xanh, 171/171 test. Chi tiết: "Trạng thái Pha 5 — wave 2" dưới. CHƯA commit.*
+- [x] **B1 Chống gian lận** (code + test): rate-limit ws input (token-bucket 48/s), text (5/5s, strike→close 4009), trần kết nối/IP (20, close 4008), chuẩn hóa `heading`→`[-π,π]`. Ngưỡng env-driven. *Server build xanh, 49 test (12 mới).*
+- [x] **B3 Telemetry** (code + harness): đo `stepRoom` p50/p95, event-loop lag, tick behind, rooms active, counters B1 → endpoint `GET /metrics` (Prometheus). Harness load/soak Node+ws (`packages/server/test/load/`) ánh xạ SLO §2. *Đã kiểm chứng offline khớp `/metrics`.*
+- [ ] **B3 chạy load-test thật → chốt lại SLO** (cần server chạy với secrets; chưa thực thi).
+- [ ] **B2** Horizontal scale GameRoom (nhiều instance + Redis pub/sub) — CHỈ khi load-test cho thấy 1 node chạm trần SLO §2.2 (~64 người/8 room).
 
 > **Kế hoạch chi tiết + SLO đề xuất + thứ tự: [26-phase-5-plan.md](26-phase-5-plan.md).**
 >
@@ -95,3 +97,30 @@ Chi tiết mới nhất: [23-phase-4-readiness-report.md](23-phase-4-readiness-r
 - **Kết luận:** đủ điều kiện chuyển sang **Pha 5**. Các điểm cần thống nhất trước khi khởi động: xem ghi chú dưới mục "Pha 5 — Vận hành" ở trên.
 
 `GAME_RESULT_SPOOL_DIR` mặc định `./data/match-results` (resolve theo cwd game node); mỗi kết quả chờ gửi là file `<eventId>.json`, tự xóa khi gửi thành công.
+
+### Trạng thái Pha 5 — wave 1 (2026-08-16)
+
+Thực thi theo kế hoạch [26-phase-5-plan.md](26-phase-5-plan.md) §6.3, chia 3 nhánh song song (chưa commit; chờ review + hợp nhất):
+
+- **B1 + B3 (backend `packages/server`):**
+  - Mới: `src/net/rate-limit.ts` (TokenBucket, SlidingWindowCounter), `src/net/telemetry.ts` (reservoir p50/p95 + counters), `src/net/prometheus.ts`, `src/metrics.controller.ts` (`GET /metrics`).
+  - Sửa: `config.ts` (6 ngưỡng env B1), `game/game-room.ts` (`applyInput` chuẩn hóa heading), `net/net-server.ts` (rate-limit input/text + trần IP + đo tick/lag/behind/rooms), `app.module.ts`.
+  - Kết quả: `pnpm build` xanh; `pnpm test` **49/49** (12 test mới). `/health/network` giữ nguyên.
+  - Ngưỡng: `WS_INPUT_RATE_PER_SEC=48`, `WS_INPUT_BURST=48`, `WS_TEXT_RATE_MAX=5`, `WS_TEXT_RATE_WINDOW_MS=5000`, `WS_TEXT_FLOOD_STRIKES=3`, `WS_MAX_CONN_PER_IP=20`. Vi phạm: input=drop im lặng; text=strike→close 4009; IP=close 4008.
+- **Harness load/soak** (`packages/server/test/load/`): Node+`ws` (k6 không có sẵn). `protocol.mjs`/`virtual-client.mjs`/`metrics.mjs`/`orchestrator.mjs`+`README.md`. Ánh xạ đầy đủ SLO §2; kiểm chứng offline khớp `/metrics` của B1+B3. **Chạy tải thật cần server chạy (secrets) → chưa thực thi.**
+- **Doc 24 render** (`packages/client`): `HexGridView.tsx` đổi `meshStandardMaterial`→`meshLambertMaterial` (giảm nóng máy mobile #1, giữ khối 3D/instanceColor). `next build` xanh; vitest 58/58; xác minh thị giác dev server.
+
+**GIỮ LẠI theo đúng thứ tự:** **B2 (Redis)** chỉ khi SLO §2.2 chạm trần. (MatchConfig P0 đã tách khỏi bước đo tải — xem wave 2 dưới.)
+
+**Việc kế tiếp:** (1) review + commit các nhánh; (2) chạy server + harness để **đo và chốt lại SLO thật**.
+
+### Trạng thái Pha 5 — wave 2: doc 25 P0 nền `MatchConfig` (2026-08-16)
+
+Quyết định: P0 là **refactor thuần, KHÔNG đổi trải nghiệm** → không bị đo-tải chặn (chỉ B2 chờ số đo), nên khởi động ngay. Phạm vi đợt này = **CHỈ P0**, xong **dừng để review** (chạm code nóng mỗi-tick). Chưa commit.
+
+- **Mới `packages/shared/src/match-config.ts`:** `MatchConfig` (map/bots/rules/win/seed) + `WinCondition` (kind: `king_hold`/`territory_pct`/`survive`/`capture_totems`/`none`) + `resolveMatchConfig()` — mọi default = giá trị `CONFIG` hiện tại ⇒ không truyền gì = hành vi cũ y hệt.
+- **`arena.ts` → `ArenaGeometry` per-instance:** hình học + va chạm (`insideArena`/`clampInside`/`slideMove`/`mapArena`) theo bán kính/biên của từng ván. Export module-level cũ (`ARENA_R`, `WALL_LIMIT`, …) giữ nguyên làm **shim trỏ `DEFAULT_ARENA`** ⇒ 7 component render/debug + net-server không đổi.
+- **`state.ts` `GameState`:** constructor gộp params rời → **1 object `GameStateOptions`** (`{humanCount, spawnAt, config}`); đọc luật từ `this.config` + hình học từ `this.arena` (bỏ đọc thẳng `CONFIG`/hằng arena cho phần per-match). `checkWin` rẽ theo `config.win.kind` (`none`=Luyện tập endless; `king_hold`=mặc định như cũ).
+- **Chủ ý HOÃN sang P1:** cấu hình TOTEM + profile TỐC ĐỘ/AI bot vẫn đọc `CONFIG` (còn chia sẻ với `totems.ts`); evaluator `territory_pct`/`survive`/`capture_totems`; hợp nhất luật thắng trùng lặp giữa `GameState.checkWin` và `GameRoom.stepTick` (server vẫn tự chạy king-countdown riêng — chưa đụng).
+- **Kết quả:** typecheck xanh (shared/server/client); test **shared 64 · server 49 · client 58 = 171/171**; `nest build` xanh; `next build` xanh. Hành vi không đổi (mọi default = CONFIG).
+- **Call-site đã đổi:** `game-room.ts`, `NetGameScene.tsx` (dùng object mới); `GameScene.tsx` `new GameState()` giữ nguyên; ~16 call-site test viết lại.

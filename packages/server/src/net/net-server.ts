@@ -1,6 +1,7 @@
 import { WebSocketServer, WebSocket } from "ws";
 import type { AddressInfo } from "node:net";
-import type { Server as HttpServer } from "node:http";
+import type { Server as HttpServer, IncomingMessage } from "node:http";
+import { performance } from "node:perf_hooks";
 import { randomUUID } from "node:crypto";
 import {
   CONFIG,
@@ -19,8 +20,10 @@ import {
 } from "@hexagon/shared";
 import { GameRoom } from "../game/game-room";
 import { filterTerritoryAoi } from "./territory-aoi";
-import { DT, TICK_RATE, MAX_HUMAN_PLAYERS, ONLINE_BOT_JOIN_INTERVAL_MS, KING_ROOM_DURATION_SECONDS, MIN_PLAYERS, ENTITY_AOI_RADIUS, TERRITORY_AOI_RADIUS, TERRITORY_AOI_HYSTERESIS, WS_BACKPRESSURE_BYTES, onlineBotCapacityForRoom, LOBBY_RECONNECT_GRACE_MS, WS_HEARTBEAT_INTERVAL_MS } from "../config";
+import { DT, TICK_RATE, MAX_HUMAN_PLAYERS, ONLINE_BOT_JOIN_INTERVAL_MS, KING_ROOM_DURATION_SECONDS, MIN_PLAYERS, ENTITY_AOI_RADIUS, TERRITORY_AOI_RADIUS, TERRITORY_AOI_HYSTERESIS, WS_BACKPRESSURE_BYTES, onlineBotCapacityForRoom, LOBBY_RECONNECT_GRACE_MS, WS_HEARTBEAT_INTERVAL_MS, WS_INPUT_RATE_PER_SEC, WS_INPUT_BURST, WS_TEXT_RATE_MAX, WS_TEXT_RATE_WINDOW_MS, WS_TEXT_FLOOD_STRIKES, WS_MAX_CONN_PER_IP } from "../config";
 import { NetworkTransport, gameNetworkMetrics, type NetworkMetricsSnapshot } from "./network-transport";
+import { TokenBucket, SlidingWindowCounter } from "./rate-limit";
+import { serverTelemetry } from "./telemetry";
 
 /** Gửi keyframe TERRITORY mỗi bao nhiêu tick (throttle). 6 tick @24Hz ≈ 4 Hz. */
 const TERRITORY_EVERY = 6;
@@ -45,6 +48,8 @@ interface Room {
   lastTime: number;
   accumulator: number;
   running: boolean;
+  /** performance.now() lúc lịch tick kế (đo event-loop lag ở đầu loop). */
+  scheduledAt: number;
   /** territoryRevision lần cuối đã broadcast keyframe TERRITORY. Dùng để FLUSH NGAY khi chủ
    *  ô đổi (capture/chết) thay vì chờ nhịp định kỳ → flood fill hiện gần như tức thì. */
   lastTerrRev: number;
@@ -95,6 +100,11 @@ interface ConnState {
   interestTargetId: number | null;
   reconnectToken: string | null;
   intentionalClose: boolean;
+  /** Pha 5 · B1 — trạng thái rate-limit theo kết nối. */
+  ip: string | null;
+  inputBucket: TokenBucket;
+  textWindow: SlidingWindowCounter;
+  textStrikes: number;
 }
 
 interface ResumeSession {
@@ -166,6 +176,16 @@ export class NetServer {
   private autoLoop = false;
   private nextRoomId = 1;
 
+  // Pha 5 · B1 — ngưỡng rate-limit (từ config.ts / env).
+  private readonly inputRatePerSec = WS_INPUT_RATE_PER_SEC;
+  private readonly inputBurst = WS_INPUT_BURST;
+  private readonly textRateMax = WS_TEXT_RATE_MAX;
+  private readonly textRateWindowMs = WS_TEXT_RATE_WINDOW_MS;
+  private readonly textFloodStrikes = WS_TEXT_FLOOD_STRIKES;
+  private readonly maxConnPerIp = WS_MAX_CONN_PER_IP;
+  /** Số socket đang mở theo IP (trần đồng thời / IP). */
+  private readonly connsByIp = new Map<string, number>();
+
   private readonly conns = new Map<WebSocket, ConnState>();
   private readonly rooms = new Set<Room>();
   private readonly resumeSessions = new Map<string, ResumeSession>();
@@ -197,7 +217,7 @@ export class NetServer {
     this.wss = opts.httpServer
       ? new WebSocketServer({ server: opts.httpServer, ...(opts.path ? { path: opts.path } : {}) })
       : new WebSocketServer({ port: opts.port ?? 0 });
-    this.wss.on("connection", (ws) => this.onConnection(ws));
+    this.wss.on("connection", (ws, req: IncomingMessage) => this.onConnection(ws, req));
     this.heartbeatTimer = setInterval(() => this.heartbeatSockets(), WS_HEARTBEAT_INTERVAL_MS);
     this.heartbeatTimer.unref();
   }
@@ -287,6 +307,7 @@ export class NetServer {
         lastTime: 0,
         accumulator: 0,
         running: false,
+        scheduledAt: 0,
         lastTerrRev: -1,
         lastTotemRev: -1,
         prevAlive: [],
@@ -303,6 +324,7 @@ export class NetServer {
       r.prevAlive = r.room.gameState.snapshotEntities().map((e) => e.alive);
       this.rooms.add(r);
       this.active = r;
+      serverTelemetry.setRoomsActive(this.rooms.size);
       // KHÔNG chạy vòng lặp khi mới tạo — chờ đủ người mới bắt đầu (startGame).
     }
     return this.active!;
@@ -456,6 +478,7 @@ export class NetServer {
       r.timer = null;
     }
     this.rooms.delete(r);
+    serverTelemetry.setRoomsActive(this.rooms.size);
     if (this.active === r) this.active = null;
     for (const [token, session] of this.resumeSessions) {
       if (session.room !== r) continue;
@@ -480,11 +503,15 @@ export class NetServer {
 
   private scheduleNext(r: Room): void {
     if (!r.running) return;
+    r.scheduledAt = performance.now();
     r.timer = setTimeout(() => this.loop(r), this.tickMs);
   }
 
   private loop(r: Room): void {
     if (!r.running) return;
+    // Pha 5 · B3 — event-loop lag: lệch giữa lúc timer ĐÁNG LẼ chạy và lúc chạy thật.
+    const lag = performance.now() - (r.scheduledAt + this.tickMs);
+    if (lag > 0) serverTelemetry.recordEventLoopLag(lag);
     if (r.ended) {
       if (Date.now() - r.endedAt > ENDED_GRACE_MS) this.closeRoom(r);
       else this.scheduleNext(r);
@@ -493,16 +520,18 @@ export class NetServer {
     const now = Date.now();
     let elapsed = (now - r.lastTime) / 1000;
     r.lastTime = now;
-    if (elapsed > this.dt * 5) elapsed = this.dt * 5;
+    let clamped = false;
+    if (elapsed > this.dt * 5) { elapsed = this.dt * 5; clamped = true; }
     r.accumulator += elapsed;
 
-    let stepped = false;
+    let steps = 0;
     while (r.accumulator >= this.dt) {
       this.stepRoom(r);
       r.accumulator -= this.dt;
-      stepped = true;
+      steps++;
     }
-    if (stepped) {
+    if (steps > 0) {
+      serverTelemetry.recordTick(steps, clamped);
       this.broadcast(r);
       this.broadcastWorldUiIfDue(r);
       this.flushTerritoryIfDue(r);
@@ -517,9 +546,11 @@ export class NetServer {
 
   /** Một bước mô phỏng + phát event (broadcast do loop/tickOnce lo). */
   private stepRoom(r: Room): void {
+    const start = performance.now();
     r.room.stepTick(this.dt);
     this.reconcileBots(r, this.dt * 1000);
     this.emitEvents(r);
+    serverTelemetry.recordTickStep(performance.now() - start);
   }
 
   private reconcileBots(r: Room, elapsedMs: number): void {
@@ -533,7 +564,33 @@ export class NetServer {
   }
 
   // ---- Kết nối ----
-  private onConnection(ws: WebSocket): void {
+  /** IP client: ưu tiên x-forwarded-for (sau proxy), fallback socket remoteAddress. */
+  private clientIp(req?: IncomingMessage): string {
+    const xff = req?.headers["x-forwarded-for"];
+    if (typeof xff === "string" && xff.length > 0) return xff.split(",")[0].trim();
+    if (Array.isArray(xff) && xff.length > 0) return String(xff[0]).split(",")[0].trim();
+    return req?.socket?.remoteAddress ?? "unknown";
+  }
+
+  /** Trả 1 slot IP khi socket rời this.conns (đóng hoặc bị thay bởi resume). */
+  private releaseIp(ip: string | null): void {
+    if (!ip) return;
+    const n = this.connsByIp.get(ip);
+    if (n === undefined) return;
+    if (n <= 1) this.connsByIp.delete(ip);
+    else this.connsByIp.set(ip, n - 1);
+  }
+
+  private onConnection(ws: WebSocket, req?: IncomingMessage): void {
+    // Pha 5 · B1 — trần kết nối đồng thời / IP. Vượt → từ chối kết nối mới (không đăng ký).
+    const ip = this.clientIp(req);
+    const current = this.connsByIp.get(ip) ?? 0;
+    if (current >= this.maxConnPerIp) {
+      serverTelemetry.incIpRejected();
+      try { ws.close(4008, "too many connections"); } catch { /* đã đóng */ }
+      return;
+    }
+    this.connsByIp.set(ip, current + 1);
     this.socketAlive.set(ws, true);
     this.conns.set(ws, {
       entityId: null,
@@ -545,6 +602,10 @@ export class NetServer {
       interestTargetId: null,
       reconnectToken: null,
       intentionalClose: false,
+      ip,
+      inputBucket: new TokenBucket(this.inputBurst, this.inputRatePerSec),
+      textWindow: new SlidingWindowCounter(this.textRateMax, this.textRateWindowMs),
+      textStrikes: 0,
     });
     ws.on("message", (data: Buffer, isBinary: boolean) => {
       if (isBinary) this.onBinary(ws, data);
@@ -568,7 +629,14 @@ export class NetServer {
 
   private onBinary(ws: WebSocket, data: Buffer): void {
     const conn = this.conns.get(ws);
-    if (!conn || conn.entityId === null || !conn.room || conn.room.ended) return;
+    if (!conn) return;
+    // Pha 5 · B1 — token-bucket theo kết nối. Vượt trần → DROP im lặng khung thừa
+    // (input idempotent, chỉ giữ heading mới nhất; KHÔNG ngắt kết nối).
+    if (!conn.inputBucket.tryConsume()) {
+      serverTelemetry.incInputDropped();
+      return;
+    }
+    if (conn.entityId === null || !conn.room || conn.room.ended) return;
     const input = decodeInput(data);
     if (!input) return;
     conn.room.room.applyInput(conn.entityId, input.seq, input.heading);
@@ -629,6 +697,7 @@ export class NetServer {
         staleConn.intentionalClose = true;
       }
       this.conns.delete(staleSocket);
+      this.releaseIp(staleConn?.ip ?? null);
       this.transport.remove(staleSocket);
       try { staleSocket.terminate(); } catch { /* đã đóng */ }
     }
@@ -684,10 +753,21 @@ export class NetServer {
   }
 
   private onText(ws: WebSocket, text: string): void {
-    const msg = decodeControl<C2SControl>(text);
-    if (!msg) return;
     const conn = this.conns.get(ws);
     if (!conn) return;
+    // Pha 5 · B1 — rate-limit khung text theo kết nối (cửa sổ trượt). Mọi khung đều đếm
+    // (kể cả rác) để chặn flood mở phiên. Vượt lặp lại đủ số strike → ĐÓNG socket.
+    if (!conn.textWindow.record()) {
+      conn.textStrikes++;
+      serverTelemetry.incTextFlood();
+      if (conn.textStrikes >= this.textFloodStrikes) {
+        serverTelemetry.incTextDisconnect();
+        try { ws.close(4009, "text rate limit"); } catch { /* đã đóng */ }
+      }
+      return;
+    }
+    const msg = decodeControl<C2SControl>(text);
+    if (!msg) return;
 
     if (msg.t === "join") {
       if (conn.entityId !== null) return; // đã có ghế.
@@ -777,6 +857,7 @@ export class NetServer {
     const conn = this.conns.get(ws);
     if (!conn) return;
     this.conns.delete(ws);
+    this.releaseIp(conn.ip);
     this.transport.remove(ws);
     const r = conn.room;
     if (r && conn.entityId !== null) {
@@ -1001,6 +1082,8 @@ export class NetServer {
       }
     }
     this.conns.clear();
+    this.connsByIp.clear();
+    serverTelemetry.setRoomsActive(0);
     return new Promise((resolve) => this.wss.close(() => resolve()));
   }
 }

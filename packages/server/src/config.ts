@@ -68,3 +68,26 @@ export const TERRITORY_AOI_HYSTERESIS = positiveNumberFromEnv("TERRITORY_AOI_HYS
 
 /** Cổng WebSocket mặc định nếu không đặt biến môi trường PORT. */
 export const DEFAULT_PORT = 8910;
+
+/* -------------------------------------------------------------------------- */
+/* Pha 5 · B1 — chống gian lận (rate-limit đường ws). Mọi ngưỡng cấu hình env. */
+/* -------------------------------------------------------------------------- */
+
+/** Trần khung INPUT nhị phân mỗi giây / kết nối (token-bucket refill rate).
+ *  Mặc định 48 ≈ 2× tick (24 Hz) để chịu burst ngắn của client hợp lệ. */
+export const WS_INPUT_RATE_PER_SEC = boundedIntegerFromEnv("WS_INPUT_RATE_PER_SEC", 48, 1, 10000);
+
+/** Sức chứa burst của token-bucket input (số token tối đa tích được). Mặc định = trần/giây. */
+export const WS_INPUT_BURST = boundedIntegerFromEnv("WS_INPUT_BURST", WS_INPUT_RATE_PER_SEC, 1, 20000);
+
+/** Số khung TEXT tối đa cho phép trong một cửa sổ trượt / kết nối. */
+export const WS_TEXT_RATE_MAX = boundedIntegerFromEnv("WS_TEXT_RATE_MAX", 5, 1, 10000);
+
+/** Độ dài cửa sổ trượt cho rate-limit text (ms). Mặc định 5 msg / 5 s. */
+export const WS_TEXT_RATE_WINDOW_MS = boundedIntegerFromEnv("WS_TEXT_RATE_WINDOW_MS", 5000, 100, 600000);
+
+/** Số lần vi phạm cửa sổ text liên tiếp trước khi ĐÓNG socket. */
+export const WS_TEXT_FLOOD_STRIKES = boundedIntegerFromEnv("WS_TEXT_FLOOD_STRIKES", 3, 1, 1000);
+
+/** Trần số kết nối ws đồng thời mỗi IP (chống cạn ghế). Vượt → từ chối kết nối mới. */
+export const WS_MAX_CONN_PER_IP = boundedIntegerFromEnv("WS_MAX_CONN_PER_IP", 20, 1, 100000);

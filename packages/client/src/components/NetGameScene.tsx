@@ -56,11 +56,10 @@ import {
  * liệu mạng; snapshot/keyframe đầu (gửi ngay khi JOIN) sẽ điền lại.
  */
 function makeBlankView(maxPlayers: number, botCount: number): GameState {
-  const g = new GameState(
-    undefined,
-    Math.max(0, botCount),
-    Math.max(1, maxPlayers)
-  );
+  const g = new GameState({
+    humanCount: Math.max(1, maxPlayers),
+    config: { bots: { count: Math.max(0, botCount) } },
+  });
   for (const e of g.players) e.phase = "dead";
   g.applyTerritory([]);
   return g;

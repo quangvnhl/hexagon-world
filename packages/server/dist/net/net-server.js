@@ -2,12 +2,15 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.NetServer = void 0;
 const ws_1 = require("ws");
+const node_perf_hooks_1 = require("node:perf_hooks");
 const node_crypto_1 = require("node:crypto");
 const shared_1 = require("@hexagon/shared");
 const game_room_1 = require("../game/game-room");
 const territory_aoi_1 = require("./territory-aoi");
 const config_1 = require("../config");
 const network_transport_1 = require("./network-transport");
+const rate_limit_1 = require("./rate-limit");
+const telemetry_1 = require("./telemetry");
 const TERRITORY_EVERY = 6;
 const WORLD_UI_EVERY = 5;
 const ENDED_GRACE_MS = 8000;
@@ -15,6 +18,13 @@ class NetServer {
     constructor(opts = {}) {
         this.autoLoop = false;
         this.nextRoomId = 1;
+        this.inputRatePerSec = config_1.WS_INPUT_RATE_PER_SEC;
+        this.inputBurst = config_1.WS_INPUT_BURST;
+        this.textRateMax = config_1.WS_TEXT_RATE_MAX;
+        this.textRateWindowMs = config_1.WS_TEXT_RATE_WINDOW_MS;
+        this.textFloodStrikes = config_1.WS_TEXT_FLOOD_STRIKES;
+        this.maxConnPerIp = config_1.WS_MAX_CONN_PER_IP;
+        this.connsByIp = new Map();
         this.conns = new Map();
         this.rooms = new Set();
         this.resumeSessions = new Map();
@@ -42,7 +52,7 @@ class NetServer {
         this.wss = opts.httpServer
             ? new ws_1.WebSocketServer({ server: opts.httpServer, ...(opts.path ? { path: opts.path } : {}) })
             : new ws_1.WebSocketServer({ port: opts.port ?? 0 });
-        this.wss.on("connection", (ws) => this.onConnection(ws));
+        this.wss.on("connection", (ws, req) => this.onConnection(ws, req));
         this.heartbeatTimer = setInterval(() => this.heartbeatSockets(), config_1.WS_HEARTBEAT_INTERVAL_MS);
         this.heartbeatTimer.unref();
     }
@@ -125,6 +135,7 @@ class NetServer {
                 lastTime: 0,
                 accumulator: 0,
                 running: false,
+                scheduledAt: 0,
                 lastTerrRev: -1,
                 lastTotemRev: -1,
                 prevAlive: [],
@@ -141,6 +152,7 @@ class NetServer {
             r.prevAlive = r.room.gameState.snapshotEntities().map((e) => e.alive);
             this.rooms.add(r);
             this.active = r;
+            telemetry_1.serverTelemetry.setRoomsActive(this.rooms.size);
         }
         return this.active;
     }
@@ -280,6 +292,7 @@ class NetServer {
             r.timer = null;
         }
         this.rooms.delete(r);
+        telemetry_1.serverTelemetry.setRoomsActive(this.rooms.size);
         if (this.active === r)
             this.active = null;
         for (const [token, session] of this.resumeSessions) {
@@ -307,11 +320,15 @@ class NetServer {
     scheduleNext(r) {
         if (!r.running)
             return;
+        r.scheduledAt = node_perf_hooks_1.performance.now();
         r.timer = setTimeout(() => this.loop(r), this.tickMs);
     }
     loop(r) {
         if (!r.running)
             return;
+        const lag = node_perf_hooks_1.performance.now() - (r.scheduledAt + this.tickMs);
+        if (lag > 0)
+            telemetry_1.serverTelemetry.recordEventLoopLag(lag);
         if (r.ended) {
             if (Date.now() - r.endedAt > ENDED_GRACE_MS)
                 this.closeRoom(r);
@@ -322,16 +339,20 @@ class NetServer {
         const now = Date.now();
         let elapsed = (now - r.lastTime) / 1000;
         r.lastTime = now;
-        if (elapsed > this.dt * 5)
+        let clamped = false;
+        if (elapsed > this.dt * 5) {
             elapsed = this.dt * 5;
+            clamped = true;
+        }
         r.accumulator += elapsed;
-        let stepped = false;
+        let steps = 0;
         while (r.accumulator >= this.dt) {
             this.stepRoom(r);
             r.accumulator -= this.dt;
-            stepped = true;
+            steps++;
         }
-        if (stepped) {
+        if (steps > 0) {
+            telemetry_1.serverTelemetry.recordTick(steps, clamped);
             this.broadcast(r);
             this.broadcastWorldUiIfDue(r);
             this.flushTerritoryIfDue(r);
@@ -343,9 +364,11 @@ class NetServer {
         this.scheduleNext(r);
     }
     stepRoom(r) {
+        const start = node_perf_hooks_1.performance.now();
         r.room.stepTick(this.dt);
         this.reconcileBots(r, this.dt * 1000);
         this.emitEvents(r);
+        telemetry_1.serverTelemetry.recordTickStep(node_perf_hooks_1.performance.now() - start);
     }
     reconcileBots(r, elapsedMs) {
         if (r.room.kingCountdownActive || r.ended)
@@ -361,7 +384,37 @@ class NetServer {
         r.botActivationElapsedMs -= this.botJoinIntervalMs;
         r.room.activateNextBot();
     }
-    onConnection(ws) {
+    clientIp(req) {
+        const xff = req?.headers["x-forwarded-for"];
+        if (typeof xff === "string" && xff.length > 0)
+            return xff.split(",")[0].trim();
+        if (Array.isArray(xff) && xff.length > 0)
+            return String(xff[0]).split(",")[0].trim();
+        return req?.socket?.remoteAddress ?? "unknown";
+    }
+    releaseIp(ip) {
+        if (!ip)
+            return;
+        const n = this.connsByIp.get(ip);
+        if (n === undefined)
+            return;
+        if (n <= 1)
+            this.connsByIp.delete(ip);
+        else
+            this.connsByIp.set(ip, n - 1);
+    }
+    onConnection(ws, req) {
+        const ip = this.clientIp(req);
+        const current = this.connsByIp.get(ip) ?? 0;
+        if (current >= this.maxConnPerIp) {
+            telemetry_1.serverTelemetry.incIpRejected();
+            try {
+                ws.close(4008, "too many connections");
+            }
+            catch { }
+            return;
+        }
+        this.connsByIp.set(ip, current + 1);
         this.socketAlive.set(ws, true);
         this.conns.set(ws, {
             entityId: null,
@@ -373,6 +426,10 @@ class NetServer {
             interestTargetId: null,
             reconnectToken: null,
             intentionalClose: false,
+            ip,
+            inputBucket: new rate_limit_1.TokenBucket(this.inputBurst, this.inputRatePerSec),
+            textWindow: new rate_limit_1.SlidingWindowCounter(this.textRateMax, this.textRateWindowMs),
+            textStrikes: 0,
         });
         ws.on("message", (data, isBinary) => {
             if (isBinary)
@@ -401,7 +458,13 @@ class NetServer {
     }
     onBinary(ws, data) {
         const conn = this.conns.get(ws);
-        if (!conn || conn.entityId === null || !conn.room || conn.room.ended)
+        if (!conn)
+            return;
+        if (!conn.inputBucket.tryConsume()) {
+            telemetry_1.serverTelemetry.incInputDropped();
+            return;
+        }
+        if (conn.entityId === null || !conn.room || conn.room.ended)
             return;
         const input = (0, shared_1.decodeInput)(data);
         if (!input)
@@ -461,6 +524,7 @@ class NetServer {
                 staleConn.intentionalClose = true;
             }
             this.conns.delete(staleSocket);
+            this.releaseIp(staleConn?.ip ?? null);
             this.transport.remove(staleSocket);
             try {
                 staleSocket.terminate();
@@ -522,11 +586,23 @@ class NetServer {
         this.afterSeatRemoved(r);
     }
     onText(ws, text) {
-        const msg = (0, shared_1.decodeControl)(text);
-        if (!msg)
-            return;
         const conn = this.conns.get(ws);
         if (!conn)
+            return;
+        if (!conn.textWindow.record()) {
+            conn.textStrikes++;
+            telemetry_1.serverTelemetry.incTextFlood();
+            if (conn.textStrikes >= this.textFloodStrikes) {
+                telemetry_1.serverTelemetry.incTextDisconnect();
+                try {
+                    ws.close(4009, "text rate limit");
+                }
+                catch { }
+            }
+            return;
+        }
+        const msg = (0, shared_1.decodeControl)(text);
+        if (!msg)
             return;
         if (msg.t === "join") {
             if (conn.entityId !== null)
@@ -638,6 +714,7 @@ class NetServer {
         if (!conn)
             return;
         this.conns.delete(ws);
+        this.releaseIp(conn.ip);
         this.transport.remove(ws);
         const r = conn.room;
         if (r && conn.entityId !== null) {
@@ -840,6 +917,8 @@ class NetServer {
             }
         }
         this.conns.clear();
+        this.connsByIp.clear();
+        telemetry_1.serverTelemetry.setRoomsActive(0);
         return new Promise((resolve) => this.wss.close(() => resolve()));
     }
 }

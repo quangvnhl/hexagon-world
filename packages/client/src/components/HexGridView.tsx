@@ -185,11 +185,15 @@ export const HexGridView = memo(function HexGridView({
       frustumCulled={false}
     >
       <primitive object={geometry} attach="geometry" />
-      <meshStandardMaterial
-        toneMapped={false}
-        roughness={0.78}
-        metalness={0.06}
-      />
+      {/*
+       * Lưới hex phủ kín màn hình → fragment shader là điểm nóng #1 trên mobile.
+       * Dùng meshLambertMaterial (diffuse-only, rẻ hơn PBR nhiều) thay cho
+       * meshStandardMaterial: vẫn nhận đổ bóng theo directionalLight nên các khối
+       * lục giác 3D và hiệu ứng nhún (PRESS_DEPTH) giữ được chiều sâu, và
+       * instanceColor vẫn được nhân vào diffuse như cũ. roughness/metalness của bản
+       * PBR gần như matte (0.78 / 0.06, không envMap) nên Lambert tái hiện gần khít.
+       */}
+      <meshLambertMaterial toneMapped={false} />
     </instancedMesh>
   );
 });

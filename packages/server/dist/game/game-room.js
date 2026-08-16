@@ -11,7 +11,10 @@ class GameRoom {
         this.kingCountdownRemaining = config_1.KING_ROOM_DURATION_SECONDS;
         this.kingCountdownRunning = false;
         this.maxHumans = maxHumans;
-        this.gs = new shared_1.GameState(undefined, botCount, maxHumans, matchSeed);
+        this.gs = new shared_1.GameState({
+            humanCount: maxHumans,
+            config: { bots: { count: botCount }, seed: matchSeed },
+        });
         this.seats = new Array(maxHumans).fill(false);
         this.lastSeq = new Array(maxHumans).fill(0);
         this.pending = new Array(maxHumans).fill(null);
@@ -158,11 +161,12 @@ class GameRoom {
             return;
         if (!Number.isFinite(heading))
             return;
+        const normalizedHeading = Math.atan2(Math.sin(heading), Math.cos(heading));
         const seqU = seq >>> 0;
         const ref = this.pending[entityId]?.seq ?? this.lastSeq[entityId];
         if (seqU <= ref)
             return;
-        this.pending[entityId] = { seq: seqU, heading };
+        this.pending[entityId] = { seq: seqU, heading: normalizedHeading };
     }
     stepTick(dt) {
         for (let id = 0; id < this.maxHumans; id++) {

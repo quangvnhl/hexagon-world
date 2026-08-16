@@ -20,6 +20,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 __exportStar(require("./hex"), exports);
 __exportStar(require("./floodfill"), exports);
 __exportStar(require("./config"), exports);
+__exportStar(require("./match-config"), exports);
 __exportStar(require("./arena"), exports);
 __exportStar(require("./state"), exports);
 __exportStar(require("./protocol"), exports);

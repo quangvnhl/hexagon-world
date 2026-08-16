@@ -1,6 +1,6 @@
 "use strict";
 Object.defineProperty(exports, "__esModule", { value: true });
-exports.DEFAULT_PORT = exports.TERRITORY_AOI_HYSTERESIS = exports.TERRITORY_AOI_RADIUS = exports.SERVER_PROTOCOL_VERSION = exports.WS_BACKPRESSURE_BYTES = exports.ENTITY_AOI_RADIUS = exports.MIN_PLAYERS = exports.WS_HEARTBEAT_INTERVAL_MS = exports.LOBBY_RECONNECT_GRACE_MS = exports.KING_ROOM_DURATION_SECONDS = exports.ONLINE_BOT_JOIN_INTERVAL_MS = exports.ONLINE_BOT_CAPACITY_MAX = exports.ONLINE_BOT_CAPACITY_MIN = exports.BOT_COUNT = exports.MAX_HUMAN_PLAYERS = exports.DT = exports.TICK_RATE = void 0;
+exports.WS_MAX_CONN_PER_IP = exports.WS_TEXT_FLOOD_STRIKES = exports.WS_TEXT_RATE_WINDOW_MS = exports.WS_TEXT_RATE_MAX = exports.WS_INPUT_BURST = exports.WS_INPUT_RATE_PER_SEC = exports.DEFAULT_PORT = exports.TERRITORY_AOI_HYSTERESIS = exports.TERRITORY_AOI_RADIUS = exports.SERVER_PROTOCOL_VERSION = exports.WS_BACKPRESSURE_BYTES = exports.ENTITY_AOI_RADIUS = exports.MIN_PLAYERS = exports.WS_HEARTBEAT_INTERVAL_MS = exports.LOBBY_RECONNECT_GRACE_MS = exports.KING_ROOM_DURATION_SECONDS = exports.ONLINE_BOT_JOIN_INTERVAL_MS = exports.ONLINE_BOT_CAPACITY_MAX = exports.ONLINE_BOT_CAPACITY_MIN = exports.BOT_COUNT = exports.MAX_HUMAN_PLAYERS = exports.DT = exports.TICK_RATE = void 0;
 exports.onlineBotCapacityForRoom = onlineBotCapacityForRoom;
 const shared_1 = require("@hexagon/shared");
 exports.TICK_RATE = 24;
@@ -38,4 +38,10 @@ exports.SERVER_PROTOCOL_VERSION = positiveNumberFromEnv("GAME_PROTOCOL_VERSION",
 exports.TERRITORY_AOI_RADIUS = positiveNumberFromEnv("TERRITORY_AOI_RADIUS", 48);
 exports.TERRITORY_AOI_HYSTERESIS = positiveNumberFromEnv("TERRITORY_AOI_HYSTERESIS", 10);
 exports.DEFAULT_PORT = 8910;
+exports.WS_INPUT_RATE_PER_SEC = boundedIntegerFromEnv("WS_INPUT_RATE_PER_SEC", 48, 1, 10000);
+exports.WS_INPUT_BURST = boundedIntegerFromEnv("WS_INPUT_BURST", exports.WS_INPUT_RATE_PER_SEC, 1, 20000);
+exports.WS_TEXT_RATE_MAX = boundedIntegerFromEnv("WS_TEXT_RATE_MAX", 5, 1, 10000);
+exports.WS_TEXT_RATE_WINDOW_MS = boundedIntegerFromEnv("WS_TEXT_RATE_WINDOW_MS", 5000, 100, 600000);
+exports.WS_TEXT_FLOOD_STRIKES = boundedIntegerFromEnv("WS_TEXT_FLOOD_STRIKES", 3, 1, 1000);
+exports.WS_MAX_CONN_PER_IP = boundedIntegerFromEnv("WS_MAX_CONN_PER_IP", 20, 1, 100000);
 //# sourceMappingURL=config.js.map

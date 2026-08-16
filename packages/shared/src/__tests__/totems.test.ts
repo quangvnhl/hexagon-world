@@ -29,7 +29,7 @@ describe("speed curve", () => {
 
 describe("Totem authoritative state", () => {
   it("sinh đủ Totem deterministic, đúng khoảng cách tối thiểu", () => {
-    const g = new GameState(undefined, 0, 1, 12345);
+    const g = new GameState({ config: { bots: { count: 0 }, seed: 12345 } });
     const a = createTotems(g.playable, 12345);
     const b = createTotems(g.playable, 12345);
     expect(a).toEqual(b);
@@ -48,7 +48,7 @@ describe("Totem authoritative state", () => {
   });
 
   it("capture rồi cướp Totem reconcile owner/count đúng một lần theo territory revision", () => {
-    const g = new GameState(undefined, 1, 1, 7);
+    const g = new GameState({ config: { bots: { count: 1 }, seed: 7 } });
     const speed = g.totemStates().find((item) => item.kind === "speed")!;
     const startRevision = g.totemRevision;
 
@@ -72,7 +72,7 @@ describe("Totem authoritative state", () => {
   });
 
   it("chết giải phóng lãnh thổ làm Totem trở về trung lập", () => {
-    const g = new GameState(undefined, 0, 1, 9);
+    const g = new GameState({ config: { bots: { count: 0 }, seed: 9 } });
     const radar = g.totemStates().find((item) => item.kind === "radar")!;
     g.owned = new Set([keyOf(radar)]);
     expect(g.radarActiveFor(0)).toBe(true);
@@ -83,7 +83,7 @@ describe("Totem authoritative state", () => {
   });
 
   it("enemy Slow override, own Slow miễn nhiễm và rời radius khôi phục tốc độ", () => {
-    const g = new GameState(undefined, 1, 1, 11);
+    const g = new GameState({ config: { bots: { count: 1 }, seed: 11 } });
     const slow = g.totemStates().find((item) => item.kind === "slow")!;
     g.applyTerritory([{ q: slow.q, r: slow.r, owner: 1, kind: 0 }]);
     const p = axialToPixel(slow, CONFIG.HEX_SIZE);

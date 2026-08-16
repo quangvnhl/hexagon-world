@@ -48,7 +48,10 @@ export class GameRoom {
   ) {
     this.maxHumans = maxHumans;
     // players[0..maxHumans-1] là ghế người (non-bot); phần còn lại là bot.
-    this.gs = new GameState(undefined, botCount, maxHumans, matchSeed);
+    this.gs = new GameState({
+      humanCount: maxHumans,
+      config: { bots: { count: botCount }, seed: matchSeed },
+    });
     this.seats = new Array(maxHumans).fill(false);
     this.lastSeq = new Array(maxHumans).fill(0);
     this.pending = new Array(maxHumans).fill(null);
@@ -213,11 +216,14 @@ export class GameRoom {
     if (entityId < 0 || entityId >= this.maxHumans) return;
     if (!this.seats[entityId]) return;
     if (!Number.isFinite(heading)) return;
+    // Pha 5 · B1: chuẩn hóa heading về [-π, π]. atan2(sin,cos) gói mọi số hữu hạn
+    // (kể cả giá trị lớn/âm client gửi) về đúng dải mà không đổi hành vi hợp lệ.
+    const normalizedHeading = Math.atan2(Math.sin(heading), Math.cos(heading));
     const seqU = seq >>> 0;
     // Mốc so sánh: seq của input đang chờ (nếu có) hoặc seq cuối đã áp.
     const ref = this.pending[entityId]?.seq ?? this.lastSeq[entityId];
     if (seqU <= ref) return; // gói cũ/trùng → bỏ.
-    this.pending[entityId] = { seq: seqU, heading };
+    this.pending[entityId] = { seq: seqU, heading: normalizedHeading };
   }
 
   /**

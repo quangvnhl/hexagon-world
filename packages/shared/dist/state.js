@@ -4,6 +4,7 @@ exports.GameState = exports.Entity = void 0;
 const config_1 = require("./config");
 const hex_1 = require("./hex");
 const arena_1 = require("./arena");
+const match_config_1 = require("./match-config");
 const floodfill_1 = require("./floodfill");
 const spatialhash_1 = require("./spatialhash");
 const totems_1 = require("./totems");
@@ -65,12 +66,10 @@ exports.Entity = Entity;
  * cướp cả ô của đối thủ nằm trong vòng); đầu đâm vào đuôi của ai đó → thực thể đó chết.
  */
 class GameState {
-    constructor(spawnAt, botCount = config_1.CONFIG.BOT_COUNT, humanCount = 1, matchSeed = 0) {
+    constructor(options = {}) {
         /** Chủ sở hữu / chủ đuôi của từng ô (id thực thể) — cho render nhanh & va chạm. */
         this.cellOwner = new Map();
         this.cellTrail = new Map();
-        /** Broad-phase va chạm đầu (spatial hash theo toạ độ liên tục). */
-        this.headHash = new spatialhash_1.SpatialHash(config_1.CONFIG.KILL_RADIUS);
         this.rng = Math.random;
         /** Tăng khi thực thể đổi (vị trí/đuôi) — cho renderer cube/line. */
         this.revision = 0;
@@ -85,8 +84,6 @@ class GameState {
         this.speedTotemsByOwner = new Map();
         this.radarOwners = new Set();
         this.playableOwnedByOwner = new Map();
-        /** Thời gian (giây) còn lại phải giữ ngôi King liên tục để thắng. */
-        this.kingHoldRemaining = config_1.CONFIG.WIN_HOLD_TIME;
         /** Đã kết thúc chưa (có người thắng) → đóng băng game. */
         this.won = false;
         /** Id người thắng (-1 nếu chưa). */
@@ -95,13 +92,20 @@ class GameState {
         this.kingHolderId = -1;
         /** Người chơi đã chọn XEM (khán giả): không hồi sinh nữa tới khi hết ván. */
         this.spectating = false;
-        this.fixedSpawn = spawnAt;
-        this.humanCount = Math.max(1, humanCount);
-        // playable = ô có TÂM nằm trong tường va chạm (WALL_LIMIT, đã co theo WALL_SCALE).
+        // Cấu hình + hình học PER-INSTANCE (default = giá trị CONFIG ⇒ hành vi cũ y hệt).
+        this.config = (0, match_config_1.resolveMatchConfig)(options.config);
+        this.arena = new arena_1.ArenaGeometry(this.config.map.radius, this.config.map.wallScale, this.config.map.hexSize);
+        this.hexSize = this.config.map.hexSize;
+        this.headHash = new spatialhash_1.SpatialHash(this.config.rules.killRadius);
+        this.kingHoldRemaining = this.config.win.winHoldTime;
+        this.fixedSpawn = options.spawnAt;
+        this.humanCount = Math.max(1, options.humanCount ?? 1);
+        const botCount = this.config.bots.count;
+        // playable = ô có TÂM nằm trong tường va chạm (wallLimit, đã co theo wallScale).
         this.playable = new Set();
-        for (const k of (0, arena_1.mapArena)(config_1.CONFIG.MAP_MARGIN)) {
-            const p = (0, hex_1.axialToPixel)(keyToAxial(k), config_1.CONFIG.HEX_SIZE);
-            if ((0, arena_1.insideArena)(p.x, p.y, 0))
+        for (const k of this.arena.mapArena(this.config.map.mapMargin)) {
+            const p = (0, hex_1.axialToPixel)(keyToAxial(k), this.hexSize);
+            if (this.arena.insideArena(p.x, p.y, 0))
                 this.playable.add(k);
         }
         // map = playable ∪ ĐÚNG 1 VÀNH ô kề bao quanh. Vành này = tường hiển thị (BorderRim) +
@@ -112,16 +116,21 @@ class GameState {
             for (const nb of (0, hex_1.neighbors)(keyToAxial(k)))
                 this.map.add((0, hex_1.keyOf)(nb));
         }
-        this.totemItems = (0, totems_1.createTotems)(this.playable, matchSeed);
+        this.totemItems = (0, totems_1.createTotems)(this.playable, this.config.seed);
+        const mix = this.config.bots.difficultyMix;
         const n = this.humanCount + Math.max(0, botCount);
         this.players = [];
         for (let i = 0; i < n; i++) {
             const color = config_1.PLAYER_COLORS[i % config_1.PLAYER_COLORS.length];
             const isBot = i >= this.humanCount;
             const e = new Entity(i, isBot, color);
-            // Gán độ khó luân phiên cho các bot (dễ / thường / khó / …).
-            if (isBot)
-                e.botProfile = (i - this.humanCount) % config_1.CONFIG.BOT_DIFFICULTY.length;
+            // Gán độ khó cho bot: theo difficultyMix nếu có, mặc định luân phiên toàn bảng.
+            if (isBot) {
+                const b = i - this.humanCount;
+                e.botProfile = mix && mix.length > 0
+                    ? mix[b % mix.length]
+                    : b % config_1.CONFIG.BOT_DIFFICULTY.length;
+            }
             this.players.push(e);
         }
         for (const e of this.players)
@@ -200,7 +209,7 @@ class GameState {
         e.pos = { x, y };
         e.heading = heading;
         e.phase = alive ? "playing" : "dead";
-        e.currentHex = (0, hex_1.pixelToAxial)(x, y, config_1.CONFIG.HEX_SIZE);
+        e.currentHex = (0, hex_1.pixelToAxial)(x, y, this.hexSize);
         // ĐUÔI MƯỢT: tích luỹ ĐÚNG đường ĐẦU đã đi qua (giống chơi đơn) — KHÔNG bám tâm ô lục
         // giác. Khi thực thể đang có đuôi (hasTrail) → thêm điểm tại vị trí đầu hiện tại (đầu
         // đã dự đoán/nội suy nên mượt), giãn cách theo TRAIL_POINT_DIST. Khi hết đuôi (khép
@@ -208,7 +217,7 @@ class GameState {
         if (alive && hasTrail) {
             const pts = e.trailPoints;
             const last = pts.length > 0 ? pts[pts.length - 1] : null;
-            if (!last || Math.hypot(x - last.x, y - last.y) >= config_1.CONFIG.TRAIL_POINT_DIST) {
+            if (!last || Math.hypot(x - last.x, y - last.y) >= this.config.rules.trailPointDist) {
                 pts.push({ x, y });
             }
         }
@@ -364,7 +373,7 @@ class GameState {
         return (this.ownedPlayable(this.human) / this.playable.size) * 100;
     }
     get isKing() {
-        return this.territoryPct() >= config_1.CONFIG.KING_PCT;
+        return this.territoryPct() >= this.config.win.kingPct;
     }
     /** Id KING hiện tại: thực thể CÒN SỐNG có % cao nhất và ≥ KING_PCT; -1 nếu không có. */
     kingId() {
@@ -379,7 +388,7 @@ class GameState {
                 id = e.id;
             }
         }
-        return max >= config_1.CONFIG.KING_PCT ? id : -1;
+        return max >= this.config.win.kingPct ? id : -1;
     }
     /** Phòng bị KHOÁ khi đã có KING: không cho ai hồi sinh/tham gia (người còn sống thì
      *  đối kháng với nhau). Hết King → mở lại. */
@@ -464,7 +473,7 @@ class GameState {
         return this.totemItems.some((totem) => {
             if (totem.kind !== "slow" || totem.ownerId < 0 || totem.ownerId === entityId)
                 return false;
-            const p = (0, hex_1.axialToPixel)(totem, config_1.CONFIG.HEX_SIZE);
+            const p = (0, hex_1.axialToPixel)(totem, this.hexSize);
             return (entity.pos.x - p.x) ** 2 + (entity.pos.y - p.y) ** 2 <= radiusSq;
         });
     }
@@ -531,7 +540,7 @@ class GameState {
             cb(k, oid);
     }
     inMap(x, y) {
-        return this.map.has((0, hex_1.keyOf)((0, hex_1.pixelToAxial)(x, y, config_1.CONFIG.HEX_SIZE)));
+        return this.map.has((0, hex_1.keyOf)((0, hex_1.pixelToAxial)(x, y, this.hexSize)));
     }
     // ---- Vòng đời thực thể ---------------------------------------------------
     /** Spawn e nếu CÒN vị trí hợp lệ (cách mọi lãnh thổ ≥ SPAWN_CLEARANCE, không đè đất
@@ -550,12 +559,12 @@ class GameState {
         e.trailPoints = [];
         e.owned = new Set();
         e.phase = "prep";
-        e.prepRemaining = config_1.CONFIG.PREP_TIME;
+        e.prepRemaining = this.config.rules.prepTime;
         e.respawnTimer = 0;
         e.deathCause = "";
         e.killerId = -1;
         e.currentHex = spawnHex;
-        const p = (0, hex_1.axialToPixel)(spawnHex, config_1.CONFIG.HEX_SIZE);
+        const p = (0, hex_1.axialToPixel)(spawnHex, this.hexSize);
         e.pos = { x: p.x, y: p.y };
         e.home = { x: p.x, y: p.y };
         e.heading = e.isBot ? this.rng() * Math.PI * 2 : 0;
@@ -568,7 +577,7 @@ class GameState {
         // Ô spawn + các ô kề trong cube distance ≤ START_RADIUS → cụm khởi đầu thuộc về e.
         // Sinh trực tiếp đĩa hex quanh spawnHex (O(R²)) thay vì quét cả bản đồ (O(map)) —
         // quan trọng khi bản đồ rất lớn.
-        const R = config_1.CONFIG.START_RADIUS;
+        const R = this.config.rules.startRadius;
         for (let dq = -R; dq <= R; dq++) {
             const lo = Math.max(-R, -dq - R);
             const hi = Math.min(R, -dq + R);
@@ -703,7 +712,7 @@ class GameState {
         this.winnerId = -1;
         this.kingHolderId = -1;
         this.spectating = false;
-        this.kingHoldRemaining = config_1.CONFIG.WIN_HOLD_TIME;
+        this.kingHoldRemaining = this.config.win.winHoldTime;
         for (const e of this.players) {
             e.deaths = 0;
             this.spawn(e);
@@ -724,17 +733,17 @@ class GameState {
     pickSpawnHex(e) {
         if (e === this.human && this.fixedSpawn)
             return this.fixedSpawn;
-        const inset = (config_1.CONFIG.START_RADIUS + 1) * config_1.CONFIG.HEX_SIZE * Math.sqrt(3);
-        const lim = arena_1.WALL_LIMIT - inset; // biên lấy mẫu (theo tường va chạm thật đã co WALL_SCALE)
-        const clearance = config_1.CONFIG.SPAWN_CLEARANCE;
+        const inset = (this.config.rules.startRadius + 1) * this.hexSize * Math.sqrt(3);
+        const lim = this.arena.wallLimit - inset; // biên lấy mẫu (theo tường va chạm thật đã co wallScale)
+        const clearance = this.config.rules.spawnClearance;
         // Không có ĐẤT (owned) của ai trong bán kính `clearance` quanh c. QUÉT ĐĨA hex bán kính
         // `clearance` quanh c (O(clearance²), ĐỘC LẬP với diện tích đã chiếm) thay vì duyệt TOÀN
         // BỘ ô owned (O(owned)) — bản cũ khiến bước quét dự phòng tốn ~29 TRIỆU phép/​lần lúc bản
         // đồ đông ⇒ đơ ~500 ms mỗi lần bot hồi sinh / mỗi 0.2s khi người chơi đang chết.
         const clearAround = (c) => {
-            const cp = (0, hex_1.axialToPixel)(c, config_1.CONFIG.HEX_SIZE);
+            const cp = (0, hex_1.axialToPixel)(c, this.hexSize);
             if (this.totemItems.some((totem) => {
-                const tp = (0, hex_1.axialToPixel)(totem, config_1.CONFIG.HEX_SIZE);
+                const tp = (0, hex_1.axialToPixel)(totem, this.hexSize);
                 return Math.hypot(cp.x - tp.x, cp.y - tp.y) < config_1.CONFIG.TOTEMS.SPAWN_CLEARANCE;
             }))
                 return false;
@@ -752,9 +761,9 @@ class GameState {
         for (let i = 0; i < 60; i++) {
             const x = (this.rng() * 2 - 1) * lim;
             const y = (this.rng() * 2 - 1) * lim;
-            if (!(0, arena_1.insideArena)(x, y, -inset))
+            if (!this.arena.insideArena(x, y, -inset))
                 continue;
-            const a = (0, hex_1.pixelToAxial)(x, y, config_1.CONFIG.HEX_SIZE);
+            const a = (0, hex_1.pixelToAxial)(x, y, this.hexSize);
             if (this.map.has((0, hex_1.keyOf)(a)) && clearAround(a))
                 return a;
         }
@@ -766,8 +775,8 @@ class GameState {
         // 2) Quét xác định toàn bộ ô đủ sâu → khẳng định CÒN chỗ hợp lệ hay KHÔNG (null).
         for (const k of this.playable) {
             const a = keyToAxial(k);
-            const p = (0, hex_1.axialToPixel)(a, config_1.CONFIG.HEX_SIZE);
-            if ((0, arena_1.insideArena)(p.x, p.y, -inset) && clearAround(a))
+            const p = (0, hex_1.axialToPixel)(a, this.hexSize);
+            if (this.arena.insideArena(p.x, p.y, -inset) && clearAround(a))
                 return a;
         }
         return null; // bản đồ đã đầy — không còn vị trí hợp lệ
@@ -786,9 +795,17 @@ class GameState {
         this.resolveHeadCollisions();
         this.checkWin(dt);
     }
-    /** Điều kiện thắng: (a) đấu loại — có KING và chỉ còn 1 thực thể sống; hoặc (b) một
-     *  KING giữ ngôi liên tục đủ WIN_HOLD_TIME giây. */
+    /**
+     * Điều kiện thắng — theo `config.win.kind` (doc 25 §1.2). P0 hiện thực:
+     *  - `none`      : Luyện tập, không bao giờ thắng/thua (endless).
+     *  - `king_hold` : (mặc định) (a) đấu loại — có KING & chỉ còn 1 thực thể sống → thắng
+     *                  ngay; hoặc (b) một KING giữ ngôi liên tục đủ winHoldTime giây.
+     *  Các loại territory_pct/survive/capture_totems khai báo sẵn ở WinCondition, sẽ cắm
+     *  evaluator ở P1 (khi làm Campaign) — hiện dùng nhánh king_hold làm mặc định an toàn.
+     */
     checkWin(dt) {
+        if (this.config.win.kind === "none")
+            return; // Luyện tập: không phân định thắng thua.
         // (a) Đấu loại: chỉ còn 1 người sống trong phòng đã có KING → thắng NGAY.
         if (this.players.length > 1 && this.roomLocked()) {
             const aliveList = this.players.filter((e) => e.alive);
@@ -811,12 +828,12 @@ class GameState {
             }
             else {
                 this.kingHolderId = kid;
-                this.kingHoldRemaining = config_1.CONFIG.WIN_HOLD_TIME;
+                this.kingHoldRemaining = this.config.win.winHoldTime;
             }
         }
         else {
             this.kingHolderId = -1;
-            this.kingHoldRemaining = config_1.CONFIG.WIN_HOLD_TIME;
+            this.kingHoldRemaining = this.config.win.winHoldTime;
         }
     }
     updateEntity(e, dt) {
@@ -850,7 +867,7 @@ class GameState {
         const dist = this.effectiveSpeedFor(e.id) * dt;
         // Va chạm tường: dịch theo hướng nhìn rồi TRƯỢT dọc biên ở TỐC ĐỘ ĐẦY ĐỦ (slideMove).
         // Không sinh vận tốc LÙI (tránh đầu bị đẩy ngược vào ô đuôi của chính mình → chết oan).
-        const c = (0, arena_1.slideMove)(e.pos.x, e.pos.y, e.heading, dist);
+        const c = this.arena.slideMove(e.pos.x, e.pos.y, e.heading, dist);
         const mdx = c.x - e.pos.x;
         const mdy = c.y - e.pos.y;
         const moved = Math.hypot(mdx, mdy);
@@ -870,7 +887,7 @@ class GameState {
         this.stepEntity(this.human, x, y);
     }
     stepEntity(e, x, y) {
-        const nextHex = (0, hex_1.pixelToAxial)(x, y, config_1.CONFIG.HEX_SIZE);
+        const nextHex = (0, hex_1.pixelToAxial)(x, y, this.hexSize);
         e.pos.x = x;
         e.pos.y = y;
         if (nextHex.q !== e.currentHex.q || nextHex.r !== e.currentHex.r) {
@@ -885,7 +902,7 @@ class GameState {
         if (e.trailHexes.length > 0) {
             const pts = e.trailPoints;
             const last = pts[pts.length - 1];
-            if (last && Math.hypot(x - last.x, y - last.y) >= config_1.CONFIG.TRAIL_POINT_DIST) {
+            if (last && Math.hypot(x - last.x, y - last.y) >= this.config.rules.trailPointDist) {
                 // Điểm neo đầu đã nằm tại đầu nhân vật (trong ô trung lập đầu tiên) → các điểm
                 // sau luôn tiến theo hướng đi, không cần chặn "đi ngược".
                 pts.push({ x, y });
@@ -910,7 +927,7 @@ class GameState {
                 // dao động lúc đi dọc đúng ranh giới cột hex / men theo tường (đầu bật qua-lại
                 // giữa 2 ô kề). Cắt vào đoạn đuôi CŨ hơn → vẫn tự cắt đuôi = chết.
                 const tail = e.trailHexes;
-                const graceFrom = Math.max(0, tail.length - config_1.CONFIG.SELF_TRAIL_GRACE);
+                const graceFrom = Math.max(0, tail.length - this.config.rules.selfTrailGrace);
                 for (let i = graceFrom; i < tail.length; i++) {
                     if (tail[i] === hk)
                         return false; // ô đuôi sát đầu → bỏ qua, không chết
@@ -933,12 +950,12 @@ class GameState {
             // đang thực sự nằm TRONG ô trung lập đầu tiên h — đúng với di chuyển liên tục
             // thường thấy. Chỉ khi một bước nhảy qua nhiều ô (đầu đã ở ô xa hơn) mới lùi về
             // tâm h để điểm neo luôn nằm trong ô trung lập đầu tiên, không thò ngược vào đất.
-            const a = (0, hex_1.pixelToAxial)(e.pos.x, e.pos.y, config_1.CONFIG.HEX_SIZE);
+            const a = (0, hex_1.pixelToAxial)(e.pos.x, e.pos.y, this.hexSize);
             if (a.q === h.q && a.r === h.r) {
                 e.trailPoints = [{ x: e.pos.x, y: e.pos.y }];
             }
             else {
-                const p = (0, hex_1.axialToPixel)(h, config_1.CONFIG.HEX_SIZE);
+                const p = (0, hex_1.axialToPixel)(h, this.hexSize);
                 e.trailPoints = [{ x: p.x, y: p.y }];
             }
         }
@@ -971,14 +988,14 @@ class GameState {
     resolveNeutralSameHex(trigger) {
         if (trigger.phase !== "playing")
             return false;
-        const triggerKey = (0, hex_1.keyOf)((0, hex_1.pixelToAxial)(trigger.pos.x, trigger.pos.y, config_1.CONFIG.HEX_SIZE));
+        const triggerKey = (0, hex_1.keyOf)((0, hex_1.pixelToAxial)(trigger.pos.x, trigger.pos.y, this.hexSize));
         if (this.cellOwner.has(triggerKey))
             return false;
         const victims = [trigger];
         for (const other of this.players) {
             if (other === trigger || other.phase !== "playing")
                 continue;
-            const otherKey = (0, hex_1.keyOf)((0, hex_1.pixelToAxial)(other.pos.x, other.pos.y, config_1.CONFIG.HEX_SIZE));
+            const otherKey = (0, hex_1.keyOf)((0, hex_1.pixelToAxial)(other.pos.x, other.pos.y, this.hexSize));
             if (otherKey === triggerKey)
                 victims.push(other);
         }
@@ -991,7 +1008,7 @@ class GameState {
     /** Chủ đất hạ KẺ XÂM NHẬP: nếu đầu đối thủ b đang đứng trên ĐẤT của a và sát đầu a
      *  (≤ KILL_RADIUS) → b chết. Chủ đất bất khả xâm phạm trên sân nhà. */
     resolveHeadCollisions() {
-        const R = config_1.CONFIG.KILL_RADIUS;
+        const R = this.config.rules.killRadius;
         const R2 = R * R;
         // Luật ô trung lập là luật theo GRID, không phải collider: nhóm tất cả đầu theo HexKey
         // hiện tại rồi loại đồng thời mọi nhóm có từ hai người trở lên trên cùng ô trung lập.
@@ -999,7 +1016,7 @@ class GameState {
         for (const e of this.players) {
             if (e.phase !== "playing")
                 continue;
-            const hk = (0, hex_1.keyOf)((0, hex_1.pixelToAxial)(e.pos.x, e.pos.y, config_1.CONFIG.HEX_SIZE));
+            const hk = (0, hex_1.keyOf)((0, hex_1.pixelToAxial)(e.pos.x, e.pos.y, this.hexSize));
             if (this.cellOwner.has(hk))
                 continue;
             const group = neutralGroups.get(hk);
@@ -1107,9 +1124,9 @@ class GameState {
     aheadBlocked(e, heading, dist) {
         const x = e.pos.x + Math.cos(heading) * dist;
         const y = e.pos.y + Math.sin(heading) * dist;
-        if (!(0, arena_1.insideArena)(x, y, 0.25))
+        if (!this.arena.insideArena(x, y, 0.25))
             return true;
-        const hk = (0, hex_1.keyOf)((0, hex_1.pixelToAxial)(x, y, config_1.CONFIG.HEX_SIZE));
+        const hk = (0, hex_1.keyOf)((0, hex_1.pixelToAxial)(x, y, this.hexSize));
         return this.cellTrail.get(hk) === e.id;
     }
     /** Chọn hướng gần `desired` nhất mà phía trước KHÔNG bị chặn (né đuôi mình + tường).
@@ -1119,7 +1136,7 @@ class GameState {
         // điểm quét luôn NGOÀI sân ⇒ né vô nghĩa mà vẫn lặp cả nghìn lần/​bot/​tick ⇒ tốn CPU
         // khi đông bot. Kẹp dist ≤ ~1/3 sân và maxK ≤ 18 (đủ quét ±180° ở bước 0.35 rad).
         const sk = Math.min(Math.max(skill, 0), 1.5);
-        const dist = Math.min(config_1.CONFIG.BOT.AVOID_DIST * (0.7 + sk * 0.8), arena_1.ARENA_R * 0.33);
+        const dist = Math.min(config_1.CONFIG.BOT.AVOID_DIST * (0.7 + sk * 0.8), this.arena.arenaR * 0.33);
         if (!this.aheadBlocked(e, desired, dist))
             return desired;
         const step = 0.35;
