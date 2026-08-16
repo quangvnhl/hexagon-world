@@ -42,24 +42,32 @@ Xem báo cáo: [REPORT-pha-2.md](REPORT-pha-2.md).
 
 Xem báo cáo đóng pha: [17-phase-3-completion-report.md](17-phase-3-completion-report.md).
 
-## Pha 4 — Meta & vật phẩm — ĐANG THỰC HIỆN
+## Pha 4 — Meta & vật phẩm — ĐÃ XONG
 - [x] Totem Speed/Slow/Radar authoritative, Radar kiểm soát quyền xem minimap
 - [x] Room lifecycle: 12..16 bot cố định theo cấu hình; KING sống cuối cùng thắng ngay
 - [ ] **Hoãn khỏi gate beta:** Totem teleport gate
-- [ ] **Hoãn tới khi chạy nhiều node:** Redis matchmaking + leaderboard realtime
+- [ ] **Hoãn tới khi chạy nhiều node:** Redis matchmaking + leaderboard realtime → chuyển sang **Pha 5 (B2 scale ngang)**
 - [x] Supabase PostgreSQL: account đa nguồn, session, match history, catalog, wallet, inventory, loadout
 - [x] XP/progression: rule cấu hình trong DB, level curve, ledger idempotent và API `/v1/me`
 - [x] Skin/tài sản: màu, model, trail pattern, shop coin và Telegram Stars
 - [x] Auth: Google OAuth cho web, Telegram initData, guest hạn chế backend
 - [x] Lobby/Store React cơ bản
 - [x] **Gate:** Lobby ready/cancel/reconnect có reconnect grace; private room/party hoãn sau beta
-- [ ] **Gate:** Áp migration + seed trên Supabase staging/production
-- [ ] **Gate:** Google OAuth, Telegram auth/Stars webhook và match-result E2E trên HTTPS production
+- [x] **Gate:** Áp migration + seed trên Supabase staging/production (xác minh 2026-08-16)
+- [x] **Gate:** Google OAuth, Telegram auth/Stars webhook và match-result E2E trên HTTPS production (xác minh 2026-08-16)
 
-## Pha 5 — Vận hành
+## Pha 5 — Vận hành — CHƯA BẮT ĐẦU (đủ điều kiện khởi động)
 - [ ] Chống gian lận (server authoritative + sanity check)
 - [ ] Horizontal scale GameRoom (nhiều instance + Redis pub/sub)
 - [ ] Telemetry, metrics, load test (k6/artillery cho ws)
+
+> **Kế hoạch chi tiết + SLO đề xuất + thứ tự: [26-phase-5-plan.md](26-phase-5-plan.md).**
+>
+> **Nhóm việc & thứ tự đề xuất:** **B1** chống gian lận (rate-limit khung vào + sanity control frame — code thuần, làm ngay) + **B3** mở rộng telemetry/metrics (tick/CPU mỗi phòng, event-loop lag, `/metrics` Prometheus) và harness load/soak (8 người thật + 16 bot, Radar bật/tắt, reconnect churn) → **đo tải, chốt lại SLO** → **doc 25 P0 `MatchConfig`** (nền cho mode + cho B2) + Practice/Tournament/Campaign → **B2** scale ngang (Redis pub/sub + matchmaking + leaderboard, **chỉ khi SLO chạm trần**).
+>
+> **SLO khởi điểm (doc 26):** `stepRoom` p95 < 5 ms/room · event-loop lag p95 < 10 ms · p95 input→snapshot < 60 ms · downstream < 60 KB/s/client · drop < 1 % · trần 1 node ≈ 64 người / 8 room (= ngưỡng kích hoạt B2).
+>
+> **Đã đề xuất (chờ chốt):** đặt `MatchConfig` (doc 25 P0) **trước B2**; hoãn B2 tới khi đo tải chạm trần; nhánh client "đổi material hex" (doc 24) chạy **song song, độc lập**. Totem teleport gate: đưa vào Pha 5 hay để sau — chưa chốt.
 
 ## Tiêu chí lên pha sau
 Chỉ chuyển pha khi pha trước có: build xanh, demo chạy, và (từ Pha 2) test tự động
@@ -76,3 +84,14 @@ cho phần logic chia sẻ.
 - Gate cấu hình offline đã có (`pnpm release:check`), nhưng không thay thế kiểm chứng hạ tầng thật.
 
 Chi tiết mới nhất: [23-phase-4-readiness-report.md](23-phase-4-readiness-report.md).
+
+### Trạng thái gate ngày 2026-08-16
+
+- **Pha 4 ĐÃ ĐÓNG.** Cả hai gate hạ tầng đã xác minh trên môi trường thật:
+  - **Supabase migration + seed:** `/health/ready` trả `database:true`; RPC `fulfill_telegram_stars_coin_order`/`fulfill_telegram_stars_order` tồn tại; gói coin (`coin_packages`) + `player_identities` provider=telegram khớp tài khoản test.
+  - **E2E HTTPS production:** Google OAuth (cookie `hex_session` HttpOnly+Secure, đúng tên); Telegram initData đúng tên/nền tảng + webhook đã đăng ký (`setWebhook` với `allowed_updates=[pre_checkout_query,message]`); **mua coin Stars thành công**; **Stars idempotency đạt** (gửi lặp `successful_payment` KHÔNG cộng coin lần hai); **match-result spool + gửi-lại-đúng-một-lần** (test `CONTROL_PLANE_URL` sai→đúng: cả hai ván ghi đủ vào `matches`/`match_players`); **CORS** chặn origin lạ (localhost gọi production bị chặn); `/v1/regions` khớp deployment; **WSS `/game` bắt tay protocol v5**.
+- **Bug đã sửa trong đợt kiểm chứng:** mua coin Stars thất bại ("Bạn đã đóng hóa đơn") do webhook chưa đăng ký (`getWebhookInfo` url rỗng) → đăng ký lại `setWebhook`. (`provider_token` không truyền là đúng chuẩn Stars.)
+- **Hành vi vận hành đã chốt (giữ nguyên):** thoát phòng giữa chừng → không cộng điểm lãnh thổ (XP ~0, ghế bị park); reconnect trong grace 30s giữ ghế/phòng nhưng rắn vẫn đi theo heading cuối lúc mất mạng nên thường chết → chờ hồi sinh.
+- **Kết luận:** đủ điều kiện chuyển sang **Pha 5**. Các điểm cần thống nhất trước khi khởi động: xem ghi chú dưới mục "Pha 5 — Vận hành" ở trên.
+
+`GAME_RESULT_SPOOL_DIR` mặc định `./data/match-results` (resolve theo cwd game node); mỗi kết quả chờ gửi là file `<eventId>.json`, tự xóa khi gửi thành công.

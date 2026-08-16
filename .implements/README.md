@@ -30,6 +30,7 @@ phải đọc và tuân thủ các tài liệu này trước khi code.**
 | [23-phase-4-readiness-report.md](23-phase-4-readiness-report.md) | Trạng thái sẵn sàng đóng Pha 4 và các gate hạ tầng còn lại | PM + Backend + DevOps |
 | [24-render-perf-research.md](24-render-perf-research.md) | Tổng hợp nghiên cứu hiệu năng render: đổi material hex, UI HTML/CSS, đuôi 2D, flood fill, overdraw, sơ đồ kiến trúc lai | Frontend + Gameplay + Design |
 | [25-game-modes-plan.md](25-game-modes-plan.md) | Quy hoạch Luyện tập/Tournament/Cấp độ + hệ năng lượng + admin level editor; nút thắt `CONFIG`→`MatchConfig` | Gameplay + Backend + Frontend + Product |
+| [26-phase-5-plan.md](26-phase-5-plan.md) | Kế hoạch Pha 5 (B1 chống gian lận · B3 telemetry/load · B2 scale Redis) + SLO đề xuất + thứ tự với doc 24/25 | PM + Backend + DevOps + Gameplay |
 
 ## Nguyên tắc làm việc cho agents
 
@@ -51,4 +52,5 @@ phải đọc và tuân thủ các tài liệu này trước khi code.**
 - [x] **Pha 1 hoàn thiện gameplay:** cơ chế thắng (giữ King 3 phút), camera zoom theo diện tích, hiệu ứng hạt, joystick mobile, unit test Vitest — xem [05-roadmap.md](05-roadmap.md) & [REPORT-pha-1.md](REPORT-pha-1.md)
 - [x] **Pha 2 nền tảng multiplayer:** monorepo pnpm (`shared`/`client`/`server`), server NestJS authoritative + `ws` (tick 24Hz), protocol nhị phân + snapshot, client prediction/interpolation, spatial hashing — xem [REPORT-pha-2.md](REPORT-pha-2.md)
 - [x] Pha 3: delta/AoI lãnh thổ, entity/spectator lifecycle, backpressure và protocol metrics
-- [ ] Pha 4: code và Lobby beta đã đạt; còn migration/seed và E2E HTTPS trên hạ tầng thật
+- [x] Pha 4: **đã đóng** (2026-08-16) — migration/seed + E2E HTTPS production đã xác minh (OAuth, Telegram/Stars idempotency, match-result spool, CORS, regions, WSS v5)
+- [ ] Pha 5 — Vận hành: chưa bắt đầu, **đủ điều kiện khởi động**; kế hoạch + SLO đã dựng ([26-phase-5-plan.md](26-phase-5-plan.md)) — chờ chốt số & thứ tự trước khi code
