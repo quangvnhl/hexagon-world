@@ -56,12 +56,13 @@ Xem báo cáo đóng pha: [17-phase-3-completion-report.md](17-phase-3-completio
 - [x] **Gate:** Áp migration + seed trên Supabase staging/production (xác minh 2026-08-16)
 - [x] **Gate:** Google OAuth, Telegram auth/Stars webhook và match-result E2E trên HTTPS production (xác minh 2026-08-16)
 
-## Pha 5 — Vận hành — ĐANG THỰC HIỆN (wave 1: B1+B3 code xong · wave 2: doc 25 P0 code xong — chờ review)
-- [x] **doc 25 P0 — nền `MatchConfig`** (refactor thuần, không đổi trải nghiệm): `MatchConfig`/`WinCondition`/`ArenaGeometry` per-instance; `GameState` nhận 1 object config. *typecheck+build xanh, 171/171 test. Chi tiết: "Trạng thái Pha 5 — wave 2" dưới. CHƯA commit.*
+## Pha 5 — Vận hành — ĐANG THỰC HIỆN (wave 1: B1+B3 · wave 2: doc 25 P0 — đã commit; wave 3: load-test sơ bộ)
+- [x] **doc 25 P0 — nền `MatchConfig`** (refactor thuần, không đổi trải nghiệm): `MatchConfig`/`WinCondition`/`ArenaGeometry` per-instance; `GameState` nhận 1 object config. *typecheck+build xanh, 171/171 test. Đã commit ("Pha5"). Chi tiết: "Trạng thái Pha 5 — wave 2" dưới.*
 - [x] **B1 Chống gian lận** (code + test): rate-limit ws input (token-bucket 48/s), text (5/5s, strike→close 4009), trần kết nối/IP (20, close 4008), chuẩn hóa `heading`→`[-π,π]`. Ngưỡng env-driven. *Server build xanh, 49 test (12 mới).*
 - [x] **B3 Telemetry** (code + harness): đo `stepRoom` p50/p95, event-loop lag, tick behind, rooms active, counters B1 → endpoint `GET /metrics` (Prometheus). Harness load/soak Node+ws (`packages/server/test/load/`) ánh xạ SLO §2. *Đã kiểm chứng offline khớp `/metrics`.*
-- [ ] **B3 chạy load-test thật → chốt lại SLO** (cần server chạy với secrets; chưa thực thi).
+- [~] **B3 chạy load-test — ĐO SƠ BỘ trên 1 máy dev** (2026-08-17, xem "wave 3" dưới). `stepRoom` p95 & bandwidth & drop rate **PASS**; latency/event-loop metrics **chưa chốt được** (nhiễu co-located). **Chốt SLO chính thức vẫn cần load-gen tách máy + mạng thật.**
 - [ ] **B2** Horizontal scale GameRoom (nhiều instance + Redis pub/sub) — CHỈ khi load-test cho thấy 1 node chạm trần SLO §2.2 (~64 người/8 room).
+- [ ] **doc 25 P1 — Practice / Tournament / obstacle** (KHÔNG bị load-test chặn; nền P0 đã xong). Kế hoạch triển khai chia lát: [27-phase1-modes-impl.md](27-phase1-modes-impl.md).
 
 > **Kế hoạch chi tiết + SLO đề xuất + thứ tự: [26-phase-5-plan.md](26-phase-5-plan.md).**
 >
@@ -124,3 +125,32 @@ Quyết định: P0 là **refactor thuần, KHÔNG đổi trải nghiệm** → 
 - **Chủ ý HOÃN sang P1:** cấu hình TOTEM + profile TỐC ĐỘ/AI bot vẫn đọc `CONFIG` (còn chia sẻ với `totems.ts`); evaluator `territory_pct`/`survive`/`capture_totems`; hợp nhất luật thắng trùng lặp giữa `GameState.checkWin` và `GameRoom.stepTick` (server vẫn tự chạy king-countdown riêng — chưa đụng).
 - **Kết quả:** typecheck xanh (shared/server/client); test **shared 64 · server 49 · client 58 = 171/171**; `nest build` xanh; `next build` xanh. Hành vi không đổi (mọi default = CONFIG).
 - **Call-site đã đổi:** `game-room.ts`, `NetGameScene.tsx` (dùng object mới); `GameScene.tsx` `new GameState()` giữ nguyên; ~16 call-site test viết lại.
+
+### Trạng thái Pha 5 — wave 3: load-test SƠ BỘ (2026-08-17)
+
+Chạy harness `packages/server/test/load/orchestrator.mjs` với **game node cục bộ** (`SERVER_ROLE=all`,
+dummy secrets — không cần Supabase/OAuth thật) ở 3 mức: 1 phòng, 4 phòng, và **8 phòng × 8 = 64 người**
+(trần 1 node theo doc 26 §2.2). **Đây là đo SƠ BỘ, chưa phải chốt SLO chính thức.**
+
+**Kết quả ĐÁNG TIN (đo phía server, hợp lệ) ở 64 người / 8 phòng:**
+
+| Chỉ số | SLO §2 | Đo | KL |
+|---|---|---|---|
+| `stepRoom` p95 / phòng | < 5 ms | **1.62 ms** (phẳng theo tải: 0.43→1.78→1.62) | ✅ |
+| downstream / client | < 60 KB/s | **0.3 KB/s** | ✅ |
+| snapshot drop rate | < 1 % | **0 %** (0/75.456 khung) | ✅ |
+| rooms active | ≥ 8 | **8** | ✅ |
+
+⇒ **Compute lõi mô phỏng mỗi tick KHÔNG phải nút thắt** ngay cả ở trần 64/8-phòng; băng thông & mất gói tốt.
+
+**Số CHƯA chốt được (nhiễu môi trường 1-máy):** `event-loop lag` p95 (5.5→15→205 ms), `tick-behind`
+(11→17→26 %), `input→snapshot` p95 (49 ms→3,25 s) — đều **phình theo số client harness** trong khi
+`stepRoom` đứng yên ⇒ chủ yếu do **load-generator chạy CHUNG máy với server** + **localhost RTT≈0**
+(dòng input→snapshot chỉ là proxy). Ngoài ra ban đầu vướng **artifact IP-cap B1** (`WS_MAX_CONN_PER_IP=20`
+chặn ở 20 client vì mọi client ảo cùng IP localhost → phải nâng cap cho lần đo trần). *Lưu ý mở:* phần
+event-loop lag có thể lẫn chi phí THẬT của đường broadcast/encode gửi 64 socket mỗi tick + GC (ngoài
+`stepRoom`) — cần đo tách máy để quy trách dứt khoát.
+
+**Để CHỐT SLO chính thức (chưa làm):** load-gen trên 1–2 máy TÁCH RỜI (nhiều IP, không giành CPU với
+server) + server trên phần cứng gần production + soak 30 phút kèm churn/interest như doc 26 §2. **B2 (Redis)
+vẫn GIỮ nguyên điều kiện kích hoạt:** chỉ khi đo chính thức cho thấy 1 node chạm trần §2.2.
