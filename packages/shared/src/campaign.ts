@@ -8,6 +8,7 @@
 // là P3 (doc 25 §4) — khi đó chỉ cần thay nguồn `CAMPAIGN_LEVELS` bằng dữ liệu fetch, giữ nguyên
 // type `CampaignLevel` + các helper thuần bên dưới.
 
+import { CONFIG } from "./config";
 import { key } from "./hex";
 import { resolveMatchConfig, type MatchConfigInput } from "./match-config";
 
@@ -96,6 +97,52 @@ export const CAMPAIGN_LEVELS: readonly CampaignLevel[] = [
     rewards: { coin: 150, xp: 140, energy: 2 },
   },
 ] as const;
+
+// ---- Power-up → modifier khởi tạo (doc 28 §E2) ------------------------------------------------
+//
+// `applyPowerups` là hàm THUẦN: nhận config gốc của cấp + power-up đã chọn, trả config MỚI đã
+// áp modifier. KHÔNG chạm code chết/hồi sinh nóng ⇒ dùng chung client (dựng ván) lẫn server
+// (đối chiếu/kiểm). Không chọn gì ⇒ trả config TƯƠNG ĐƯƠNG gốc (bất biến).
+
+/** Hệ số power-up (đặt ở đây để chỉnh một chỗ; tương lai có thể đưa vào catalog). */
+export const POWERUP_TUNING = {
+  /** `speed`: nhân dải tốc độ nền lên. */
+  speedFactor: 1.15,
+  /** `head_start`: cộng thêm vào bán kính cụm lãnh thổ khởi đầu (START_RADIUS). */
+  headStartRadiusBonus: 1,
+} as const;
+
+/**
+ * Áp power-up đã chọn lên config gốc của cấp. MVP P2 hiện thực 2 loại có ánh xạ config sạch:
+ * - `speed`: nhân `rules.speed.{min,max}` với `speedFactor`.
+ * - `head_start`: cộng `headStartRadiusBonus` vào `rules.startRadius` (cụm khởi đầu lớn hơn).
+ * - `extra_life`: **DÀNH** — cần hệ MẠNG PHỤ / điều kiện THUA (chưa có; xem doc 28 §6). Hiện là
+ *   no-op trên config để không đánh lừa, nhưng vẫn nhận hợp lệ (không ném) để catalog khai sẵn.
+ */
+export function applyPowerups(
+  base: MatchConfigInput,
+  picks: readonly PowerupKind[],
+): MatchConfigInput {
+  let out: MatchConfigInput = base;
+  for (const p of picks) {
+    if (p === "head_start") {
+      const cur = out.rules?.startRadius ?? CONFIG.START_RADIUS;
+      out = { ...out, rules: { ...out.rules, startRadius: cur + POWERUP_TUNING.headStartRadiusBonus } };
+    } else if (p === "speed") {
+      const min = out.rules?.speed?.min ?? CONFIG.SPEED.BY_KING_PCT.MIN;
+      const max = out.rules?.speed?.max ?? CONFIG.SPEED.BY_KING_PCT.MAX;
+      out = {
+        ...out,
+        rules: {
+          ...out.rules,
+          speed: { min: min * POWERUP_TUNING.speedFactor, max: max * POWERUP_TUNING.speedFactor },
+        },
+      };
+    }
+    // extra_life: dành — không đổi config.
+  }
+  return out;
+}
 
 /** Tra cấp theo id. */
 export function levelById(id: string): CampaignLevel | undefined {
