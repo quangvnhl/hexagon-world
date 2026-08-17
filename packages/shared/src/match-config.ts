@@ -175,3 +175,24 @@ export function resolveMatchConfig(input: MatchConfigInput = {}): MatchConfig {
     seed: input.seed ?? 0,
   };
 }
+
+// ---- Preset theo MODE (doc 25 §1.1) — trả MatchConfigInput để ghép thêm seed/override. --------
+
+/** Preset LUYỆN TẬP (`/play`): endless (`win=none`, không thắng/thua), tự chỉnh số bot; các luật
+ *  khác = default CONFIG. Client dựng `new GameState({ config: practiceConfig({ botCount }) })`. */
+export function practiceConfig(input: { botCount?: number } = {}): MatchConfigInput {
+  return {
+    win: { kind: "none" },
+    ...(input.botCount !== undefined ? { bots: { count: input.botCount } } : {}),
+  };
+}
+
+/** Preset TOURNAMENT (`/netplay`): giữ ngôi King (`king_hold`) đủ `winHoldTime` giây. Phòng online
+ *  bật `externalWinControl` nên tự chạy countdown theo vòng đời; `winHoldTime` gửi xuống client để
+ *  hiển thị đúng thời lượng giữ ngôi. */
+export function tournamentConfig(input: { botCount?: number; winHoldTime?: number } = {}): MatchConfigInput {
+  return {
+    win: { kind: "king_hold", ...(input.winHoldTime !== undefined ? { winHoldTime: input.winHoldTime } : {}) },
+    ...(input.botCount !== undefined ? { bots: { count: input.botCount } } : {}),
+  };
+}

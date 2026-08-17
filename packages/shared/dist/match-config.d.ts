@@ -93,3 +93,15 @@ export type MatchConfigInput = {
 };
 /** Điền default từ CONFIG rồi ghép override. Không truyền gì ⇒ bằng hành vi hiện tại. */
 export declare function resolveMatchConfig(input?: MatchConfigInput): MatchConfig;
+/** Preset LUYỆN TẬP (`/play`): endless (`win=none`, không thắng/thua), tự chỉnh số bot; các luật
+ *  khác = default CONFIG. Client dựng `new GameState({ config: practiceConfig({ botCount }) })`. */
+export declare function practiceConfig(input?: {
+    botCount?: number;
+}): MatchConfigInput;
+/** Preset TOURNAMENT (`/netplay`): giữ ngôi King (`king_hold`) đủ `winHoldTime` giây. Phòng online
+ *  bật `externalWinControl` nên tự chạy countdown theo vòng đời; `winHoldTime` gửi xuống client để
+ *  hiển thị đúng thời lượng giữ ngôi. */
+export declare function tournamentConfig(input?: {
+    botCount?: number;
+    winHoldTime?: number;
+}): MatchConfigInput;

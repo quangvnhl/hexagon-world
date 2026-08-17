@@ -1,5 +1,6 @@
 import {
   GameState,
+  tournamentConfig,
   type PlayerAppearance,
   type Snapshot,
   type WorldUiEntity,
@@ -50,7 +51,9 @@ export class GameRoom {
     // players[0..maxHumans-1] là ghế người (non-bot); phần còn lại là bot.
     this.gs = new GameState({
       humanCount: maxHumans,
-      config: { bots: { count: botCount }, seed: matchSeed },
+      // Preset TOURNAMENT (§S6): king_hold, giữ ngôi = kingDurationSeconds. Gửi xuống client qua
+      // welcome (§S5) để dựng view khớp.
+      config: { ...tournamentConfig({ botCount, winHoldTime: this.kingDurationSeconds }), seed: matchSeed },
       // Phòng online tự chạy countdown King theo vòng đời (giữ deadline khi đổi King A→B,
       // chỉ reset khi King→none) ⇒ GameState KHÔNG chạy checkWin song song (§S4).
       externalWinControl: true,
