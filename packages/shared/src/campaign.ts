@@ -1,0 +1,131 @@
+// Campaign (Cấp độ) — catalog cấp độ là DỮ LIỆU THUẦN (doc 25 §2.3, doc 28 E1).
+//
+// Mỗi cấp = một `MatchConfigInput` (map/obstacle/bot/rules + objective ở `win`) cộng metadata
+// mở khóa/thưởng. Import ĐƯỢC ở cả client (chọn/chơi) lẫn server (verify thưởng/mở khóa) nên
+// KHÔNG phụ thuộc React/Nest — chỉ toán + type từ gói shared.
+//
+// PHẠM VI P2 (chủ ý): catalog HARDCODE ~5 cấp mẫu. Schema Level trên Supabase + trình vẽ admin
+// là P3 (doc 25 §4) — khi đó chỉ cần thay nguồn `CAMPAIGN_LEVELS` bằng dữ liệu fetch, giữ nguyên
+// type `CampaignLevel` + các helper thuần bên dưới.
+
+import { key } from "./hex";
+import { resolveMatchConfig, type MatchConfigInput } from "./match-config";
+
+/** Power-up chọn trước trận (doc 25 §2.3). MVP P2: 3 loại ánh xạ được vào modifier khởi tạo
+ *  (doc 28 E2). `speed` tái dùng totem/tốc độ; `head_start` lãnh thổ khởi đầu lớn hơn;
+ *  `extra_life` một mạng phụ. Mở rộng (shield/radar…) là hậu P2. */
+export type PowerupKind = "speed" | "head_start" | "extra_life";
+
+export interface CampaignLevel {
+  /** Định danh ổn định (dùng cho progress/ticket, KHÔNG đổi khi sắp xếp lại). */
+  id: string;
+  /** Thứ tự hiển thị (duy nhất, tăng dần). */
+  order: number;
+  name: string;
+  /** Cấu hình ván — objective nằm ở `config.win`. */
+  config: MatchConfigInput;
+  /** Loại power-up được phép chọn ở cấp này. */
+  powerups: PowerupKind[];
+  /** Điều kiện mở khóa: id cấp phải hoàn thành trước (null = mở sẵn từ đầu). */
+  unlock: { requires: string | null };
+  /** Thưởng khi qua màn (server đối chiếu catalog, KHÔNG nhận số từ client). */
+  rewards: { coin: number; xp: number; energy: number };
+}
+
+// Vài cụm ô chướng ngại nhỏ quanh tâm cho cấp dùng obstacle (S7 — barrier nội bộ, biên vẫn lồi).
+const wallColumn = [key(2, -1), key(2, 0), key(2, 1)];
+const pillars = [key(-3, 1), key(3, -1), key(0, 3), key(0, -3)];
+
+/** Catalog Campaign P2 — 5 cấp mẫu, độ khó tăng dần, phủ đủ 3 loại objective + obstacle. */
+export const CAMPAIGN_LEVELS: readonly CampaignLevel[] = [
+  {
+    id: "c1",
+    order: 1,
+    name: "Khởi đầu",
+    config: { bots: { count: 6 }, win: { kind: "territory_pct", targetPct: 0.3 } },
+    powerups: ["head_start"],
+    unlock: { requires: null },
+    rewards: { coin: 50, xp: 40, energy: 0 },
+  },
+  {
+    id: "c2",
+    order: 2,
+    name: "Cầm cự",
+    config: { bots: { count: 8 }, win: { kind: "survive", durationSec: 60 } },
+    powerups: ["head_start", "speed"],
+    unlock: { requires: "c1" },
+    rewards: { coin: 60, xp: 55, energy: 0 },
+  },
+  {
+    id: "c3",
+    order: 3,
+    name: "Săn totem",
+    config: {
+      bots: { count: 10 },
+      rules: { totemsEnabled: true },
+      win: { kind: "capture_totems", totemGoal: 3 },
+    },
+    powerups: ["speed", "extra_life"],
+    unlock: { requires: "c2" },
+    rewards: { coin: 80, xp: 70, energy: 1 },
+  },
+  {
+    id: "c4",
+    order: 4,
+    name: "Mê cung",
+    config: {
+      bots: { count: 10 },
+      map: { obstacles: [...wallColumn] },
+      win: { kind: "territory_pct", targetPct: 0.35 },
+    },
+    powerups: ["head_start", "speed", "extra_life"],
+    unlock: { requires: "c3" },
+    rewards: { coin: 100, xp: 90, energy: 1 },
+  },
+  {
+    id: "c5",
+    order: 5,
+    name: "Chung kết",
+    config: {
+      bots: { count: 14 },
+      map: { obstacles: [...pillars] },
+      win: { kind: "territory_pct", targetPct: 0.45 },
+    },
+    powerups: ["head_start", "speed", "extra_life"],
+    unlock: { requires: "c4" },
+    rewards: { coin: 150, xp: 140, energy: 2 },
+  },
+] as const;
+
+/** Tra cấp theo id. */
+export function levelById(id: string): CampaignLevel | undefined {
+  return CAMPAIGN_LEVELS.find((l) => l.id === id);
+}
+
+/** Cấp đã MỞ KHÓA chưa, cho tập id đã hoàn thành `cleared`. Thuần → dùng chung client/server
+ *  (client tô lưới; server chặn nộp cấp chưa mở). Cấp `requires=null` luôn mở. */
+export function isUnlocked(id: string, cleared: ReadonlySet<string>): boolean {
+  const lvl = levelById(id);
+  if (!lvl) return false;
+  const req = lvl.unlock.requires;
+  return req === null || cleared.has(req);
+}
+
+/** Kiểm tra tính nhất quán catalog (dùng trong test + có thể gọi lúc boot server). Ném nếu hỏng. */
+export function validateCampaignCatalog(levels: readonly CampaignLevel[] = CAMPAIGN_LEVELS): void {
+  const ids = new Set<string>();
+  const orders = new Set<number>();
+  for (const l of levels) {
+    if (ids.has(l.id)) throw new Error(`Campaign: trùng id ${l.id}`);
+    ids.add(l.id);
+    if (orders.has(l.order)) throw new Error(`Campaign: trùng order ${l.order}`);
+    orders.add(l.order);
+    // config phải hợp lệ (resolve không ném).
+    resolveMatchConfig(l.config);
+  }
+  for (const l of levels) {
+    const req = l.unlock.requires;
+    if (req !== null && !ids.has(req)) throw new Error(`Campaign: ${l.id} yêu cầu id lạ ${req}`);
+    if (req === l.id) throw new Error(`Campaign: ${l.id} tự yêu cầu chính nó`);
+  }
+}
