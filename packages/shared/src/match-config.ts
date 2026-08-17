@@ -60,15 +60,41 @@ export interface MatchBotConfig {
   difficultyMix?: number[];
 }
 
-/** Luật cơ bản GameState đọc trực tiếp mỗi tick (không gồm totem/speed sâu — xem ghi chú đầu file). */
+/** Đường cong tốc độ nền theo % tiến tới ngưỡng King (CONFIG.SPEED.BY_KING_PCT). */
+export interface MatchSpeedRules {
+  min: number; // SPEED.BY_KING_PCT.MIN
+  max: number; // SPEED.BY_KING_PCT.MAX
+}
+
+/** Cấu hình TOTEM per-ván (CONFIG.TOTEMS.*) — mode chỉnh số lượng/độ mạnh/khoảng cách riêng. */
+export interface MatchTotemRules {
+  speedCount: number; // TOTEMS.SPEED.COUNT
+  speedBonus: number; // TOTEMS.SPEED.BONUS_PER_TOTEM
+  slowCount: number; // TOTEMS.SLOW.COUNT
+  slowEnemySpeed: number; // TOTEMS.SLOW.ENEMY_SPEED
+  slowRadius: number; // TOTEMS.SLOW.RADIUS
+  radarCount: number; // TOTEMS.RADAR.COUNT
+  minSpawnDistance: number; // TOTEMS.MIN_SPAWN_DISTANCE
+  spawnClearance: number; // TOTEMS.SPAWN_CLEARANCE
+}
+
+/** Luật cơ bản GameState đọc trực tiếp mỗi tick. P1 (S2): thêm totem + tốc độ + turn-rate bot
+ *  (trước đọc thẳng CONFIG, chia sẻ với totems.ts) để mode Luyện tập/Campaign chỉnh riêng. */
 export interface MatchRules {
   prepTime: number; // PREP_TIME
   startRadius: number; // START_RADIUS
   spawnClearance: number; // SPAWN_CLEARANCE
   turnRate: number; // TURN_RATE (người chơi)
+  botTurnRate: number; // BOT.TURN_RATE (bot)
   trailPointDist: number; // TRAIL_POINT_DIST
   killRadius: number; // KILL_RADIUS
   selfTrailGrace: number; // SELF_TRAIL_GRACE
+  /** Đường cong tốc độ nền (SPEED.BY_KING_PCT). */
+  speed: MatchSpeedRules;
+  /** Bật/tắt sinh Totem (Luyện tập có thể tắt hẳn). */
+  totemsEnabled: boolean;
+  /** Cấu hình Totem (số lượng/độ mạnh/khoảng cách). */
+  totems: MatchTotemRules;
 }
 
 export interface MatchConfig {
@@ -80,11 +106,19 @@ export interface MatchConfig {
   seed: number;
 }
 
+/** Override rules cho phép partial cả nhánh lồng (speed/totems) mà không phải khai đủ. */
+export type MatchRulesInput =
+  & Partial<Omit<MatchRules, "speed" | "totems">>
+  & {
+    speed?: Partial<MatchSpeedRules>;
+    totems?: Partial<MatchTotemRules>;
+  };
+
 /** Deep-partial để override từng nhánh mà không phải khai lại toàn bộ. */
 export type MatchConfigInput = {
   map?: Partial<MatchMapConfig>;
   bots?: Partial<MatchBotConfig>;
-  rules?: Partial<MatchRules>;
+  rules?: MatchRulesInput;
   win?: Partial<WinCondition>;
   seed?: number;
 };
@@ -110,9 +144,25 @@ export function resolveMatchConfig(input: MatchConfigInput = {}): MatchConfig {
       startRadius: input.rules?.startRadius ?? CONFIG.START_RADIUS,
       spawnClearance: input.rules?.spawnClearance ?? CONFIG.SPAWN_CLEARANCE,
       turnRate: input.rules?.turnRate ?? CONFIG.TURN_RATE,
+      botTurnRate: input.rules?.botTurnRate ?? CONFIG.BOT.TURN_RATE,
       trailPointDist: input.rules?.trailPointDist ?? CONFIG.TRAIL_POINT_DIST,
       killRadius: input.rules?.killRadius ?? CONFIG.KILL_RADIUS,
       selfTrailGrace: input.rules?.selfTrailGrace ?? CONFIG.SELF_TRAIL_GRACE,
+      speed: {
+        min: input.rules?.speed?.min ?? CONFIG.SPEED.BY_KING_PCT.MIN,
+        max: input.rules?.speed?.max ?? CONFIG.SPEED.BY_KING_PCT.MAX,
+      },
+      totemsEnabled: input.rules?.totemsEnabled ?? true,
+      totems: {
+        speedCount: input.rules?.totems?.speedCount ?? CONFIG.TOTEMS.SPEED.COUNT,
+        speedBonus: input.rules?.totems?.speedBonus ?? CONFIG.TOTEMS.SPEED.BONUS_PER_TOTEM,
+        slowCount: input.rules?.totems?.slowCount ?? CONFIG.TOTEMS.SLOW.COUNT,
+        slowEnemySpeed: input.rules?.totems?.slowEnemySpeed ?? CONFIG.TOTEMS.SLOW.ENEMY_SPEED,
+        slowRadius: input.rules?.totems?.slowRadius ?? CONFIG.TOTEMS.SLOW.RADIUS,
+        radarCount: input.rules?.totems?.radarCount ?? CONFIG.TOTEMS.RADAR.COUNT,
+        minSpawnDistance: input.rules?.totems?.minSpawnDistance ?? CONFIG.TOTEMS.MIN_SPAWN_DISTANCE,
+        spawnClearance: input.rules?.totems?.spawnClearance ?? CONFIG.TOTEMS.SPAWN_CLEARANCE,
+      },
     },
     win: {
       kind: input.win?.kind ?? "king_hold",

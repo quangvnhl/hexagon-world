@@ -36,15 +36,39 @@ export interface MatchBotConfig {
      *  (luân phiên toàn bảng) → giữ hành vi hiện tại. */
     difficultyMix?: number[];
 }
-/** Luật cơ bản GameState đọc trực tiếp mỗi tick (không gồm totem/speed sâu — xem ghi chú đầu file). */
+/** Đường cong tốc độ nền theo % tiến tới ngưỡng King (CONFIG.SPEED.BY_KING_PCT). */
+export interface MatchSpeedRules {
+    min: number;
+    max: number;
+}
+/** Cấu hình TOTEM per-ván (CONFIG.TOTEMS.*) — mode chỉnh số lượng/độ mạnh/khoảng cách riêng. */
+export interface MatchTotemRules {
+    speedCount: number;
+    speedBonus: number;
+    slowCount: number;
+    slowEnemySpeed: number;
+    slowRadius: number;
+    radarCount: number;
+    minSpawnDistance: number;
+    spawnClearance: number;
+}
+/** Luật cơ bản GameState đọc trực tiếp mỗi tick. P1 (S2): thêm totem + tốc độ + turn-rate bot
+ *  (trước đọc thẳng CONFIG, chia sẻ với totems.ts) để mode Luyện tập/Campaign chỉnh riêng. */
 export interface MatchRules {
     prepTime: number;
     startRadius: number;
     spawnClearance: number;
     turnRate: number;
+    botTurnRate: number;
     trailPointDist: number;
     killRadius: number;
     selfTrailGrace: number;
+    /** Đường cong tốc độ nền (SPEED.BY_KING_PCT). */
+    speed: MatchSpeedRules;
+    /** Bật/tắt sinh Totem (Luyện tập có thể tắt hẳn). */
+    totemsEnabled: boolean;
+    /** Cấu hình Totem (số lượng/độ mạnh/khoảng cách). */
+    totems: MatchTotemRules;
 }
 export interface MatchConfig {
     map: MatchMapConfig;
@@ -54,11 +78,16 @@ export interface MatchConfig {
     /** Seed RNG cho totem (deterministic giữa server/client) — trước là `matchSeed`. */
     seed: number;
 }
+/** Override rules cho phép partial cả nhánh lồng (speed/totems) mà không phải khai đủ. */
+export type MatchRulesInput = Partial<Omit<MatchRules, "speed" | "totems">> & {
+    speed?: Partial<MatchSpeedRules>;
+    totems?: Partial<MatchTotemRules>;
+};
 /** Deep-partial để override từng nhánh mà không phải khai lại toàn bộ. */
 export type MatchConfigInput = {
     map?: Partial<MatchMapConfig>;
     bots?: Partial<MatchBotConfig>;
-    rules?: Partial<MatchRules>;
+    rules?: MatchRulesInput;
     win?: Partial<WinCondition>;
     seed?: number;
 };

@@ -37,6 +37,8 @@ export declare class Entity {
     phase: Phase;
     prepRemaining: number;
     deaths: number;
+    /** Số Totem đã thu được (cộng dồn trong ván) — cho điều kiện thắng `capture_totems`. */
+    totemsCaptured: number;
     /** Lý do chết lần gần nhất (cho popup). */
     deathCause: DeathCause;
     /** Id kẻ đã hạ ở lần chết gần nhất (-1 nếu tự chết / cả hai chết). */
@@ -115,6 +117,8 @@ export declare class GameState {
     private readonly playableOwnedByOwner;
     /** Thời gian (giây) còn lại phải giữ ngôi King liên tục để thắng (gán từ config). */
     kingHoldRemaining: number;
+    /** [survive] Thời gian (giây) còn lại phải sống sót để thắng (gán từ config.win.durationSec). */
+    surviveRemaining: number;
     /** Đã kết thúc chưa (có người thắng) → đóng băng game. */
     won: boolean;
     /** Id người thắng (-1 nếu chưa). */
@@ -202,6 +206,10 @@ export declare class GameState {
     totemStates(): readonly TotemState[];
     speedTotemCountFor(entityId: number): number;
     radarActiveFor(entityId: number): boolean;
+    /** Cấu hình sinh Totem của ván (từ rules) — dùng cho createTotems trong constructor. */
+    private totemSpawnConfig;
+    /** Cấu hình tốc độ hiệu dụng của ván (đường cong nền + bonus/slow từ rules). */
+    private effectiveSpeedConfig;
     insideEnemySlowZoneFor(entityId: number): boolean;
     gameplayModifiersFor(entityId: number): EntityGameplayModifiers;
     effectiveSpeedFor(entityId: number): number;
@@ -261,6 +269,9 @@ export declare class GameState {
      *  Các loại territory_pct/survive/capture_totems khai báo sẵn ở WinCondition, sẽ cắm
      *  evaluator ở P1 (khi làm Campaign) — hiện dùng nhánh king_hold làm mặc định an toàn.
      */
+    /** Chủ thể được đánh giá điều kiện thắng: NGƯỜI chơi (entity 0) nếu ghế 0 là người; nếu
+     *  không (vd phòng toàn bot) thì lấy KING hiện tại. -1 nếu không xác định. */
+    private winSubjectId;
     private checkWin;
     private updateEntity;
     /** API cho test: di chuyển người chơi tới (x,y) nếu ô đích hợp lệ. */

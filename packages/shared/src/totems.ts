@@ -21,22 +21,56 @@ export interface EntityGameplayModifiers {
 
 const clamp01 = (value: number): number => Math.max(0, Math.min(1, value));
 
-/** Tốc độ nền tăng tuyến tính từ MIN tới MAX khi tiến tới ngưỡng King. */
-export function baseSpeedForPct(pct: number): number {
-  const { MIN, MAX } = CONFIG.SPEED.BY_KING_PCT;
-  const t = clamp01((Number.isFinite(pct) ? pct : 0) / CONFIG.KING_PCT);
-  return MIN + (MAX - MIN) * t;
+/** Đường cong tốc độ nền (min→max). Default = CONFIG ⇒ hành vi cũ y hệt. */
+export interface SpeedCurveConfig {
+  min: number;
+  max: number;
+  /** Ngưỡng % để đạt tốc độ max (mốc King). */
+  kingPct: number;
 }
 
-/** Slow là override cuối; speed Totem chỉ cộng khi không nằm trong vùng Slow địch. */
+const DEFAULT_SPEED_CURVE: SpeedCurveConfig = {
+  min: CONFIG.SPEED.BY_KING_PCT.MIN,
+  max: CONFIG.SPEED.BY_KING_PCT.MAX,
+  kingPct: CONFIG.KING_PCT,
+};
+
+/** Tốc độ nền tăng tuyến tính từ min tới max khi tiến tới ngưỡng King.
+ *  `curve` mặc định = CONFIG ⇒ gọi `baseSpeedForPct(pct)` cho ra kết quả cũ y hệt. */
+export function baseSpeedForPct(
+  pct: number,
+  curve: SpeedCurveConfig = DEFAULT_SPEED_CURVE,
+): number {
+  const t = clamp01((Number.isFinite(pct) ? pct : 0) / curve.kingPct);
+  return curve.min + (curve.max - curve.min) * t;
+}
+
+/** Cấu hình tốc độ hiệu dụng (đường cong nền + bonus Speed Totem + override Slow). */
+export interface EffectiveSpeedConfig {
+  curve: SpeedCurveConfig;
+  /** Cộng thêm mỗi Speed Totem sở hữu (TOTEMS.SPEED.BONUS_PER_TOTEM). */
+  speedBonus: number;
+  /** Tốc độ bị ép khi nằm trong vùng Slow của địch (TOTEMS.SLOW.ENEMY_SPEED). */
+  slowEnemySpeed: number;
+}
+
+const DEFAULT_EFFECTIVE_SPEED: EffectiveSpeedConfig = {
+  curve: DEFAULT_SPEED_CURVE,
+  speedBonus: CONFIG.TOTEMS.SPEED.BONUS_PER_TOTEM,
+  slowEnemySpeed: CONFIG.TOTEMS.SLOW.ENEMY_SPEED,
+};
+
+/** Slow là override cuối; speed Totem chỉ cộng khi không nằm trong vùng Slow địch.
+ *  `cfg` mặc định = CONFIG ⇒ gọi 3 tham số cho ra kết quả cũ y hệt. */
 export function effectiveSpeedWithTotems(
   pct: number,
   speedTotemCount: number,
   insideEnemySlowZone: boolean,
+  cfg: EffectiveSpeedConfig = DEFAULT_EFFECTIVE_SPEED,
 ): number {
-  if (insideEnemySlowZone) return CONFIG.TOTEMS.SLOW.ENEMY_SPEED;
-  return baseSpeedForPct(pct) +
-    Math.max(0, Math.floor(speedTotemCount)) * CONFIG.TOTEMS.SPEED.BONUS_PER_TOTEM;
+  if (insideEnemySlowZone) return cfg.slowEnemySpeed;
+  return baseSpeedForPct(pct, cfg.curve) +
+    Math.max(0, Math.floor(speedTotemCount)) * cfg.speedBonus;
 }
 
 function seededRandom(seed: number): () => number {
@@ -47,19 +81,59 @@ function seededRandom(seed: number): () => number {
   };
 }
 
-/** Sinh Totem ổn định theo seed, tránh tường, spawn ban đầu và các Totem khác. */
+/** Cấu hình sinh Totem. Mọi field mặc định = CONFIG ⇒ `createTotems(playable, seed)` sinh
+ *  totem GIỐNG HỆT bản cũ (số lượng + vị trí) theo cùng seed. */
+export interface CreateTotemsConfig {
+  hexSize: number;
+  speedCount: number;
+  slowCount: number;
+  radarCount: number;
+  minSpawnDistance: number;
+  spawnClearance: number;
+  /** false ⇒ không sinh Totem nào (Luyện tập tắt totem). */
+  enabled: boolean;
+  /** Kiểm tra điểm nằm trong sân (per-instance arena). Default = sân mặc định (shim CONFIG). */
+  insideArena: (x: number, y: number, slack: number) => boolean;
+}
+
+const DEFAULT_CREATE_TOTEMS: CreateTotemsConfig = {
+  hexSize: CONFIG.HEX_SIZE,
+  speedCount: CONFIG.TOTEMS.SPEED.COUNT,
+  slowCount: CONFIG.TOTEMS.SLOW.COUNT,
+  radarCount: CONFIG.TOTEMS.RADAR.COUNT,
+  minSpawnDistance: CONFIG.TOTEMS.MIN_SPAWN_DISTANCE,
+  spawnClearance: CONFIG.TOTEMS.SPAWN_CLEARANCE,
+  enabled: true,
+  insideArena,
+};
+
+/** Sinh Totem ổn định theo seed, tránh tường, spawn ban đầu và các Totem khác.
+ *  `cfg` mặc định = CONFIG ⇒ giữ NGUYÊN determinism (số lượng + vị trí theo seed). */
 export function createTotems(
   playable: Iterable<HexKey>,
   seed = 0,
   excludedSpawns: readonly Axial[] = [],
+  cfg: Partial<CreateTotemsConfig> = {},
 ): TotemState[] {
+  const {
+    hexSize,
+    speedCount,
+    slowCount,
+    radarCount,
+    minSpawnDistance,
+    spawnClearance,
+    enabled,
+    insideArena: inside,
+  } = { ...DEFAULT_CREATE_TOTEMS, ...cfg };
+  if (!enabled) return [];
+
   const random = seededRandom(seed);
   const candidates = [...playable].sort().map(parseKey).filter((cell) => {
-    const p = axialToPixel(cell, CONFIG.HEX_SIZE);
-    if (!insideArena(p.x, p.y, -CONFIG.TOTEMS.SPAWN_CLEARANCE)) return false;
+    const p = axialToPixel(cell, hexSize);
+    if (!inside(p.x, p.y, -spawnClearance)) return false;
     return excludedSpawns.every((spawn) => {
-      const s = axialToPixel(spawn, CONFIG.HEX_SIZE);
-      return Math.hypot(p.x - s.x, p.y - s.y) >= CONFIG.TOTEMS.SPAWN_CLEARANCE;
+      const s = axialToPixel(spawn, hexSize);
+      return Math.hypot(p.x - s.x, p.y - s.y) >= spawnClearance;
     });
   });
   for (let i = candidates.length - 1; i > 0; i--) {
@@ -68,17 +142,17 @@ export function createTotems(
   }
 
   const kinds: TotemKind[] = [
-    ...new Array(CONFIG.TOTEMS.SPEED.COUNT).fill("speed"),
-    ...new Array(CONFIG.TOTEMS.SLOW.COUNT).fill("slow"),
-    ...new Array(CONFIG.TOTEMS.RADAR.COUNT).fill("radar"),
+    ...new Array(speedCount).fill("speed"),
+    ...new Array(slowCount).fill("slow"),
+    ...new Array(radarCount).fill("radar"),
   ];
   const out: TotemState[] = [];
   for (const kind of kinds) {
     const index = candidates.findIndex((candidate) => {
-      const p = axialToPixel(candidate, CONFIG.HEX_SIZE);
+      const p = axialToPixel(candidate, hexSize);
       return out.every((item) => {
-        const other = axialToPixel(item, CONFIG.HEX_SIZE);
-        return Math.hypot(p.x - other.x, p.y - other.y) >= CONFIG.TOTEMS.MIN_SPAWN_DISTANCE;
+        const other = axialToPixel(item, hexSize);
+        return Math.hypot(p.x - other.x, p.y - other.y) >= minSpawnDistance;
       });
     });
     if (index < 0) break;

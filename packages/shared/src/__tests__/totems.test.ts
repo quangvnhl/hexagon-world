@@ -82,6 +82,59 @@ describe("Totem authoritative state", () => {
     expect(g.totemStates().find((item) => item.id === radar.id)!.ownerId).toBe(-1);
   });
 
+  it("S2: rules mặc định ⇒ Totem GameState giống hệt createTotems bản cũ (vị trí + số lượng)", () => {
+    const seed = 4242;
+    const g = new GameState({ config: { bots: { count: 0 }, seed } });
+    // Đường default cũ (đọc thẳng CONFIG). So VỊ TRÍ + số lượng → chứng minh threading rules
+    // KHÔNG đổi determinism khi dùng mặc định.
+    const legacy = createTotems(g.playable, seed);
+    const strip = (t: { id: number; kind: string; q: number; r: number }) => ({
+      id: t.id, kind: t.kind, q: t.q, r: t.r,
+    });
+    expect(g.totemStates().map(strip)).toEqual(legacy.map(strip));
+  });
+
+  it("S2: totemsEnabled:false ⇒ GameState không sinh Totem nào", () => {
+    const g = new GameState({
+      config: { bots: { count: 0 }, seed: 3, rules: { totemsEnabled: false } },
+    });
+    expect(g.totemStates()).toHaveLength(0);
+  });
+
+  it("S2: createTotems nhận override số lượng + enabled:false", () => {
+    const g = new GameState({ config: { bots: { count: 0 }, seed: 5 } });
+    expect(createTotems(g.playable, 5, [], { enabled: false })).toHaveLength(0);
+    const few = createTotems(g.playable, 5, [], {
+      speedCount: 2, slowCount: 1, radarCount: 0,
+    });
+    expect(few).toHaveLength(3);
+    expect(few.filter((t) => t.kind === "speed")).toHaveLength(2);
+  });
+
+  it("S2: nhân đôi speed.max (min=0) ⇒ tốc độ nền nhân đôi; totemsEnabled:false", () => {
+    const mk = (max: number) =>
+      new GameState({
+        config: {
+          bots: { count: 0 }, seed: 2,
+          rules: { speed: { min: 0, max }, totemsEnabled: false },
+        },
+      });
+    const slow = mk(6).effectiveSpeedFor(0);
+    const fast = mk(12).effectiveSpeedFor(0);
+    expect(slow).toBeGreaterThan(0);
+    expect(fast).toBeCloseTo(slow * 2);
+  });
+
+  it("S2: override speed (min=max) ⇒ effectiveSpeed cố định bất kể pct", () => {
+    const g = new GameState({
+      config: {
+        bots: { count: 0 }, seed: 1,
+        rules: { speed: { min: 10, max: 10 }, totemsEnabled: false },
+      },
+    });
+    expect(g.effectiveSpeedFor(0)).toBe(10);
+  });
+
   it("enemy Slow override, own Slow miễn nhiễm và rời radius khôi phục tốc độ", () => {
     const g = new GameState({ config: { bots: { count: 1 }, seed: 11 } });
     const slow = g.totemStates().find((item) => item.kind === "slow")!;

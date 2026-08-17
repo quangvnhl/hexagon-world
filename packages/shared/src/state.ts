@@ -78,6 +78,9 @@ export class Entity {
   prepRemaining: number = CONFIG.PREP_TIME;
   deaths = 0;
 
+  /** Số Totem đã thu được (cộng dồn trong ván) — cho điều kiện thắng `capture_totems`. */
+  totemsCaptured = 0;
+
   /** Lý do chết lần gần nhất (cho popup). */
   deathCause: DeathCause = "";
   /** Id kẻ đã hạ ở lần chết gần nhất (-1 nếu tự chết / cả hai chết). */
@@ -176,6 +179,8 @@ export class GameState {
 
   /** Thời gian (giây) còn lại phải giữ ngôi King liên tục để thắng (gán từ config). */
   kingHoldRemaining: number;
+  /** [survive] Thời gian (giây) còn lại phải sống sót để thắng (gán từ config.win.durationSec). */
+  surviveRemaining: number;
   /** Đã kết thúc chưa (có người thắng) → đóng băng game. */
   won = false;
   /** Id người thắng (-1 nếu chưa). */
@@ -198,6 +203,7 @@ export class GameState {
       this.config.rules.killRadius,
     );
     this.kingHoldRemaining = this.config.win.winHoldTime;
+    this.surviveRemaining = this.config.win.durationSec ?? Number.POSITIVE_INFINITY;
 
     this.fixedSpawn = options.spawnAt;
     this.humanCount = Math.max(1, options.humanCount ?? 1);
@@ -216,7 +222,12 @@ export class GameState {
       for (const nb of neighbors(keyToAxial(k))) this.map.add(keyOf(nb));
     }
 
-    this.totemItems = createTotems(this.playable, this.config.seed);
+    this.totemItems = createTotems(
+      this.playable,
+      this.config.seed,
+      [],
+      this.totemSpawnConfig(),
+    );
 
     const mix = this.config.bots.difficultyMix;
     const n = this.humanCount + Math.max(0, botCount);
@@ -582,11 +593,41 @@ export class GameState {
     return this.radarOwners.has(entityId);
   }
 
+  /** Cấu hình sinh Totem của ván (từ rules) — dùng cho createTotems trong constructor. */
+  private totemSpawnConfig() {
+    const t = this.config.rules.totems;
+    return {
+      hexSize: this.hexSize,
+      speedCount: t.speedCount,
+      slowCount: t.slowCount,
+      radarCount: t.radarCount,
+      minSpawnDistance: t.minSpawnDistance,
+      spawnClearance: t.spawnClearance,
+      enabled: this.config.rules.totemsEnabled,
+      insideArena: (x: number, y: number, slack: number) =>
+        this.arena.insideArena(x, y, slack),
+    };
+  }
+
+  /** Cấu hình tốc độ hiệu dụng của ván (đường cong nền + bonus/slow từ rules). */
+  private effectiveSpeedConfig() {
+    const t = this.config.rules.totems;
+    return {
+      curve: {
+        min: this.config.rules.speed.min,
+        max: this.config.rules.speed.max,
+        kingPct: this.config.win.kingPct,
+      },
+      speedBonus: t.speedBonus,
+      slowEnemySpeed: t.slowEnemySpeed,
+    };
+  }
+
   insideEnemySlowZoneFor(entityId: number): boolean {
     this.reconcileTotems();
     const entity = this.players[entityId];
     if (!entity) return false;
-    const radiusSq = CONFIG.TOTEMS.SLOW.RADIUS ** 2;
+    const radiusSq = this.config.rules.totems.slowRadius ** 2;
     return this.totemItems.some((totem) => {
       if (totem.kind !== "slow" || totem.ownerId < 0 || totem.ownerId === entityId) return false;
       const p = axialToPixel(totem, this.hexSize);
@@ -603,6 +644,7 @@ export class GameState {
         ((this.playableOwnedByOwner.get(entityId) ?? 0) / this.playable.size) * 100,
         speedTotemCount,
         insideEnemySlowZone,
+        this.effectiveSpeedConfig(),
       ),
       speedTotemCount,
       radarActive,
@@ -635,6 +677,13 @@ export class GameState {
       }
       if (ownerId === totem.ownerId) return totem;
       changed = true;
+      // Totem vừa đổi sang một chủ mới (ownerId >= 0) ⇒ đó là một lần "thu" Totem → cộng dồn
+      // cho chủ mới (dùng cho điều kiện thắng capture_totems). Chủ trước mất quyền sở hữu
+      // KHÔNG trừ ngược (đếm cộng dồn số lần thu được).
+      if (ownerId >= 0) {
+        const owner = this.players[ownerId];
+        if (owner) owner.totemsCaptured++;
+      }
       return { ...totem, ownerId };
     });
     if (changed) this.totemStateRevision++;
@@ -826,8 +875,10 @@ export class GameState {
     this.kingHolderId = -1;
     this.spectating = false;
     this.kingHoldRemaining = this.config.win.winHoldTime;
+    this.surviveRemaining = this.config.win.durationSec ?? Number.POSITIVE_INFINITY;
     for (const e of this.players) {
       e.deaths = 0;
+      e.totemsCaptured = 0;
       this.spawn(e);
     }
     this.revision++;
@@ -859,7 +910,7 @@ export class GameState {
       const cp = axialToPixel(c, this.hexSize);
       if (this.totemItems.some((totem) => {
         const tp = axialToPixel(totem, this.hexSize);
-        return Math.hypot(cp.x - tp.x, cp.y - tp.y) < CONFIG.TOTEMS.SPAWN_CLEARANCE;
+        return Math.hypot(cp.x - tp.x, cp.y - tp.y) < this.config.rules.totems.spawnClearance;
       })) return false;
       for (let dq = -clearance; dq <= clearance; dq++) {
         const lo = Math.max(-clearance, -dq - clearance);
@@ -912,9 +963,57 @@ export class GameState {
    *  Các loại territory_pct/survive/capture_totems khai báo sẵn ở WinCondition, sẽ cắm
    *  evaluator ở P1 (khi làm Campaign) — hiện dùng nhánh king_hold làm mặc định an toàn.
    */
-  private checkWin(dt: number): void {
-    if (this.config.win.kind === "none") return; // Luyện tập: không phân định thắng thua.
+  /** Chủ thể được đánh giá điều kiện thắng: NGƯỜI chơi (entity 0) nếu ghế 0 là người; nếu
+   *  không (vd phòng toàn bot) thì lấy KING hiện tại. -1 nếu không xác định. */
+  private winSubjectId(): number {
+    const self = this.players[0];
+    if (self && !self.isBot) return self.id;
+    return this.kingId();
+  }
 
+  private checkWin(dt: number): void {
+    switch (this.config.win.kind) {
+      case "none":
+        return; // Luyện tập: không phân định thắng thua.
+      case "territory_pct": {
+        // Chủ thể đạt targetPct lãnh thổ ⇒ thắng (mặc định target = kingPct nếu bỏ trống).
+        const target = this.config.win.targetPct ?? this.config.win.kingPct;
+        const sid = this.winSubjectId();
+        if (sid >= 0 && this.pctOf(sid) >= target) {
+          this.won = true;
+          this.winnerId = sid;
+        }
+        return;
+      }
+      case "survive": {
+        // Đếm ngược durationSec; hết giờ mà chủ thể CÒN SỐNG ⇒ thắng.
+        this.surviveRemaining -= dt;
+        if (this.surviveRemaining <= 0) {
+          this.surviveRemaining = 0;
+          const sid = this.winSubjectId();
+          const subject = sid >= 0 ? this.players[sid] : undefined;
+          if (subject && subject.alive) {
+            this.won = true;
+            this.winnerId = sid;
+          }
+        }
+        return;
+      }
+      case "capture_totems": {
+        // Chủ thể thu đủ totemGoal Totem (đếm cộng dồn trong ván) ⇒ thắng.
+        this.reconcileTotems(); // đảm bảo counter cập nhật theo territory revision hiện tại
+        const goal = this.config.win.totemGoal ?? 0;
+        const sid = this.winSubjectId();
+        const subject = sid >= 0 ? this.players[sid] : undefined;
+        if (subject && goal > 0 && subject.totemsCaptured >= goal) {
+          this.won = true;
+          this.winnerId = sid;
+        }
+        return;
+      }
+    }
+
+    // king_hold (mặc định) — (a) đấu loại + (b) giữ ngôi.
     // (a) Đấu loại: chỉ còn 1 người sống trong phòng đã có KING → thắng NGAY.
     if (this.players.length > 1 && this.roomLocked()) {
       const aliveList = this.players.filter((e) => e.alive);
@@ -957,7 +1056,7 @@ export class GameState {
 
     // Quay đầu mượt về targetHeading (cả khi chuẩn bị). Bot dùng TURN_RATE RIÊNG (tách
     // khỏi người chơi) để nhanh nhẹn hơn mà không đổi cảm giác lái của người.
-    const maxTurn = (e.isBot ? CONFIG.BOT.TURN_RATE : CONFIG.TURN_RATE) * dt;
+    const maxTurn = (e.isBot ? this.config.rules.botTurnRate : this.config.rules.turnRate) * dt;
     let diff = normalizeAngle(e.targetHeading - e.heading);
     if (diff > maxTurn) diff = maxTurn;
     else if (diff < -maxTurn) diff = -maxTurn;

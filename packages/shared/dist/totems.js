@@ -7,18 +7,29 @@ const config_1 = require("./config");
 const hex_1 = require("./hex");
 const arena_1 = require("./arena");
 const clamp01 = (value) => Math.max(0, Math.min(1, value));
-/** Tốc độ nền tăng tuyến tính từ MIN tới MAX khi tiến tới ngưỡng King. */
-function baseSpeedForPct(pct) {
-    const { MIN, MAX } = config_1.CONFIG.SPEED.BY_KING_PCT;
-    const t = clamp01((Number.isFinite(pct) ? pct : 0) / config_1.CONFIG.KING_PCT);
-    return MIN + (MAX - MIN) * t;
+const DEFAULT_SPEED_CURVE = {
+    min: config_1.CONFIG.SPEED.BY_KING_PCT.MIN,
+    max: config_1.CONFIG.SPEED.BY_KING_PCT.MAX,
+    kingPct: config_1.CONFIG.KING_PCT,
+};
+/** Tốc độ nền tăng tuyến tính từ min tới max khi tiến tới ngưỡng King.
+ *  `curve` mặc định = CONFIG ⇒ gọi `baseSpeedForPct(pct)` cho ra kết quả cũ y hệt. */
+function baseSpeedForPct(pct, curve = DEFAULT_SPEED_CURVE) {
+    const t = clamp01((Number.isFinite(pct) ? pct : 0) / curve.kingPct);
+    return curve.min + (curve.max - curve.min) * t;
 }
-/** Slow là override cuối; speed Totem chỉ cộng khi không nằm trong vùng Slow địch. */
-function effectiveSpeedWithTotems(pct, speedTotemCount, insideEnemySlowZone) {
+const DEFAULT_EFFECTIVE_SPEED = {
+    curve: DEFAULT_SPEED_CURVE,
+    speedBonus: config_1.CONFIG.TOTEMS.SPEED.BONUS_PER_TOTEM,
+    slowEnemySpeed: config_1.CONFIG.TOTEMS.SLOW.ENEMY_SPEED,
+};
+/** Slow là override cuối; speed Totem chỉ cộng khi không nằm trong vùng Slow địch.
+ *  `cfg` mặc định = CONFIG ⇒ gọi 3 tham số cho ra kết quả cũ y hệt. */
+function effectiveSpeedWithTotems(pct, speedTotemCount, insideEnemySlowZone, cfg = DEFAULT_EFFECTIVE_SPEED) {
     if (insideEnemySlowZone)
-        return config_1.CONFIG.TOTEMS.SLOW.ENEMY_SPEED;
-    return baseSpeedForPct(pct) +
-        Math.max(0, Math.floor(speedTotemCount)) * config_1.CONFIG.TOTEMS.SPEED.BONUS_PER_TOTEM;
+        return cfg.slowEnemySpeed;
+    return baseSpeedForPct(pct, cfg.curve) +
+        Math.max(0, Math.floor(speedTotemCount)) * cfg.speedBonus;
 }
 function seededRandom(seed) {
     let state = seed >>> 0;
@@ -27,16 +38,30 @@ function seededRandom(seed) {
         return state / 0x100000000;
     };
 }
-/** Sinh Totem ổn định theo seed, tránh tường, spawn ban đầu và các Totem khác. */
-function createTotems(playable, seed = 0, excludedSpawns = []) {
+const DEFAULT_CREATE_TOTEMS = {
+    hexSize: config_1.CONFIG.HEX_SIZE,
+    speedCount: config_1.CONFIG.TOTEMS.SPEED.COUNT,
+    slowCount: config_1.CONFIG.TOTEMS.SLOW.COUNT,
+    radarCount: config_1.CONFIG.TOTEMS.RADAR.COUNT,
+    minSpawnDistance: config_1.CONFIG.TOTEMS.MIN_SPAWN_DISTANCE,
+    spawnClearance: config_1.CONFIG.TOTEMS.SPAWN_CLEARANCE,
+    enabled: true,
+    insideArena: arena_1.insideArena,
+};
+/** Sinh Totem ổn định theo seed, tránh tường, spawn ban đầu và các Totem khác.
+ *  `cfg` mặc định = CONFIG ⇒ giữ NGUYÊN determinism (số lượng + vị trí theo seed). */
+function createTotems(playable, seed = 0, excludedSpawns = [], cfg = {}) {
+    const { hexSize, speedCount, slowCount, radarCount, minSpawnDistance, spawnClearance, enabled, insideArena: inside, } = { ...DEFAULT_CREATE_TOTEMS, ...cfg };
+    if (!enabled)
+        return [];
     const random = seededRandom(seed);
     const candidates = [...playable].sort().map(hex_1.parseKey).filter((cell) => {
-        const p = (0, hex_1.axialToPixel)(cell, config_1.CONFIG.HEX_SIZE);
-        if (!(0, arena_1.insideArena)(p.x, p.y, -config_1.CONFIG.TOTEMS.SPAWN_CLEARANCE))
+        const p = (0, hex_1.axialToPixel)(cell, hexSize);
+        if (!inside(p.x, p.y, -spawnClearance))
             return false;
         return excludedSpawns.every((spawn) => {
-            const s = (0, hex_1.axialToPixel)(spawn, config_1.CONFIG.HEX_SIZE);
-            return Math.hypot(p.x - s.x, p.y - s.y) >= config_1.CONFIG.TOTEMS.SPAWN_CLEARANCE;
+            const s = (0, hex_1.axialToPixel)(spawn, hexSize);
+            return Math.hypot(p.x - s.x, p.y - s.y) >= spawnClearance;
         });
     });
     for (let i = candidates.length - 1; i > 0; i--) {
@@ -44,17 +69,17 @@ function createTotems(playable, seed = 0, excludedSpawns = []) {
         [candidates[i], candidates[j]] = [candidates[j], candidates[i]];
     }
     const kinds = [
-        ...new Array(config_1.CONFIG.TOTEMS.SPEED.COUNT).fill("speed"),
-        ...new Array(config_1.CONFIG.TOTEMS.SLOW.COUNT).fill("slow"),
-        ...new Array(config_1.CONFIG.TOTEMS.RADAR.COUNT).fill("radar"),
+        ...new Array(speedCount).fill("speed"),
+        ...new Array(slowCount).fill("slow"),
+        ...new Array(radarCount).fill("radar"),
     ];
     const out = [];
     for (const kind of kinds) {
         const index = candidates.findIndex((candidate) => {
-            const p = (0, hex_1.axialToPixel)(candidate, config_1.CONFIG.HEX_SIZE);
+            const p = (0, hex_1.axialToPixel)(candidate, hexSize);
             return out.every((item) => {
-                const other = (0, hex_1.axialToPixel)(item, config_1.CONFIG.HEX_SIZE);
-                return Math.hypot(p.x - other.x, p.y - other.y) >= config_1.CONFIG.TOTEMS.MIN_SPAWN_DISTANCE;
+                const other = (0, hex_1.axialToPixel)(item, hexSize);
+                return Math.hypot(p.x - other.x, p.y - other.y) >= minSpawnDistance;
             });
         });
         if (index < 0)
