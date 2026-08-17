@@ -16,6 +16,7 @@
  */
 import type { DeathCause } from "./state";
 import type { PlayerShape, TrailPattern } from "./config";
+import type { MatchConfig } from "./match-config";
 import type { ProtocolJoinMetadata } from "./protocol-version";
 
 /** Byte tag đầu tiên của mỗi *binary frame*. */
@@ -60,6 +61,13 @@ export type S2CControl =
       /** Số ghế người + số bot của PHÒNG (authoritative) → client dựng view khớp đúng. */
       maxPlayers: number;
       botCount: number;
+      /**
+       * `MatchConfig` ĐANG CHẠY của phòng, serialize GENERIC bằng JSON (xem `encodeMatchConfig`).
+       * Cho phép client (S6 Tournament) dựng lại GameState-view KHỚP luật/sân server thay vì chỉ
+       * suy từ `botCount`. Dùng chuỗi JSON opaque ⇒ THÊM field vào `MatchConfig` (S2) KHÔNG phải
+       * đổi serializer. Optional để tương thích welcome cũ (vd frame không kèm config).
+       */
+      config?: string;
       reconnectToken?: string;
       resumed?: boolean;
     }
@@ -141,6 +149,27 @@ export const encodeControl = (m: C2SControl | S2CControl): string =>
 export function decodeControl<T = C2SControl | S2CControl>(s: string): T | null {
   try {
     return JSON.parse(s) as T;
+  } catch {
+    return null;
+  }
+}
+
+// ---- MatchConfig (JSON generic, gói trong welcome) ------------------------
+// Serialize TOÀN BỘ object `MatchConfig` bằng JSON — cố tình KHÔNG viết binary field-by-field:
+// các lát sau (S2) THÊM field vào `MatchConfig.rules` sẽ tự động đi qua serializer này mà không
+// phải sửa lại wire code. Chuỗi trả về được nhét vào control-frame `welcome` (`config`).
+
+/** JSON-hoá `MatchConfig` để nhét vào welcome. Round-trip với `decodeMatchConfig`. */
+export function encodeMatchConfig(config: MatchConfig): string {
+  return JSON.stringify(config);
+}
+
+/** Parse chuỗi JSON `MatchConfig` từ welcome; trả `null` nếu hỏng/không phải object. */
+export function decodeMatchConfig(s: string): MatchConfig | null {
+  try {
+    const parsed = JSON.parse(s) as unknown;
+    if (!parsed || typeof parsed !== "object") return null;
+    return parsed as MatchConfig;
   } catch {
     return null;
   }

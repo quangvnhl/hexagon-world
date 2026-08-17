@@ -9,6 +9,7 @@ import {
   decodeControl,
   decodeInput,
   encodeControl,
+  encodeMatchConfig,
   encodeSnapshot,
   encodeTerritory,
   encodeTerritoryMinimap,
@@ -670,6 +671,8 @@ export class NetServer {
       seed: r.id,
       maxPlayers: this.maxHumans,
       botCount: r.room.botCapacity,
+      // MatchConfig ĐANG CHẠY của phòng (authoritative) → client dựng lại view khớp luật/sân.
+      config: encodeMatchConfig(r.room.gameState.config),
       reconnectToken,
       resumed,
     });

@@ -19,6 +19,7 @@ import {
   TRAIL_PATTERNS,
   axialToPixel,
   parseKey,
+  type MatchConfig,
   type PlayerAppearance,
   type WorldUiEntity,
   type MinimapUiEntity,
@@ -54,11 +55,19 @@ import {
  * SỐ LƯỢNG thực thể đồng nhất hai bên (không hardcode; đổi BOT_COUNT ở shared là khớp).
  * "Làm trống" mọi thực thể (dead) + xoá lãnh thổ để KHÔNG hiện bóng ma trước khi có dữ
  * liệu mạng; snapshot/keyframe đầu (gửi ngay khi JOIN) sẽ điền lại.
+ *
+ * `config` = MatchConfig AUTHORITATIVE của phòng (welcome). Có nó thì dựng view khớp
+ * ĐÚNG luật/sân server (nền cho S6 Tournament). Khi thiếu (welcome cũ / decode hỏng) rơi
+ * về suy từ `botCount` như trước — mặc định online (king_hold) cho ra config tương đương.
  */
-function makeBlankView(maxPlayers: number, botCount: number): GameState {
+function makeBlankView(
+  maxPlayers: number,
+  botCount: number,
+  config: MatchConfig | null
+): GameState {
   const g = new GameState({
     humanCount: Math.max(1, maxPlayers),
-    config: { bots: { count: Math.max(0, botCount) } },
+    config: config ?? { bots: { count: Math.max(0, botCount) } },
   });
   for (const e of g.players) e.phase = "dead";
   g.applyTerritory([]);
@@ -487,8 +496,8 @@ export default function NetGameScene({
         setPlayerId(w.playerId);
         if (w.resumed) return;
         setReviveNotice("");
-        // Dựng view khớp số ghế/bot của server.
-        const g = makeBlankView(w.maxPlayers, w.botCount);
+        // Dựng view khớp số ghế/bot + luật/sân của server.
+        const g = makeBlankView(w.maxPlayers, w.botCount, w.config);
         gameRef.current = g;
         setGame(g);
         setWorldUi([]);

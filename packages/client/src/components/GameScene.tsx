@@ -216,6 +216,7 @@ function GameLoop({
         scores: game.scores(),
         colorIndex: game.human.colorIndex,
         won: game.won,
+        endless: game.config.win.kind === "none",
         kingHold: game.kingHoldRemaining,
         locked: game.roomLocked(),
         kingName: game.kingId() >= 0 ? game.nameOf(game.kingId()) : "",
@@ -255,15 +256,27 @@ function GameLoop({
 export default function GameScene({
   playerName,
   appearance,
+  botCount,
   onExit,
   showMenu = true,
 }: {
   playerName?: string;
   appearance?: PlayerAppearance;
+  /** Số bot cho ván Luyện tập (mặc định `CONFIG.BOT_COUNT` — hành vi cũ). */
+  botCount?: number;
   onExit?: () => void;
   showMenu?: boolean;
 } = {}) {
-  const game = useMemo(() => new GameState(), []);
+  // Luyện tập: endless (win.kind="none") + số bot chỉnh được. Không truyền botCount
+  // ⇒ mặc định CONFIG.BOT_COUNT, hành vi y hệt bản cũ (chỉ khác ở chỗ không bao giờ thắng).
+  const resolvedBotCount = botCount ?? CONFIG.BOT_COUNT;
+  const game = useMemo(
+    () =>
+      new GameState({
+        config: { win: { kind: "none" }, bots: { count: resolvedBotCount } },
+      }),
+    [resolvedBotCount]
+  );
   // Gán tên người chơi vào ghế 0 (hiển thị ở xếp hạng / KING / thắng).
   useMemo(() => {
     if (playerName) game.setName(0, playerName);
@@ -284,6 +297,7 @@ export default function GameScene({
     scores: [],
     colorIndex: appearance?.colorIndex ?? 0,
     won: false,
+    endless: true,
     kingHold: CONFIG.WIN_HOLD_TIME,
     locked: false,
     kingName: "",

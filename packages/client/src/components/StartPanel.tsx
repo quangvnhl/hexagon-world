@@ -103,6 +103,13 @@ function ShapeGlyph({ shape, color, size = 42 }: { shape: PlayerShape; color: st
   return <span style={{ ...common, borderRadius: 7, transform: "rotate(-8deg) skewY(3deg)" }} />;
 }
 
+/** Option riêng cho mode Luyện tập (solo), truyền thêm qua `onStart`. */
+export interface PracticeOptions {
+  botCount: number;
+}
+
+const MAX_PRACTICE_BOTS = 64;
+
 export function StartPanel({
   onStart,
 }: {
@@ -110,12 +117,14 @@ export function StartPanel({
     mode: GameMode,
     name: string,
     serverUrl: string,
-    appearance: PlayerAppearance
+    appearance: PlayerAppearance,
+    practice: PracticeOptions
   ) => void | Promise<void>;
 }) {
   const [name, setName] = useState("");
   const [mode, setMode] = useState<GameMode>("solo");
   const [serverUrl, setServerUrl] = useState(DEFAULT_URL);
+  const [botCount, setBotCount] = useState<number>(CONFIG.BOT_COUNT);
   const [appearance, setAppearance] = useState<PlayerAppearance>(
     DEFAULT_PLAYER_APPEARANCE
   );
@@ -215,7 +224,11 @@ export function StartPanel({
     );
     setStarting(true);
     setStartError("");
-    try { await onStart(mode, finalName, serverUrl.trim() || DEFAULT_URL, finalAppearance); }
+    try {
+      await onStart(mode, finalName, serverUrl.trim() || DEFAULT_URL, finalAppearance, {
+        botCount,
+      });
+    }
     catch (error) { setStartError(error instanceof Error ? error.message : "Không thể vào game"); }
     finally { setStarting(false); }
   };
@@ -505,9 +518,9 @@ export function StartPanel({
         <div className="mode-grid" style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10, marginTop: 8 }}>
           {card(
             "solo",
-            "Chơi đơn",
-            `Đấu với ${CONFIG.BOT_COUNT} bot ngay trên máy, không cần mạng.`,
-            "🎮"
+            "Luyện tập",
+            "Không giới hạn thời gian, hồi sinh tự do, tự chỉnh số bot — chơi thoải mái không thắng/thua.",
+            "🏋️"
           )}
           {card(
             "online",
@@ -516,6 +529,48 @@ export function StartPanel({
             "🌐"
           )}
         </div>
+
+        {/* Chỉnh số bot (chỉ khi Luyện tập) */}
+        {mode === "solo" && (
+          <div
+            style={{
+              marginTop: 10,
+              padding: "10px 12px",
+              borderRadius: 12,
+              border: "1px solid rgba(255,255,255,0.09)",
+              background: "rgba(255,255,255,0.03)",
+            }}
+          >
+            <div
+              style={{
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+                marginBottom: 6,
+              }}
+            >
+              <label style={{ fontSize: 11, opacity: 0.7, letterSpacing: 1 }}>
+                SỐ BOT
+              </label>
+              <span style={{ fontSize: 13, fontWeight: 800, color: "#31b0ff" }}>
+                {botCount}
+              </span>
+            </div>
+            <input
+              type="range"
+              min={0}
+              max={MAX_PRACTICE_BOTS}
+              step={1}
+              value={botCount}
+              onChange={(e) => setBotCount(Number(e.target.value))}
+              style={{ width: "100%", accentColor: "#31b0ff" }}
+              aria-label="Số lượng bot"
+            />
+            <div style={{ fontSize: 10, opacity: 0.5, marginTop: 4 }}>
+              0 = chỉ mình bạn · tối đa {MAX_PRACTICE_BOTS} bot
+            </div>
+          </div>
+        )}
 
         {/* Địa chỉ server (chỉ khi online) */}
         {/* Bắt đầu */}

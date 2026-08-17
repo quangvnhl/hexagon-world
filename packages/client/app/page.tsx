@@ -5,7 +5,7 @@
 
 import { useCallback, useState } from "react";
 import dynamic from "next/dynamic";
-import { StartPanel, type GameMode } from "@/components/StartPanel";
+import { StartPanel, type GameMode, type PracticeOptions } from "@/components/StartPanel";
 import type { PlayerAppearance } from "@hexagon/shared";
 import { useTelegramWebApp } from "@/lib/telegram";
 import { acquireGameAccess } from "@/lib/backend";
@@ -22,19 +22,21 @@ interface Session {
   serverUrl: string;
   appearance: PlayerAppearance;
   gameTicket?: string;
+  /** Số bot cho mode Luyện tập (solo); bỏ qua khi online. */
+  botCount?: number;
 }
 
 export default function Home() {
   const [session, setSession] = useState<Session | null>(null);
   const back = useCallback(() => setSession(null), []);
   const isTelegram = useTelegramWebApp(Boolean(session), back);
-  const start = useCallback(async (mode: GameMode, name: string, serverUrl: string, appearance: PlayerAppearance) => {
+  const start = useCallback(async (mode: GameMode, name: string, serverUrl: string, appearance: PlayerAppearance, practice: PracticeOptions) => {
     if (mode === "online") {
       const access = await acquireGameAccess(name, appearance);
       setSession({ mode, name, serverUrl: access.serverUrl, appearance, gameTicket: access.ticket });
       return;
     }
-    setSession({ mode, name, serverUrl, appearance });
+    setSession({ mode, name, serverUrl, appearance, botCount: practice.botCount });
   }, []);
 
   if (!session) {
@@ -61,6 +63,7 @@ export default function Home() {
     <GameScene
       playerName={session.name}
       appearance={session.appearance}
+      botCount={session.botCount}
       onExit={back}
       showMenu={!isTelegram}
     />

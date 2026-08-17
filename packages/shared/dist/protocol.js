@@ -2,6 +2,8 @@
 Object.defineProperty(exports, "__esModule", { value: true });
 exports.TERRITORY_DELTA_OPERATION = exports.TERRITORY_DELTA_HEADER = exports.TERRITORY_CELL = exports.TERRITORY_HEADER = exports.FLAG = exports.SNAPSHOT_ENTITY = exports.SNAPSHOT_HEADER = exports.INPUT_BYTES = exports.encodeControl = exports.TAG = void 0;
 exports.decodeControl = decodeControl;
+exports.encodeMatchConfig = encodeMatchConfig;
+exports.decodeMatchConfig = decodeMatchConfig;
 exports.encodeInput = encodeInput;
 exports.decodeInput = decodeInput;
 exports.encodeSnapshot = encodeSnapshot;
@@ -26,6 +28,26 @@ exports.encodeControl = encodeControl;
 function decodeControl(s) {
     try {
         return JSON.parse(s);
+    }
+    catch {
+        return null;
+    }
+}
+// ---- MatchConfig (JSON generic, gói trong welcome) ------------------------
+// Serialize TOÀN BỘ object `MatchConfig` bằng JSON — cố tình KHÔNG viết binary field-by-field:
+// các lát sau (S2) THÊM field vào `MatchConfig.rules` sẽ tự động đi qua serializer này mà không
+// phải sửa lại wire code. Chuỗi trả về được nhét vào control-frame `welcome` (`config`).
+/** JSON-hoá `MatchConfig` để nhét vào welcome. Round-trip với `decodeMatchConfig`. */
+function encodeMatchConfig(config) {
+    return JSON.stringify(config);
+}
+/** Parse chuỗi JSON `MatchConfig` từ welcome; trả `null` nếu hỏng/không phải object. */
+function decodeMatchConfig(s) {
+    try {
+        const parsed = JSON.parse(s);
+        if (!parsed || typeof parsed !== "object")
+            return null;
+        return parsed;
     }
     catch {
         return null;

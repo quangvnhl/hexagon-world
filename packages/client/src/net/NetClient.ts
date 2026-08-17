@@ -15,6 +15,7 @@ import {
   EntitySnap,
   Snapshot,
   decodeControl,
+  decodeMatchConfig,
   decodeSnapshot,
   decodeTerritory,
   decodeTerritoryMinimap,
@@ -26,6 +27,7 @@ import {
   GAME_PROTOCOL_VERSION,
   DEFAULT_PLAYER_APPEARANCE,
   sanitizePlayerAppearance,
+  type MatchConfig,
   type PlayerAppearance,
   type S2CControl,
   type TerritoryCell,
@@ -54,6 +56,8 @@ export interface WelcomeInfo {
   seed: number;
   maxPlayers: number;
   botCount: number;
+  /** MatchConfig của phòng (server-authoritative) để dựng view khớp; `null` nếu welcome không kèm. */
+  config: MatchConfig | null;
   resumed: boolean;
 }
 
@@ -469,6 +473,7 @@ export class NetClient {
           seed: msg.seed,
           maxPlayers: msg.maxPlayers,
           botCount: msg.botCount,
+          config: msg.config ? decodeMatchConfig(msg.config) : null,
           resumed,
         };
         this.seq = 0;

@@ -1,7 +1,8 @@
 /**
  * protocol.mjs — bản sao TỰ CHỨA của wire-protocol dùng cho harness load/soak.
  *
- * NGUỒN SỰ THẬT: packages/shared/src/protocol.ts (v5) + protocol-version.ts.
+ * NGUỒN SỰ THẬT: packages/shared/src/protocol.ts (v6) + protocol-version.ts.
+ * v6: welcome kèm `config` (MatchConfig JSON) — harness bỏ qua field này, chỉ cần khớp version.
  * Chỉ tái hiện đúng những khung harness cần: mã hoá INPUT (client→server) và giải mã
  * đủ để XÁC NHẬN SỐNG (SNAPSHOT/TERRITORY server→client) + control JSON.
  *
@@ -9,7 +10,7 @@
  * build TS. Nếu protocol.ts đổi layout thì PHẢI cập nhật file này (xem README §"Bảo trì").
  */
 
-export const GAME_PROTOCOL_VERSION = 5;
+export const GAME_PROTOCOL_VERSION = 6;
 
 /** Byte tag đầu của mỗi binary frame (khớp TAG trong protocol.ts). */
 export const TAG = {

@@ -26,6 +26,8 @@ export interface Stats {
   /** Màu chính của người chơi cục bộ (cho popup/minimap sau khi chết). */
   colorIndex: number;
   won: boolean;
+  /** Ván endless (Luyện tập, `win.kind === "none"`) — không có đếm ngược King-thắng / màn thắng. */
+  endless?: boolean;
   kingHold: number;
   /** Phòng đang bị KING khoá (không cho hồi sinh cho tới khi mất ngôi). */
   locked: boolean;
@@ -413,8 +415,35 @@ export function HUD({
         )}
       </div>
 
+      {/* Luyện tập (endless): chỉ báo nhỏ thay cho đồng hồ đếm ngược King-thắng
+          (mode này không có thắng/thua, không cần cảnh báo "sẽ thắng sau"). */}
+      {stats.endless && (
+        <div
+          style={{
+            position: "absolute",
+            top: `calc(${hudSafeTop} + 16px)`,
+            left: "50%",
+            transform: `translateX(-50%)${uiScale !== 1 ? ` scale(${uiScale})` : ""}`,
+            transformOrigin: "top center",
+            padding: "6px 14px",
+            borderRadius: 999,
+            background: "rgba(10,14,22,0.72)",
+            border: "1px solid rgba(255,255,255,0.16)",
+            color: "#cdd7ea",
+            fontFamily: "system-ui, sans-serif",
+            fontSize: 11,
+            fontWeight: 800,
+            letterSpacing: 1,
+            backdropFilter: "blur(6px)",
+            pointerEvents: "none",
+          }}
+        >
+          🏋️ LUYỆN TẬP
+        </div>
+      )}
+
       {/* Banner KING + đếm ngược giữ ngôi */}
-      {stats.king && !stats.won && (
+      {stats.king && !stats.won && !stats.endless && (
         <div
           style={{
             position: "absolute",
@@ -464,7 +493,7 @@ export function HUD({
 
       {/* Banner CẢNH BÁO: NGƯỜI/BOT KHÁC đang là Vua → báo cho MỌI người biết ai đang là Vua
           và còn bao lâu nữa thì họ THẮNG (kingName/kingHold có sẵn cho cả chơi đơn & online). */}
-      {!stats.king && stats.kingName && !stats.won && (
+      {!stats.king && stats.kingName && !stats.won && !stats.endless && (
         <div
           style={{
             position: "absolute",
@@ -770,8 +799,8 @@ export function HUD({
         </div>
       )}
 
-      {/* Màn hình CHIẾN THẮNG + nút Chơi lại */}
-      {stats.won && (
+      {/* Màn hình CHIẾN THẮNG + nút Chơi lại (mode endless không bao giờ hiện — won luôn false) */}
+      {stats.won && !stats.endless && (
         <div
           style={{
             position: "absolute",
