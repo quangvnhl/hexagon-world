@@ -72,6 +72,10 @@ export interface GameStateOptions {
     spawnAt?: Axial;
     /** Override cấu hình ván (map/bots/rules/win/seed). Số bot: `config.bots.count`. */
     config?: MatchConfigInput;
+    /** CONTAINER quản lý điều kiện thắng bên ngoài (ONLINE: `GameRoom.stepTick` tự chạy
+     *  countdown King theo vòng đời phòng). Khi bật, `update()` KHÔNG chạy `checkWin` nội bộ —
+     *  tránh hai nguồn luật thắng song song. `config.win.kind` vẫn giữ đúng nghĩa (vd king_hold). */
+    externalWinControl?: boolean;
 }
 /**
  * Trạng thái game thuần TypeScript, deterministic — không phụ thuộc render.
@@ -100,6 +104,8 @@ export declare class GameState {
     private readonly arena;
     /** Kích thước hex của ván (tiện đọc; = config.map.hexSize). */
     private readonly hexSize;
+    /** CONTAINER tự quản luật thắng (xem `GameStateOptions.externalWinControl`). */
+    private readonly externalWinControl;
     private fixedSpawn?;
     private rng;
     /** Tăng khi thực thể đổi (vị trí/đuôi) — cho renderer cube/line. */

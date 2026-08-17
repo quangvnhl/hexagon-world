@@ -51,6 +51,9 @@ export class GameRoom {
     this.gs = new GameState({
       humanCount: maxHumans,
       config: { bots: { count: botCount }, seed: matchSeed },
+      // Phòng online tự chạy countdown King theo vòng đời (giữ deadline khi đổi King A→B,
+      // chỉ reset khi King→none) ⇒ GameState KHÔNG chạy checkWin song song (§S4).
+      externalWinControl: true,
     });
     this.seats = new Array(maxHumans).fill(false);
     this.lastSeq = new Array(maxHumans).fill(0);
@@ -239,7 +242,9 @@ export class GameRoom {
       }
       this.pending[id] = null;
     }
-    // GameState has single-player win rules; online room owns its own deadline/lifecycle.
+    // Container tự quản luật thắng (GameState bỏ qua checkWin nhờ externalWinControl) ⇒ stepTick
+    // là NGUỒN DUY NHẤT. Reset mỗi tick để declareWinner tính lại theo trạng thái hiện tại (không
+    // đóng băng mô phỏng sau khi countdown chạm 0).
     this.gs.won = false;
     this.gs.winnerId = -1;
     this.gs.update(dt);
@@ -265,20 +270,9 @@ export class GameRoom {
         this.kingCountdownRemaining = this.kingDurationSeconds;
       }
       this.kingCountdownRemaining = Math.max(0, this.kingCountdownRemaining - dt);
-      if (this.kingCountdownRemaining <= 0) {
-        this.gs.won = false;
-        this.gs.winnerId = -1;
-        this.gs.declareWinner(kingId);
-      }
-      else {
-        // Cancel GameState's early/holder-specific win while retaining current territory/King.
-        this.gs.won = false;
-        this.gs.winnerId = -1;
-      }
+      if (this.kingCountdownRemaining <= 0) this.gs.declareWinner(kingId);
     } else {
       this.resetKingCountdown();
-      this.gs.won = false;
-      this.gs.winnerId = -1;
     }
     this.gs.kingHoldRemaining = this.kingRemaining;
     this.tickCount++;

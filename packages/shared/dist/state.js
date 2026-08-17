@@ -98,6 +98,7 @@ class GameState {
         this.config = (0, match_config_1.resolveMatchConfig)(options.config);
         this.arena = new arena_1.ArenaGeometry(this.config.map.radius, this.config.map.wallScale, this.config.map.hexSize);
         this.hexSize = this.config.map.hexSize;
+        this.externalWinControl = options.externalWinControl ?? false;
         this.headHash = new spatialhash_1.SpatialHash(this.config.rules.killRadius);
         this.kingHoldRemaining = this.config.win.winHoldTime;
         this.surviveRemaining = this.config.win.durationSec ?? Number.POSITIVE_INFINITY;
@@ -833,7 +834,9 @@ class GameState {
         for (const e of this.players)
             this.updateEntity(e, dt);
         this.resolveHeadCollisions();
-        this.checkWin(dt);
+        // ONLINE: container (GameRoom) tự quản luật thắng ⇒ bỏ qua checkWin nội bộ (§S4).
+        if (!this.externalWinControl)
+            this.checkWin(dt);
     }
     /**
      * Điều kiện thắng — theo `config.win.kind` (doc 25 §1.2). P0 hiện thực:
