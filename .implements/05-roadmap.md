@@ -62,7 +62,7 @@ Xem báo cáo đóng pha: [17-phase-3-completion-report.md](17-phase-3-completio
 - [x] **B3 Telemetry** (code + harness): đo `stepRoom` p50/p95, event-loop lag, tick behind, rooms active, counters B1 → endpoint `GET /metrics` (Prometheus). Harness load/soak Node+ws (`packages/server/test/load/`) ánh xạ SLO §2. *Đã kiểm chứng offline khớp `/metrics`.*
 - [~] **B3 chạy load-test — ĐO SƠ BỘ trên 1 máy dev** (2026-08-17, xem "wave 3" dưới). `stepRoom` p95 & bandwidth & drop rate **PASS**; latency/event-loop metrics **chưa chốt được** (nhiễu co-located). **Chốt SLO chính thức vẫn cần load-gen tách máy + mạng thật.**
 - [ ] **B2** Horizontal scale GameRoom (nhiều instance + Redis pub/sub) — CHỈ khi load-test cho thấy 1 node chạm trần SLO §2.2 (~64 người/8 room).
-- [ ] **doc 25 P1 — Practice / Tournament / obstacle** (KHÔNG bị load-test chặn; nền P0 đã xong). Kế hoạch triển khai chia lát: [27-phase1-modes-impl.md](27-phase1-modes-impl.md).
+- [x] **doc 25 P1 — Practice / Tournament / obstacle — XONG 7/7 lát** (2026-08-17). Kế hoạch: [27-phase1-modes-impl.md](27-phase1-modes-impl.md). S1 Practice preset (`/play` "Luyện tập", slider bot, endless) · S5 serialize MatchConfig (welcome v6) · S2 MatchRules mở rộng (totem/tốc độ/AI, tắt totem được) · S3 evaluator WinCondition (territory_pct/survive/capture_totems) · S4 hợp nhất luật thắng (`externalWinControl`) · S6 preset practiceConfig/tournamentConfig · S7 obstacle như barrier nội bộ (giữ biên lục giác lồi). Test 171→**203** (shared 96/server 49/client 58); mọi typecheck+build xanh; smoke `/play` OK. Hoãn P2: hình lõm/custom-cells map, năng lượng, Campaign.
 
 > **Kế hoạch chi tiết + SLO đề xuất + thứ tự: [26-phase-5-plan.md](26-phase-5-plan.md).**
 >
