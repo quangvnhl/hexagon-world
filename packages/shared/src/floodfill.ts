@@ -15,16 +15,20 @@ import { HexKey, parseKey, neighbors, keyOf } from "./hex";
  * @param mapSet Tập mọi ô hợp lệ của bản đồ.
  * @param owned  Tập ô đang sở hữu.
  * @param trail  Danh sách/tập ô của đuôi vừa vẽ.
+ * @param barriers Ô CHƯỚNG NGẠI cố định (tường nội bộ) — chặn loang như owned/trail, nhưng KHÔNG
+ *   bị chiếm (không nằm trong owned/trail nên không thêm vào result). Bỏ trống = không có.
  * @returns Tập ô cần thêm vào owned (gồm cả owned cũ + interior + trail).
  */
 export function captureEnclosed(
   mapSet: Set<HexKey>,
   owned: Set<HexKey>,
-  trail: Iterable<HexKey>
+  trail: Iterable<HexKey>,
+  barriers?: Set<HexKey>
 ): Set<HexKey> {
   const trailSet: Set<HexKey> =
     trail instanceof Set ? (trail as Set<HexKey>) : new Set<HexKey>(trail);
-  const isBarrier = (k: HexKey): boolean => owned.has(k) || trailSet.has(k);
+  const isBarrier = (k: HexKey): boolean =>
+    owned.has(k) || trailSet.has(k) || (barriers !== undefined && barriers.has(k));
 
   // Kết quả GIỮ hợp đồng cũ: owned ∪ trail (∪ interior thêm ở dưới).
   const result = new Set<HexKey>(owned);

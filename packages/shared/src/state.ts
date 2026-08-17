@@ -143,6 +143,10 @@ export class GameState {
   readonly map: Set<HexKey>; // logic (gồm vành biên ngoài tường)
   /** Ô render/tính % (nằm trong tường) — vành biên ngoài KHÔNG thuộc tập này. */
   readonly playable: Set<HexKey>;
+  /** Ô CHƯỚNG NGẠI (barrier nội bộ, doc 25 §1.3) — KHÔNG đi/chiếm/đếm được; chặn di chuyển &
+   *  flood fill. Nằm TRONG `map` (để cạnh kề không bị coi là rìa thoát ra ngoài). Rỗng với map
+   *  lục giác thường. Biên ngoài vẫn là lục giác lồi (chưa hỗ trợ hình lõm tùy biến). */
+  readonly obstacles: Set<HexKey>;
 
   readonly players: Entity[];
   /** Số ghế NGƯỜI (không phải bot): players[0..humanCount-1]. Mặc định 1 (single-player).
@@ -215,16 +219,24 @@ export class GameState {
     this.fixedSpawn = options.spawnAt;
     this.humanCount = Math.max(1, options.humanCount ?? 1);
     const botCount = this.config.bots.count;
-    // playable = ô có TÂM nằm trong tường va chạm (wallLimit, đã co theo wallScale).
+    // playable = ô có TÂM trong tường va chạm (wallLimit), TRỪ ô chướng ngại. Ô chướng ngại
+    // (config.map.obstacles) chỉ tính nếu thực sự là ô hợp lệ trong sân.
+    this.obstacles = new Set();
     this.playable = new Set();
+    const obstacleInput = new Set(this.config.map.obstacles ?? []);
     for (const k of this.arena.mapArena(this.config.map.mapMargin)) {
       const p = axialToPixel(keyToAxial(k), this.hexSize);
-      if (this.arena.insideArena(p.x, p.y, 0)) this.playable.add(k);
+      if (!this.arena.insideArena(p.x, p.y, 0)) continue;
+      if (obstacleInput.has(k)) this.obstacles.add(k);
+      else this.playable.add(k);
     }
-    // map = playable ∪ ĐÚNG 1 VÀNH ô kề bao quanh. Vành này = tường hiển thị (BorderRim) +
-    // vành biên cho flood fill + đảm bảo đầu bị clamp luôn rơi vào ô hợp lệ. Dựng theo ô KỀ
-    // (không theo dải world-units mỏng) nên KHÔNG BAO GIỜ mất tường khi đổi WALL_SCALE.
+    // map = playable ∪ obstacles ∪ ĐÚNG 1 VÀNH ô kề. Vành này = tường hiển thị (BorderRim) +
+    // biên cho flood fill + đảm bảo đầu bị clamp luôn rơi vào ô hợp lệ. Ô chướng ngại NẰM TRONG
+    // map (không bỏ ra) để ô kề nó KHÔNG bị coi là "rìa thoát ra ngoài" khi flood fill — hành xử
+    // như tường NỘI BỘ (nhốt được vùng tựa vào nó), không phải lỗ thủng. Dựng theo ô KỀ (không
+    // theo dải world-units mỏng) nên KHÔNG BAO GIỜ mất tường khi đổi WALL_SCALE.
     this.map = new Set(this.playable);
+    for (const k of this.obstacles) this.map.add(k);
     for (const k of this.playable) {
       for (const nb of neighbors(keyToAxial(k))) this.map.add(keyOf(nb));
     }
@@ -935,7 +947,7 @@ export class GameState {
       const y = (this.rng() * 2 - 1) * lim;
       if (!this.arena.insideArena(x, y, -inset)) continue;
       const a = pixelToAxial(x, y, this.hexSize);
-      if (this.map.has(keyOf(a)) && clearAround(a)) return a;
+      if (this.playable.has(keyOf(a)) && clearAround(a)) return a;
     }
     // BOT: bỏ qua bước quét xác định (tốn) — nếu lấy mẫu ngẫu nhiên trượt thì thôi, chờ lần
     // hồi sinh sau (đằng nào cũng có RESPAWN_DELAY). Chỉ NGƯỜI chơi mới cần câu trả lời chắc
@@ -1085,6 +1097,12 @@ export class GameState {
     // Va chạm tường: dịch theo hướng nhìn rồi TRƯỢT dọc biên ở TỐC ĐỘ ĐẦY ĐỦ (slideMove).
     // Không sinh vận tốc LÙI (tránh đầu bị đẩy ngược vào ô đuôi của chính mình → chết oan).
     const c = this.arena.slideMove(e.pos.x, e.pos.y, e.heading, dist);
+    // Chặn ô CHƯỚNG NGẠI (tường nội bộ): nếu ô đích rơi vào obstacle → KHÔNG bước tick này (đầu
+    // đứng lại như đụng tường; người/bot tự đổi hướng). Giả định bước/tick nhỏ hơn 1 ô — đủ cho
+    // 24Hz tốc độ thường; trường hợp nhảy nhiều ô qua obstacle mỏng là hiếm, chấp nhận cho MVP.
+    if (this.obstacles.size > 0 && this.obstacles.has(keyOf(pixelToAxial(c.x, c.y, this.hexSize)))) {
+      return;
+    }
     const mdx = c.x - e.pos.x;
     const mdy = c.y - e.pos.y;
     const moved = Math.hypot(mdx, mdy);
@@ -1098,9 +1116,10 @@ export class GameState {
     }
   }
 
-  /** API cho test: di chuyển người chơi tới (x,y) nếu ô đích hợp lệ. */
+  /** API cho test: di chuyển người chơi tới (x,y) nếu ô đích hợp lệ (không phải chướng ngại). */
   moveTo(x: number, y: number): void {
     if (!this.inMap(x, y)) return;
+    if (this.obstacles.has(keyOf(pixelToAxial(x, y, this.hexSize)))) return;
     this.stepEntity(this.human, x, y);
   }
 
@@ -1187,7 +1206,7 @@ export class GameState {
   }
 
   private captureFor(e: Entity): void {
-    const captured = captureEnclosed(this.map, e.owned, e.trailHexes);
+    const captured = captureEnclosed(this.map, e.owned, e.trailHexes, this.obstacles);
     // Gán mọi ô chiếm được cho e (cướp khỏi đối thủ nếu nằm trong vòng).
     for (const k of captured) this.claimCell(k, e);
     // Dọn đuôi.

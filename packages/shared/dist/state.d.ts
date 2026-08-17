@@ -88,6 +88,10 @@ export declare class GameState {
     readonly map: Set<HexKey>;
     /** Ô render/tính % (nằm trong tường) — vành biên ngoài KHÔNG thuộc tập này. */
     readonly playable: Set<HexKey>;
+    /** Ô CHƯỚNG NGẠI (barrier nội bộ, doc 25 §1.3) — KHÔNG đi/chiếm/đếm được; chặn di chuyển &
+     *  flood fill. Nằm TRONG `map` (để cạnh kề không bị coi là rìa thoát ra ngoài). Rỗng với map
+     *  lục giác thường. Biên ngoài vẫn là lục giác lồi (chưa hỗ trợ hình lõm tùy biến). */
+    readonly obstacles: Set<HexKey>;
     readonly players: Entity[];
     /** Số ghế NGƯỜI (không phải bot): players[0..humanCount-1]. Mặc định 1 (single-player).
      *  Server multiplayer đặt >1 và gán mỗi kết nối vào một ghế người. */
@@ -280,7 +284,7 @@ export declare class GameState {
     private winSubjectId;
     private checkWin;
     private updateEntity;
-    /** API cho test: di chuyển người chơi tới (x,y) nếu ô đích hợp lệ. */
+    /** API cho test: di chuyển người chơi tới (x,y) nếu ô đích hợp lệ (không phải chướng ngại). */
     moveTo(x: number, y: number): void;
     private stepEntity;
     /** Xử lý khi đầu e bước vào ô mới. Trả về true nếu e chết. */

@@ -14,6 +14,8 @@ import { HexKey } from "./hex";
  * @param mapSet Tập mọi ô hợp lệ của bản đồ.
  * @param owned  Tập ô đang sở hữu.
  * @param trail  Danh sách/tập ô của đuôi vừa vẽ.
+ * @param barriers Ô CHƯỚNG NGẠI cố định (tường nội bộ) — chặn loang như owned/trail, nhưng KHÔNG
+ *   bị chiếm (không nằm trong owned/trail nên không thêm vào result). Bỏ trống = không có.
  * @returns Tập ô cần thêm vào owned (gồm cả owned cũ + interior + trail).
  */
-export declare function captureEnclosed(mapSet: Set<HexKey>, owned: Set<HexKey>, trail: Iterable<HexKey>): Set<HexKey>;
+export declare function captureEnclosed(mapSet: Set<HexKey>, owned: Set<HexKey>, trail: Iterable<HexKey>, barriers?: Set<HexKey>): Set<HexKey>;

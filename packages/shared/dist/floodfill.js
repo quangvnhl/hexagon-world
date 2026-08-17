@@ -17,11 +17,13 @@ const hex_1 = require("./hex");
  * @param mapSet Tập mọi ô hợp lệ của bản đồ.
  * @param owned  Tập ô đang sở hữu.
  * @param trail  Danh sách/tập ô của đuôi vừa vẽ.
+ * @param barriers Ô CHƯỚNG NGẠI cố định (tường nội bộ) — chặn loang như owned/trail, nhưng KHÔNG
+ *   bị chiếm (không nằm trong owned/trail nên không thêm vào result). Bỏ trống = không có.
  * @returns Tập ô cần thêm vào owned (gồm cả owned cũ + interior + trail).
  */
-function captureEnclosed(mapSet, owned, trail) {
+function captureEnclosed(mapSet, owned, trail, barriers) {
     const trailSet = trail instanceof Set ? trail : new Set(trail);
-    const isBarrier = (k) => owned.has(k) || trailSet.has(k);
+    const isBarrier = (k) => owned.has(k) || trailSet.has(k) || (barriers !== undefined && barriers.has(k));
     // Kết quả GIỮ hợp đồng cũ: owned ∪ trail (∪ interior thêm ở dưới).
     const result = new Set(owned);
     for (const t of trailSet)
