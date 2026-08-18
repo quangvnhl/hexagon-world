@@ -46,6 +46,7 @@ function resolveMatchConfig(input = {}) {
                 max: input.rules?.speed?.max ?? config_1.CONFIG.SPEED.BY_KING_PCT.MAX,
             },
             totemsEnabled: input.rules?.totemsEnabled ?? true,
+            maxLives: input.rules?.maxLives ?? 0,
             totems: {
                 speedCount: input.rules?.totems?.speedCount ?? config_1.CONFIG.TOTEMS.SPEED.COUNT,
                 speedBonus: input.rules?.totems?.speedBonus ?? config_1.CONFIG.TOTEMS.SPEED.BONUS_PER_TOTEM,

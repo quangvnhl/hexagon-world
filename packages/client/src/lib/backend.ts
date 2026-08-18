@@ -1,4 +1,4 @@
-import type { PlayerAppearance } from "@hexagon/shared";
+import type { PlayerAppearance, CampaignLevel } from "@hexagon/shared";
 import { getTelegramWebApp } from "./telegram";
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8910";
@@ -99,6 +99,11 @@ export async function purchaseEnergy(): Promise<EnergyStatus> {
     method: "POST",
     body: JSON.stringify({ idempotencyKey: crypto.randomUUID() }),
   });
+}
+
+/** Danh sách cấp Campaign đã publish (nguồn Supabase — doc 29 L2). */
+export async function getCampaignLevels(): Promise<CampaignLevel[]> {
+  return (await json<{ levels: CampaignLevel[] }>("/v1/campaign/levels", { cache: "no-store" })).levels;
 }
 
 /** Tiến độ các cấp Campaign của người chơi. */

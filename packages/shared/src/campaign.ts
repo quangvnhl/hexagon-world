@@ -167,9 +167,15 @@ export function levelById(id: string): CampaignLevel | undefined {
 }
 
 /** Cấp đã MỞ KHÓA chưa, cho tập id đã hoàn thành `cleared`. Thuần → dùng chung client/server
- *  (client tô lưới; server chặn nộp cấp chưa mở). Cấp `requires=null` luôn mở. */
+ *  (client tô lưới; server chặn nộp cấp chưa mở). Cấp `requires=null` luôn mở. Dùng catalog HẰNG
+ *  (fallback). Cho cấp lấy từ DB (P3), dùng [[isUnlockedIn]] với danh sách fetch. */
 export function isUnlocked(id: string, cleared: ReadonlySet<string>): boolean {
-  const lvl = levelById(id);
+  return isUnlockedIn(CAMPAIGN_LEVELS, id, cleared);
+}
+
+/** Như `isUnlocked` nhưng tra trong DANH SÁCH cấp truyền vào (nguồn từ Supabase — doc 29 L2/L3). */
+export function isUnlockedIn(levels: readonly CampaignLevel[], id: string, cleared: ReadonlySet<string>): boolean {
+  const lvl = levels.find((l) => l.id === id);
   if (!lvl) return false;
   const req = lvl.unlock.requires;
   return req === null || cleared.has(req);

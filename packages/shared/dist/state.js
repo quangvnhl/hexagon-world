@@ -90,6 +90,11 @@ class GameState {
         this.won = false;
         /** Id người thắng (-1 nếu chưa). */
         this.winnerId = -1;
+        /** [Campaign] Chủ thể đã THUA chưa (hết mạng khi `rules.maxLives > 0`) → đóng băng, chặn hồi
+         *  sinh. `false` với mọi mode vô hạn mạng (maxLives=0) ⇒ bất biến /play, /netplay. */
+        this.lost = false;
+        /** Id chủ thể đã thua (-1 nếu chưa). */
+        this.lostId = -1;
         /** Id KING đang được tính giờ giữ ngôi (đổi King → reset đồng hồ). */
         this.kingHolderId = -1;
         /** Người chơi đã chọn XEM (khán giả): không hồi sinh nữa tới khi hết ván. */
@@ -719,6 +724,8 @@ class GameState {
     revive() {
         if (this.human.phase !== "dead")
             return false;
+        if (this.lost)
+            return false; // [Campaign] hết mạng → không hồi sinh nữa
         if (this.spectating)
             return false; // đã chọn XEM → chờ hết ván
         if (this.roomLocked())
@@ -729,6 +736,8 @@ class GameState {
     canRevive() {
         if (this.human.phase !== "dead")
             return false;
+        if (this.lost)
+            return false; // [Campaign] hết mạng → không hồi sinh nữa
         if (this.spectating)
             return false;
         if (this.roomLocked())
@@ -760,6 +769,8 @@ class GameState {
         this.cellTrail.clear();
         this.won = false;
         this.winnerId = -1;
+        this.lost = false;
+        this.lostId = -1;
         this.kingHolderId = -1;
         this.spectating = false;
         this.kingHoldRemaining = this.config.win.winHoldTime;
@@ -836,7 +847,7 @@ class GameState {
     // ---- Cập nhật ------------------------------------------------------------
     /** Gọi mỗi frame với dt (giây). */
     update(dt) {
-        if (this.won)
+        if (this.won || this.lost)
             return;
         for (const e of this.players) {
             if (e.isBot && e.phase === "playing")
@@ -866,6 +877,19 @@ class GameState {
         return this.kingId();
     }
     checkWin(dt) {
+        // [Campaign] THUA khi hết mạng: chủ thể chết đủ `maxLives` lần (maxLives=0 ⇒ vô hạn, không
+        // bao giờ thua — bất biến /play, /netplay). Đánh trước điều kiện thắng để chết-lần-cuối
+        // không lỡ khép vòng thắng cùng tick.
+        const maxLives = this.config.rules.maxLives;
+        if (maxLives > 0 && !this.lost) {
+            const lid = this.winSubjectId();
+            const loser = lid >= 0 ? this.players[lid] : undefined;
+            if (loser && loser.deaths >= maxLives) {
+                this.lost = true;
+                this.lostId = lid;
+                return;
+            }
+        }
         switch (this.config.win.kind) {
             case "none":
                 return; // Luyện tập: không phân định thắng thua.

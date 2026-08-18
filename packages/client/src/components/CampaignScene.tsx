@@ -8,9 +8,10 @@ import dynamic from "next/dynamic";
 import {
   CAMPAIGN_LEVELS,
   applyPowerups,
-  isUnlocked,
+  isUnlockedIn,
   computeEnergy,
   campaignStars,
+  validateCampaignCatalog,
   type CampaignLevel,
   type PowerupKind,
   type MatchConfigInput,
@@ -18,6 +19,7 @@ import {
 } from "@hexagon/shared";
 import {
   getEnergy,
+  getCampaignLevels,
   getCampaignProgress,
   startCampaignLevel,
   completeCampaignLevel,
@@ -92,6 +94,7 @@ interface Props {
 
 export default function CampaignScene({ playerName, appearance, onExit, showMenu = true }: Props) {
   const [energy, setEnergy] = useState<EnergyStatus | null>(null);
+  const [levels, setLevels] = useState<CampaignLevel[]>(() => [...CAMPAIGN_LEVELS]);
   const [progress, setProgress] = useState<LevelProgress[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -115,6 +118,12 @@ export default function CampaignScene({ playerName, appearance, onExit, showMenu
     } finally {
       setLoading(false);
     }
+    // Danh sách cấp từ server (P3). Lỗi/dữ liệu hỏng ⇒ giữ fallback hằng shared.
+    try {
+      const fetched = await getCampaignLevels();
+      validateCampaignCatalog(fetched);
+      if (fetched.length > 0) setLevels(fetched);
+    } catch { /* giữ CAMPAIGN_LEVELS fallback */ }
   }, []);
 
   useEffect(() => { void refresh(); }, [refresh]);
@@ -177,8 +186,8 @@ export default function CampaignScene({ playerName, appearance, onExit, showMenu
 
         {!loading && !error && (
           <div style={{ marginTop: 20, display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(220px, 1fr))", gap: 12 }}>
-            {CAMPAIGN_LEVELS.map((level) => {
-              const unlocked = isUnlocked(level.id, cleared);
+            {levels.map((level) => {
+              const unlocked = isUnlockedIn(levels, level.id, cleared);
               const done = cleared.has(level.id);
               const stars = starsOf(level.id);
               const noEnergy = (energy?.current ?? 0) < 1;

@@ -69,6 +69,9 @@ export interface MatchRules {
     totemsEnabled: boolean;
     /** Cấu hình Totem (số lượng/độ mạnh/khoảng cách). */
     totems: MatchTotemRules;
+    /** [Campaign] Số mạng của CHỦ THỂ trước khi THUA. `0` = VÔ HẠN (hồi sinh tự do — hành vi
+     *  mặc định /play, /netplay). `>0` = chết đủ số này ⇒ `GameState.lost` (doc 28 §E2b). */
+    maxLives: number;
 }
 export interface MatchConfig {
     map: MatchMapConfig;

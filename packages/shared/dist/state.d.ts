@@ -133,6 +133,11 @@ export declare class GameState {
     won: boolean;
     /** Id người thắng (-1 nếu chưa). */
     winnerId: number;
+    /** [Campaign] Chủ thể đã THUA chưa (hết mạng khi `rules.maxLives > 0`) → đóng băng, chặn hồi
+     *  sinh. `false` với mọi mode vô hạn mạng (maxLives=0) ⇒ bất biến /play, /netplay. */
+    lost: boolean;
+    /** Id chủ thể đã thua (-1 nếu chưa). */
+    lostId: number;
     /** Id KING đang được tính giờ giữ ngôi (đổi King → reset đồng hồ). */
     private kingHolderId;
     /** Người chơi đã chọn XEM (khán giả): không hồi sinh nữa tới khi hết ván. */

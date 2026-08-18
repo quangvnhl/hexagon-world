@@ -5,6 +5,7 @@ import {
   isUnlocked,
   validateCampaignCatalog,
   campaignStars,
+  isUnlockedIn,
 } from "../campaign";
 import { resolveMatchConfig } from "../match-config";
 
@@ -75,6 +76,17 @@ describe("Campaign helpers", () => {
 
   it("isUnlocked: id không tồn tại ⇒ false", () => {
     expect(isUnlocked("khong-co", new Set())).toBe(false);
+  });
+
+  it("isUnlockedIn tra trong danh sách truyền vào (nguồn DB)", () => {
+    const list = [
+      { id: "a", order: 1, name: "a", config: {}, powerups: [], unlock: { requires: null }, rewards: { coin: 0, xp: 0, energy: 0 } },
+      { id: "b", order: 2, name: "b", config: {}, powerups: [], unlock: { requires: "a" }, rewards: { coin: 0, xp: 0, energy: 0 } },
+    ];
+    expect(isUnlockedIn(list, "a", new Set())).toBe(true);
+    expect(isUnlockedIn(list, "b", new Set())).toBe(false);
+    expect(isUnlockedIn(list, "b", new Set(["a"]))).toBe(true);
+    expect(isUnlockedIn(list, "khong-co", new Set())).toBe(false);
   });
 
   it("campaignStars theo số lần chết: 0→3, 1→2, ≥2→1", () => {
