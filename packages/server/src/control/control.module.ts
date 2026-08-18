@@ -1,6 +1,7 @@
 import { Module } from "@nestjs/common";
 import { AdminController } from "../admin/admin.controller";
 import { AuthController } from "../auth/auth.controller";
+import { EnergyController } from "../energy/energy.controller";
 import { GoogleOAuthController } from "../auth/google-oauth.controller";
 import { IdentityService } from "../auth/identity.service";
 import { SessionService } from "../auth/session.service";
@@ -14,7 +15,7 @@ import { ShopController } from "../shop/shop.controller";
 import { ControlBootstrapService } from "./control-bootstrap.service";
 
 @Module({
-  controllers: [AdminController, AuthController, GoogleOAuthController, TelegramAuthController, MatchesController, TelegramPaymentsController, PlayersController, RegionsController, ShopController],
+  controllers: [AdminController, AuthController, EnergyController, GoogleOAuthController, TelegramAuthController, MatchesController, TelegramPaymentsController, PlayersController, RegionsController, ShopController],
   providers: [IdentityService, SessionService, TicketService, ControlBootstrapService],
 })
 export class ControlModule {}

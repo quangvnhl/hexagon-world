@@ -6,6 +6,7 @@ export * from "./floodfill";
 export * from "./config";
 export * from "./match-config";
 export * from "./campaign";
+export * from "./energy";
 export * from "./arena";
 export * from "./state";
 export * from "./protocol";
