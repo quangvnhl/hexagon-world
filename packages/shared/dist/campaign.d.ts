@@ -54,5 +54,23 @@ export declare function levelById(id: string): CampaignLevel | undefined;
 export declare function isUnlocked(id: string, cleared: ReadonlySet<string>): boolean;
 /** Như `isUnlocked` nhưng tra trong DANH SÁCH cấp truyền vào (nguồn từ Supabase — doc 29 L2/L3). */
 export declare function isUnlockedIn(levels: readonly CampaignLevel[], id: string, cleared: ReadonlySet<string>): boolean;
+/** Bản nháp cấp mà admin nhập (khớp payload API + form trình vẽ). Map 1-1 sang hàng `campaign_levels`. */
+export interface CampaignLevelDraft {
+    id: string;
+    sortOrder: number;
+    name: string;
+    config: MatchConfigInput;
+    powerups: PowerupKind[];
+    unlockRequires: string | null;
+    rewards: {
+        coin: number;
+        xp: number;
+        energy: number;
+    };
+    published: boolean;
+}
+/** Kiểm bản nháp cấp (thuần) → mảng lỗi (rỗng = hợp lệ). Dùng ở CẢ controller (chặn publish hỏng)
+ *  lẫn trình vẽ (báo lỗi tức thì). KHÔNG kiểm unlock tồn tại/chu trình — cần toàn tập (làm ở server). */
+export declare function validateLevelDraft(d: CampaignLevelDraft): string[];
 /** Kiểm tra tính nhất quán catalog (dùng trong test + có thể gọi lúc boot server). Ném nếu hỏng. */
 export declare function validateCampaignCatalog(levels?: readonly CampaignLevel[]): void;

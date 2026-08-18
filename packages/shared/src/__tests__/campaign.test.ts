@@ -6,6 +6,8 @@ import {
   validateCampaignCatalog,
   campaignStars,
   isUnlockedIn,
+  validateLevelDraft,
+  type CampaignLevelDraft,
 } from "../campaign";
 import { resolveMatchConfig } from "../match-config";
 
@@ -94,5 +96,27 @@ describe("Campaign helpers", () => {
     expect(campaignStars(1)).toBe(2);
     expect(campaignStars(2)).toBe(1);
     expect(campaignStars(9)).toBe(1);
+  });
+});
+
+describe("validateLevelDraft (admin)", () => {
+  const ok: CampaignLevelDraft = {
+    id: "lv1", sortOrder: 1, name: "Thử",
+    config: { bots: { count: 5 }, win: { kind: "territory_pct", targetPct: 0.3 } },
+    powerups: ["speed"], unlockRequires: null, rewards: { coin: 10, xp: 5, energy: 0 }, published: true,
+  };
+
+  it("bản nháp hợp lệ ⇒ không lỗi", () => {
+    expect(validateLevelDraft(ok)).toEqual([]);
+  });
+
+  it("bắt lỗi: id sai ký tự, sortOrder < 1, win.kind lạ, power-up lạ, rewards âm", () => {
+    const bad = {
+      ...ok, id: "lv 1!", sortOrder: 0,
+      config: { win: { kind: "khong-co" } },
+      powerups: ["bay"], rewards: { coin: -1, xp: 5, energy: 0 },
+    } as unknown as CampaignLevelDraft;
+    const errs = validateLevelDraft(bad);
+    expect(errs.length).toBeGreaterThanOrEqual(4);
   });
 });

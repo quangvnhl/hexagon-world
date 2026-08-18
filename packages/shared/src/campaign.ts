@@ -181,6 +181,41 @@ export function isUnlockedIn(levels: readonly CampaignLevel[], id: string, clear
   return req === null || cleared.has(req);
 }
 
+// ---- Admin tạo/sửa cấp (doc 29 §L4/§L5) -------------------------------------------------------
+
+const WIN_KINDS = ["king_hold", "territory_pct", "survive", "capture_totems", "none"];
+const POWERUP_KINDS: PowerupKind[] = ["speed", "head_start", "extra_life"];
+
+/** Bản nháp cấp mà admin nhập (khớp payload API + form trình vẽ). Map 1-1 sang hàng `campaign_levels`. */
+export interface CampaignLevelDraft {
+  id: string;
+  sortOrder: number;
+  name: string;
+  config: MatchConfigInput;
+  powerups: PowerupKind[];
+  unlockRequires: string | null;
+  rewards: { coin: number; xp: number; energy: number };
+  published: boolean;
+}
+
+/** Kiểm bản nháp cấp (thuần) → mảng lỗi (rỗng = hợp lệ). Dùng ở CẢ controller (chặn publish hỏng)
+ *  lẫn trình vẽ (báo lỗi tức thì). KHÔNG kiểm unlock tồn tại/chu trình — cần toàn tập (làm ở server). */
+export function validateLevelDraft(d: CampaignLevelDraft): string[] {
+  const errs: string[] = [];
+  if (!d.id || !/^[a-z0-9_-]+$/i.test(d.id)) errs.push("id phải chỉ gồm chữ/số/gạch (a-z0-9-_)");
+  if (!Number.isInteger(d.sortOrder) || d.sortOrder < 1) errs.push("sortOrder phải là số nguyên ≥ 1");
+  if (!d.name || d.name.trim().length === 0) errs.push("name không được rỗng");
+  const kind = d.config?.win?.kind;
+  if (!kind || !WIN_KINDS.includes(kind)) errs.push("win.kind không hợp lệ");
+  for (const p of d.powerups ?? []) if (!POWERUP_KINDS.includes(p)) errs.push(`power-up lạ: ${p}`);
+  for (const key of ["coin", "xp", "energy"] as const) {
+    const v = d.rewards?.[key];
+    if (!Number.isInteger(v) || v < 0) errs.push(`rewards.${key} phải là số nguyên ≥ 0`);
+  }
+  try { resolveMatchConfig(d.config); } catch { errs.push("config không dựng được (resolveMatchConfig ném)"); }
+  return errs;
+}
+
 /** Kiểm tra tính nhất quán catalog (dùng trong test + có thể gọi lúc boot server). Ném nếu hỏng. */
 export function validateCampaignCatalog(levels: readonly CampaignLevel[] = CAMPAIGN_LEVELS): void {
   const ids = new Set<string>();

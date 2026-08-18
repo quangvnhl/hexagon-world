@@ -1,5 +1,6 @@
-import { BadRequestException, Body, Controller, Delete, Headers, Param, Post, Put, UnauthorizedException } from "@nestjs/common";
+import { BadRequestException, Body, Controller, Delete, Get, Headers, Param, Post, Put, UnauthorizedException } from "@nestjs/common";
 import { randomUUID, timingSafeEqual } from "node:crypto";
+import { validateLevelDraft, type CampaignLevelDraft } from "@hexagon/shared";
 import { SupabaseService } from "../database/supabase.service";
 import { runtimeConfig, sha256 } from "../runtime-config";
 
@@ -52,5 +53,44 @@ export class AdminController {
     const { error } = await this.db.from("players").update({ status: "deleted", display_name: "Deleted Player", deleted_at: new Date().toISOString() }).eq("id", playerId);
     if (error) throw new BadRequestException(error.message);
     return { ok: true, mode: "soft-delete" };
+  }
+
+  // ---- Campaign levels (doc 29 §L4) — trình vẽ dùng các endpoint này để tạo/sửa/publish cấp. ----
+
+  /** Liệt kê MỌI cấp (kể cả chưa publish) cho trình vẽ admin. */
+  @Get("levels") async listLevels(@Headers("x-admin-key") key: string) {
+    this.authorize(key);
+    const { data, error } = await this.db.from("campaign_levels")
+      .select("id,sort_order,name,config,powerups,unlock_requires,rewards,published,version,updated_at").order("sort_order");
+    if (error) throw new BadRequestException(error.message);
+    return { levels: data ?? [] };
+  }
+
+  /** Tạo/sửa 1 cấp. Validate cấu hình + unlock (tồn tại, không tự trỏ) trước khi upsert. */
+  @Post("levels") async upsertLevel(@Headers("x-admin-key") key: string, @Body() draft: CampaignLevelDraft) {
+    this.authorize(key);
+    const errors = validateLevelDraft(draft);
+    if (draft?.unlockRequires === draft?.id) errors.push("unlockRequires không được trỏ chính nó");
+    if (errors.length) throw new BadRequestException({ code: "invalid_level", errors });
+    if (draft.unlockRequires) {
+      const { data } = await this.db.from("campaign_levels").select("id").eq("id", draft.unlockRequires).maybeSingle();
+      if (!data) throw new BadRequestException({ code: "invalid_level", errors: [`unlockRequires trỏ id không tồn tại: ${draft.unlockRequires}`] });
+    }
+    const id = await this.db.rpc<string>("upsert_campaign_level", { p_level: draft });
+    return { id };
+  }
+
+  /** Bật/tắt publish 1 cấp. */
+  @Put("levels/:id/publish") async publishLevel(@Headers("x-admin-key") key: string, @Param("id") id: string, @Body() body: { published?: boolean }) {
+    this.authorize(key);
+    const published = await this.db.rpc<boolean>("publish_campaign_level", { p_id: id, p_published: body.published !== false });
+    return { id, published };
+  }
+
+  /** "Xóa" = gỡ publish (an toàn với progress đã có). */
+  @Delete("levels/:id") async unpublishLevel(@Headers("x-admin-key") key: string, @Param("id") id: string) {
+    this.authorize(key);
+    await this.db.rpc("publish_campaign_level", { p_id: id, p_published: false });
+    return { id, published: false, mode: "unpublish" };
   }
 }
