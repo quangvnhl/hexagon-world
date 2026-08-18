@@ -23,8 +23,10 @@ describe("applyPowerups", () => {
     expect(out.rules.speed.max).toBeCloseTo(CONFIG.SPEED.BY_KING_PCT.MAX * POWERUP_TUNING.speedFactor);
   });
 
-  it("extra_life hiện là no-op trên config (dành cho hệ mạng phụ)", () => {
-    expect(resolveMatchConfig(applyPowerups(base, ["extra_life"]))).toEqual(resolveMatchConfig(base));
+  it("extra_life cộng 1 mạng vào maxLives (E2b)", () => {
+    const withLives: MatchConfigInput = { rules: { maxLives: 3 } };
+    const out = resolveMatchConfig(applyPowerups(withLives, ["extra_life"]));
+    expect(out.rules.maxLives).toBe(3 + POWERUP_TUNING.extraLifeBonus);
   });
 
   it("kết hợp head_start + speed áp cả hai, không đụng field khác", () => {

@@ -37,13 +37,16 @@ export interface CampaignLevel {
 const wallColumn = [key(2, -1), key(2, 0), key(2, 1)];
 const pillars = [key(-3, 1), key(3, -1), key(0, 3), key(0, -3)];
 
+/** Số mạng mặc định mỗi cấp Campaign (mô hình "hết mạng = thua" — doc 28 §E2b). */
+const CAMPAIGN_LIVES = 3;
+
 /** Catalog Campaign P2 — 5 cấp mẫu, độ khó tăng dần, phủ đủ 3 loại objective + obstacle. */
 export const CAMPAIGN_LEVELS: readonly CampaignLevel[] = [
   {
     id: "c1",
     order: 1,
     name: "Khởi đầu",
-    config: { bots: { count: 6 }, win: { kind: "territory_pct", targetPct: 0.3 } },
+    config: { bots: { count: 6 }, rules: { maxLives: CAMPAIGN_LIVES }, win: { kind: "territory_pct", targetPct: 0.3 } },
     powerups: ["head_start"],
     unlock: { requires: null },
     rewards: { coin: 50, xp: 40, energy: 0 },
@@ -52,7 +55,7 @@ export const CAMPAIGN_LEVELS: readonly CampaignLevel[] = [
     id: "c2",
     order: 2,
     name: "Cầm cự",
-    config: { bots: { count: 8 }, win: { kind: "survive", durationSec: 60 } },
+    config: { bots: { count: 8 }, rules: { maxLives: CAMPAIGN_LIVES }, win: { kind: "survive", durationSec: 60 } },
     powerups: ["head_start", "speed"],
     unlock: { requires: "c1" },
     rewards: { coin: 60, xp: 55, energy: 0 },
@@ -63,7 +66,7 @@ export const CAMPAIGN_LEVELS: readonly CampaignLevel[] = [
     name: "Săn totem",
     config: {
       bots: { count: 10 },
-      rules: { totemsEnabled: true },
+      rules: { totemsEnabled: true, maxLives: CAMPAIGN_LIVES },
       win: { kind: "capture_totems", totemGoal: 3 },
     },
     powerups: ["speed", "extra_life"],
@@ -77,6 +80,7 @@ export const CAMPAIGN_LEVELS: readonly CampaignLevel[] = [
     config: {
       bots: { count: 10 },
       map: { obstacles: [...wallColumn] },
+      rules: { maxLives: CAMPAIGN_LIVES },
       win: { kind: "territory_pct", targetPct: 0.35 },
     },
     powerups: ["head_start", "speed", "extra_life"],
@@ -90,6 +94,7 @@ export const CAMPAIGN_LEVELS: readonly CampaignLevel[] = [
     config: {
       bots: { count: 14 },
       map: { obstacles: [...pillars] },
+      rules: { maxLives: CAMPAIGN_LIVES },
       win: { kind: "territory_pct", targetPct: 0.45 },
     },
     powerups: ["head_start", "speed", "extra_life"],
@@ -110,14 +115,16 @@ export const POWERUP_TUNING = {
   speedFactor: 1.15,
   /** `head_start`: cộng thêm vào bán kính cụm lãnh thổ khởi đầu (START_RADIUS). */
   headStartRadiusBonus: 1,
+  /** `extra_life`: cộng thêm vào số mạng của cấp (rules.maxLives). */
+  extraLifeBonus: 1,
 } as const;
 
 /**
  * Áp power-up đã chọn lên config gốc của cấp. MVP P2 hiện thực 2 loại có ánh xạ config sạch:
  * - `speed`: nhân `rules.speed.{min,max}` với `speedFactor`.
  * - `head_start`: cộng `headStartRadiusBonus` vào `rules.startRadius` (cụm khởi đầu lớn hơn).
- * - `extra_life`: **DÀNH** — cần hệ MẠNG PHỤ / điều kiện THUA (chưa có; xem doc 28 §6). Hiện là
- *   no-op trên config để không đánh lừa, nhưng vẫn nhận hợp lệ (không ném) để catalog khai sẵn.
+ * - `extra_life`: cộng `extraLifeBonus` vào `rules.maxLives` (thêm mạng — chỉ có tác dụng ở cấp
+ *   có `maxLives > 0`; doc 28 §E2b). Cấp vô hạn mạng (maxLives=0) thì +1 vẫn là mạng hữu hạn.
  */
 export function applyPowerups(
   base: MatchConfigInput,
@@ -138,8 +145,10 @@ export function applyPowerups(
           speed: { min: min * POWERUP_TUNING.speedFactor, max: max * POWERUP_TUNING.speedFactor },
         },
       };
+    } else if (p === "extra_life") {
+      const cur = out.rules?.maxLives ?? 0;
+      out = { ...out, rules: { ...out.rules, maxLives: cur + POWERUP_TUNING.extraLifeBonus } };
     }
-    // extra_life: dành — không đổi config.
   }
   return out;
 }
