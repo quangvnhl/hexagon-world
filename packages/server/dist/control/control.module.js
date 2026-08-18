@@ -10,6 +10,9 @@ exports.ControlModule = void 0;
 const common_1 = require("@nestjs/common");
 const admin_controller_1 = require("../admin/admin.controller");
 const auth_controller_1 = require("../auth/auth.controller");
+const campaign_controller_1 = require("../campaign/campaign.controller");
+const dev_auth_controller_1 = require("../auth/dev-auth.controller");
+const energy_controller_1 = require("../energy/energy.controller");
 const google_oauth_controller_1 = require("../auth/google-oauth.controller");
 const identity_service_1 = require("../auth/identity.service");
 const session_service_1 = require("../auth/session.service");
@@ -26,7 +29,7 @@ let ControlModule = class ControlModule {
 exports.ControlModule = ControlModule;
 exports.ControlModule = ControlModule = __decorate([
     (0, common_1.Module)({
-        controllers: [admin_controller_1.AdminController, auth_controller_1.AuthController, google_oauth_controller_1.GoogleOAuthController, telegram_auth_controller_1.TelegramAuthController, matches_controller_1.MatchesController, telegram_payments_controller_1.TelegramPaymentsController, players_controller_1.PlayersController, regions_controller_1.RegionsController, shop_controller_1.ShopController],
+        controllers: [admin_controller_1.AdminController, auth_controller_1.AuthController, campaign_controller_1.CampaignController, dev_auth_controller_1.DevAuthController, energy_controller_1.EnergyController, google_oauth_controller_1.GoogleOAuthController, telegram_auth_controller_1.TelegramAuthController, matches_controller_1.MatchesController, telegram_payments_controller_1.TelegramPaymentsController, players_controller_1.PlayersController, regions_controller_1.RegionsController, shop_controller_1.ShopController],
         providers: [identity_service_1.IdentityService, session_service_1.SessionService, ticket_service_1.TicketService, control_bootstrap_service_1.ControlBootstrapService],
     })
 ], ControlModule);

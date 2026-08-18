@@ -13,7 +13,8 @@ class GameRoom {
         this.maxHumans = maxHumans;
         this.gs = new shared_1.GameState({
             humanCount: maxHumans,
-            config: { bots: { count: botCount }, seed: matchSeed },
+            config: { ...(0, shared_1.tournamentConfig)({ botCount, winHoldTime: this.kingDurationSeconds }), seed: matchSeed },
+            externalWinControl: true,
         });
         this.seats = new Array(maxHumans).fill(false);
         this.lastSeq = new Array(maxHumans).fill(0);
@@ -197,20 +198,11 @@ class GameRoom {
                 this.kingCountdownRemaining = this.kingDurationSeconds;
             }
             this.kingCountdownRemaining = Math.max(0, this.kingCountdownRemaining - dt);
-            if (this.kingCountdownRemaining <= 0) {
-                this.gs.won = false;
-                this.gs.winnerId = -1;
+            if (this.kingCountdownRemaining <= 0)
                 this.gs.declareWinner(kingId);
-            }
-            else {
-                this.gs.won = false;
-                this.gs.winnerId = -1;
-            }
         }
         else {
             this.resetKingCountdown();
-            this.gs.won = false;
-            this.gs.winnerId = -1;
         }
         this.gs.kingHoldRemaining = this.kingRemaining;
         this.tickCount++;

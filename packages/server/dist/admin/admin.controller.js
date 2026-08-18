@@ -15,6 +15,7 @@ Object.defineProperty(exports, "__esModule", { value: true });
 exports.AdminController = void 0;
 const common_1 = require("@nestjs/common");
 const node_crypto_1 = require("node:crypto");
+const shared_1 = require("@hexagon/shared");
 const supabase_service_1 = require("../database/supabase.service");
 const runtime_config_1 = require("../runtime-config");
 let AdminController = class AdminController {
@@ -68,6 +69,39 @@ let AdminController = class AdminController {
             throw new common_1.BadRequestException(error.message);
         return { ok: true, mode: "soft-delete" };
     }
+    async listLevels(key) {
+        this.authorize(key);
+        const { data, error } = await this.db.from("campaign_levels")
+            .select("id,sort_order,name,config,powerups,unlock_requires,rewards,published,version,updated_at").order("sort_order");
+        if (error)
+            throw new common_1.BadRequestException(error.message);
+        return { levels: data ?? [] };
+    }
+    async upsertLevel(key, draft) {
+        this.authorize(key);
+        const errors = (0, shared_1.validateLevelDraft)(draft);
+        if (draft?.unlockRequires === draft?.id)
+            errors.push("unlockRequires không được trỏ chính nó");
+        if (errors.length)
+            throw new common_1.BadRequestException({ code: "invalid_level", errors });
+        if (draft.unlockRequires) {
+            const { data } = await this.db.from("campaign_levels").select("id").eq("id", draft.unlockRequires).maybeSingle();
+            if (!data)
+                throw new common_1.BadRequestException({ code: "invalid_level", errors: [`unlockRequires trỏ id không tồn tại: ${draft.unlockRequires}`] });
+        }
+        const id = await this.db.rpc("upsert_campaign_level", { p_level: draft });
+        return { id };
+    }
+    async publishLevel(key, id, body) {
+        this.authorize(key);
+        const published = await this.db.rpc("publish_campaign_level", { p_id: id, p_published: body.published !== false });
+        return { id, published };
+    }
+    async unpublishLevel(key, id) {
+        this.authorize(key);
+        await this.db.rpc("publish_campaign_level", { p_id: id, p_published: false });
+        return { id, published: false, mode: "unpublish" };
+    }
 };
 exports.AdminController = AdminController;
 __decorate([
@@ -111,6 +145,38 @@ __decorate([
     __metadata("design:paramtypes", [String, String]),
     __metadata("design:returntype", Promise)
 ], AdminController.prototype, "deletePlayer", null);
+__decorate([
+    (0, common_1.Get)("levels"),
+    __param(0, (0, common_1.Headers)("x-admin-key")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String]),
+    __metadata("design:returntype", Promise)
+], AdminController.prototype, "listLevels", null);
+__decorate([
+    (0, common_1.Post)("levels"),
+    __param(0, (0, common_1.Headers)("x-admin-key")),
+    __param(1, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, Object]),
+    __metadata("design:returntype", Promise)
+], AdminController.prototype, "upsertLevel", null);
+__decorate([
+    (0, common_1.Put)("levels/:id/publish"),
+    __param(0, (0, common_1.Headers)("x-admin-key")),
+    __param(1, (0, common_1.Param)("id")),
+    __param(2, (0, common_1.Body)()),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String, Object]),
+    __metadata("design:returntype", Promise)
+], AdminController.prototype, "publishLevel", null);
+__decorate([
+    (0, common_1.Delete)("levels/:id"),
+    __param(0, (0, common_1.Headers)("x-admin-key")),
+    __param(1, (0, common_1.Param)("id")),
+    __metadata("design:type", Function),
+    __metadata("design:paramtypes", [String, String]),
+    __metadata("design:returntype", Promise)
+], AdminController.prototype, "unpublishLevel", null);
 exports.AdminController = AdminController = __decorate([
     (0, common_1.Controller)("internal/v1/admin"),
     __metadata("design:paramtypes", [supabase_service_1.SupabaseService])

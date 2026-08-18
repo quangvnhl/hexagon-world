@@ -499,6 +499,7 @@ class NetServer {
             seed: r.id,
             maxPlayers: this.maxHumans,
             botCount: r.room.botCapacity,
+            config: (0, shared_1.encodeMatchConfig)(r.room.gameState.config),
             reconnectToken,
             resumed,
         });
