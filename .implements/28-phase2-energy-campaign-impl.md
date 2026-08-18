@@ -23,20 +23,24 @@
 - **Sim đơn client-side**: `/play` đã chạy `GameState` cục bộ với `MatchConfigInput`; evaluator
   `territory_pct`/`survive`/`capture_totems` (S3) + obstacle (S7) đã hoạt động → Campaign tái dùng.
 
-## 1. Quyết định thiết kế (default đề xuất — cần bạn xác nhận trước khi vào E3/E4)
+## 1. Quyết định thiết kế (ĐÃ CHỐT 2026-08-18)
 
 1. **Campaign chạy sim CLIENT-SIDE** (giống `/play`), **KHÔNG** server-authoritative như Tournament.
    Lý do: chơi đơn, tái dùng path hiện có, không tốn phòng server. Chống gian lận đặt ở **cổng
    năng lượng** (trừ ở server) + **xác minh khi nộp kết quả** (play-ticket ký + phần thưởng/mở khóa
    tính & cap ở server, idempotent). Đủ cho MVP; nếu cần chặt hơn → chuyển sim lên server ở P4.
-2. **Kinh tế năng lượng** (chỉnh trong bảng `energy_rules` singleton, không cần deploy):
-   `energy_max = 30`, `regen_interval = 300s` (5 phút/1 điểm), `cost = 1/cấp`. **Cần bạn chốt số.**
-3. **Catalog cấp độ = DỮ LIỆU HARDCODE trong shared** cho P2 (`campaign.ts`, ~5 cấp mẫu dùng
+2. **Kinh tế năng lượng** (chỉnh trong bảng `energy_rules` singleton, không cần deploy) — **CHỐT:**
+   `energy_max = 50`, `regen_interval = 180s` (3 phút/1 điểm), `cost = 1/cấp`.
+3. **Catalog cấp độ = DỮ LIỆU HARDCODE trong shared** cho P2 (`campaign.ts`, 5 cấp mẫu dùng
    obstacle + evaluator). Schema Level trên Supabase + trình vẽ admin = **P3** (doc 25 §4).
 4. **Tiến độ (unlock/sao) trên Supabase**, verify mở khóa ở backend (không tin client).
-5. **Power-up trước trận** = modifier khởi tạo áp lên `MatchConfig`/Entity: `head_start` (lãnh thổ
-   khởi đầu lớn hơn), `shield`/`extra_life` (1 mạng phụ), + ánh xạ totem sẵn có (`speed`). Là
-   consumable trong inventory (hệ shop đã có).
+5. **Mô hình THUA — CHỐT: có MẠNG PHỤ, hết mạng = thua.** Mỗi cấp có `rules.maxLives` mạng (mẫu 3);
+   chết đủ số mạng ⇒ `GameState.lost` (đóng băng, chặn hồi sinh, không mở khóa). ⇒ **`extra_life`
+   power-up có tác dụng thật (+1 mạng).** Hiện thực ở lát **E2b** (đã xong).
+6. **Power-up trước trận** = modifier khởi tạo áp lên `MatchConfig`: `head_start` (lãnh thổ khởi đầu
+   lớn hơn), `extra_life` (+1 mạng), `speed` (ánh xạ totem/tốc độ). Là consumable inventory (shop đã có).
+7. **Cách làm DB — CHỐT:** viết đủ migration + RPC theo mẫu ví đã kiểm chứng; test phần **thuần TS**
+   (công thức regen, verify ticket, controller mock `db.rpc`); **verify DB tay** khi có Supabase.
 
 ## 2. Các lát công việc
 
@@ -44,8 +48,9 @@ Ký hiệu: **Đ.dễ / V.vừa / K.khó** · phụ thuộc ghi ở cột "Sau" 
 
 | Lát | Tên | Effort | DB | Sau |
 |-----|-----|:------:|:--:|-----|
-| **E1** | Catalog Campaign trong shared (`campaign.ts`, ~5 cấp mẫu) | V | — | — |
-| **E2** | Power-up → modifier khởi tạo (head_start / extra_life / speed) | V | — | — |
+| **E1** | Catalog Campaign trong shared (`campaign.ts`, 5 cấp mẫu) ✅ | V | — | — |
+| **E2** | Power-up → modifier (head_start / speed) ✅ | V | — | — |
+| **E2b** | Mạng phụ + trạng thái `lost` (hết mạng = thua) + extra_life ✅ | V | — | — |
 | **E3** | Năng lượng: migration + RPC (read/spend/grant) + `EnergyController` REST | V | ✔ | — |
 | **E4** | Tiến độ Campaign: migration + RPC complete + `CampaignController` (verify ticket) | V | ✔ | E1,E3 |
 | **E5** | Client Campaign: route `/campaign`, chọn cấp, thanh năng lượng + đếm hồi | K | — | E1,E3 |
