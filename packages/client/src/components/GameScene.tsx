@@ -290,8 +290,9 @@ export default function GameScene({
   botCount?: number;
   /** [Campaign] Cấu hình ván đầy đủ (map/objective/power-up đã áp). Ưu tiên hơn `botCount`. */
   config?: MatchConfigInput;
-  /** [Campaign] Gọi ĐÚNG MỘT LẦN khi phân định thắng/thua (để nộp kết quả lên server). */
-  onOutcome?: (won: boolean) => void;
+  /** [Campaign] Gọi ĐÚNG MỘT LẦN khi phân định thắng/thua (để nộp kết quả lên server).
+   *  `result` cho biết số lần chết + điểm (% lãnh thổ ×10) tại thời điểm kết. */
+  onOutcome?: (won: boolean, result: { deaths: number; score: number }) => void;
   /** Kiểu hành động màn kết (mặc định "single" = Chơi lại; "campaign" = về danh sách cấp). */
   endMode?: EndScreenMode;
   onExit?: () => void;
@@ -352,7 +353,8 @@ export default function GameScene({
       if (onOutcome && !outcomeFired.current && (s.won || s.lost)) {
         outcomeFired.current = true;
         // won với chủ thể là người chơi (winnerId 0) = thắng; lost = thua.
-        onOutcome(s.won && (s.winnerId === 0 || s.winnerId === -1) ? true : false);
+        const won = s.won && (s.winnerId === 0 || s.winnerId === -1);
+        onOutcome(won, { deaths: s.deaths, score: Math.round(s.pct * 10) });
       }
     },
     [onOutcome]

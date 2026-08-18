@@ -4,6 +4,7 @@ import {
   levelById,
   isUnlocked,
   validateCampaignCatalog,
+  campaignStars,
 } from "../campaign";
 import { resolveMatchConfig } from "../match-config";
 
@@ -74,5 +75,12 @@ describe("Campaign helpers", () => {
 
   it("isUnlocked: id không tồn tại ⇒ false", () => {
     expect(isUnlocked("khong-co", new Set())).toBe(false);
+  });
+
+  it("campaignStars theo số lần chết: 0→3, 1→2, ≥2→1", () => {
+    expect(campaignStars(0)).toBe(3);
+    expect(campaignStars(1)).toBe(2);
+    expect(campaignStars(2)).toBe(1);
+    expect(campaignStars(9)).toBe(1);
   });
 });

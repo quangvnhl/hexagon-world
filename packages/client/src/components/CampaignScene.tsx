@@ -10,6 +10,7 @@ import {
   applyPowerups,
   isUnlocked,
   computeEnergy,
+  campaignStars,
   type CampaignLevel,
   type PowerupKind,
   type MatchConfigInput,
@@ -20,6 +21,7 @@ import {
   getCampaignProgress,
   startCampaignLevel,
   completeCampaignLevel,
+  purchaseEnergy,
   type EnergyStatus,
   type LevelProgress,
 } from "@/lib/backend";
@@ -49,7 +51,7 @@ const fmt = (secs: number) => {
 };
 
 /** Đếm ngược tới điểm năng lượng kế (client tự tính bằng computeEnergy, không spam server). */
-function EnergyBar({ energy }: { energy: EnergyStatus }) {
+function EnergyBar({ energy, onBuy }: { energy: EnergyStatus; onBuy: () => void }) {
   const [now, setNow] = useState(() => Date.now());
   useEffect(() => {
     const t = window.setInterval(() => setNow(Date.now()), 1000);
@@ -70,6 +72,13 @@ function EnergyBar({ energy }: { energy: EnergyStatus }) {
       {view.nextAtMs && (
         <span style={{ fontSize: 12, opacity: 0.7 }}>Hồi sau {fmt(countdown)}</span>
       )}
+      <button
+        onClick={onBuy}
+        title={`Mua +${energy.refill_energy_amount} năng lượng bằng ${energy.refill_coin_cost} coin`}
+        style={{ padding: "5px 11px", borderRadius: 999, border: "1px solid rgba(255,210,63,.35)", background: "rgba(255,210,63,.1)", color: "#ffe27a", fontWeight: 700, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" }}
+      >
+        +{energy.refill_energy_amount}⚡ · {energy.refill_coin_cost}🪙
+      </button>
     </div>
   );
 }
@@ -110,6 +119,11 @@ export default function CampaignScene({ playerName, appearance, onExit, showMenu
 
   useEffect(() => { void refresh(); }, [refresh]);
 
+  const buyEnergy = useCallback(async () => {
+    try { setEnergy(await purchaseEnergy()); }
+    catch (err) { setError(err instanceof Error ? err.message : "Mua năng lượng thất bại"); }
+  }, []);
+
   const start = useCallback(async (level: CampaignLevel) => {
     try {
       const res = await startCampaignLevel(level.id);
@@ -121,11 +135,11 @@ export default function CampaignScene({ playerName, appearance, onExit, showMenu
     }
   }, [picks]);
 
-  const onOutcome = useCallback(async (won: boolean, playId: string) => {
+  const onOutcome = useCallback(async (won: boolean, playId: string, result: { deaths: number; score: number }) => {
     if (!won || submitting.current) return;
     submitting.current = true;
     try {
-      await completeCampaignLevel(playId, true, 1, 0);
+      await completeCampaignLevel(playId, true, campaignStars(result.deaths), result.score);
       await refresh();
     } catch { /* giữ nguyên; người chơi vẫn thấy màn thắng */ }
     finally { submitting.current = false; }
@@ -139,7 +153,7 @@ export default function CampaignScene({ playerName, appearance, onExit, showMenu
         appearance={appearance}
         config={playing.config}
         endMode="campaign"
-        onOutcome={(won) => void onOutcome(won, playing.playId)}
+        onOutcome={(won, result) => void onOutcome(won, playing.playId, result)}
         onExit={() => { setPlaying(null); void refresh(); }}
         showMenu={showMenu}
       />
@@ -151,7 +165,7 @@ export default function CampaignScene({ playerName, appearance, onExit, showMenu
       <div style={{ maxWidth: 760, margin: "0 auto", padding: "24px 16px 48px" }}>
         <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12, flexWrap: "wrap" }}>
           <h1 style={{ fontSize: 24, fontWeight: 900, margin: 0 }}>🗺️ Cấp độ</h1>
-          {energy && <EnergyBar energy={energy} />}
+          {energy && <EnergyBar energy={energy} onBuy={() => void buyEnergy()} />}
         </div>
 
         {loading && <p style={{ opacity: 0.7, marginTop: 24 }}>Đang tải…</p>}

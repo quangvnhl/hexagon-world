@@ -84,13 +84,21 @@ export async function equipItem(item: CatalogItem): Promise<void> {
 
 // ---- Năng lượng + Campaign (P2) ---------------------------------------------------------------
 
-export interface EnergyStatus { current: number; max: number; regen_interval_seconds: number; next_at: string | null; }
+export interface EnergyStatus { current: number; max: number; regen_interval_seconds: number; next_at: string | null; refill_coin_cost: number; refill_energy_amount: number; }
 export interface LevelProgress { level_id: string; status: string; stars: number; best_score: number; completed_at: string; }
 export interface StartPlayResult { playId: string; energy: EnergyStatus; }
 
 /** Đọc năng lượng hiện tại (server tính hồi lười). */
 export async function getEnergy(): Promise<EnergyStatus> {
   return json<EnergyStatus>("/v1/energy", { cache: "no-store" });
+}
+
+/** Mua 1 gói năng lượng bằng coin (server đọc giá; idempotent). Trả trạng thái năng lượng mới. */
+export async function purchaseEnergy(): Promise<EnergyStatus> {
+  return json<EnergyStatus>("/v1/energy/purchase", {
+    method: "POST",
+    body: JSON.stringify({ idempotencyKey: crypto.randomUUID() }),
+  });
 }
 
 /** Tiến độ các cấp Campaign của người chơi. */

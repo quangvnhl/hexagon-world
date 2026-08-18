@@ -18,4 +18,13 @@ describe("EnergyController", () => {
     expect(result).toEqual(status);
     expect(rpc).toHaveBeenCalledWith("read_energy", { p_player_id: "player-1" });
   });
+
+  it("POST /v1/energy/purchase ủy quyền RPC purchase_energy_with_coin (idempotent key)", async () => {
+    const sessions = { resolve: vi.fn(async () => ({ id: "player-1", platform: "web" })) } as unknown as SessionService;
+    const rpc = vi.fn(async () => ({ current: 20, max: 50, regen_interval_seconds: 180, next_at: null, refill_coin_cost: 100, refill_energy_amount: 20 }));
+    const db = { rpc } as unknown as SupabaseService;
+    const controller = new EnergyController(sessions, db);
+    await controller.purchase({} as never, { idempotencyKey: "key-1" });
+    expect(rpc).toHaveBeenCalledWith("purchase_energy_with_coin", { p_player_id: "player-1", p_idempotency_key: "key-1" });
+  });
 });

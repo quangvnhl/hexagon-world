@@ -153,6 +153,14 @@ export function applyPowerups(
   return out;
 }
 
+/** Tính SAO cho một lượt QUA MÀN theo số lần chết (0 chết = 3⭐, ≤1 = 2⭐, còn lại = 1⭐).
+ *  Chỉ gọi khi đã thắng — thua thì không có sao. Thuần → server có thể tự tính lại để không tin client. */
+export function campaignStars(deaths: number): number {
+  if (deaths <= 0) return 3;
+  if (deaths <= 1) return 2;
+  return 1;
+}
+
 /** Tra cấp theo id. */
 export function levelById(id: string): CampaignLevel | undefined {
   return CAMPAIGN_LEVELS.find((l) => l.id === id);
