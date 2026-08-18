@@ -51,10 +51,24 @@ Ký hiệu: **Đ.dễ / V.vừa / K.khó** · phụ thuộc ghi ở cột "Sau" 
 | **E1** | Catalog Campaign trong shared (`campaign.ts`, 5 cấp mẫu) ✅ | V | — | — |
 | **E2** | Power-up → modifier (head_start / speed) ✅ | V | — | — |
 | **E2b** | Mạng phụ + trạng thái `lost` (hết mạng = thua) + extra_life ✅ | V | — | — |
-| **E3** | Năng lượng: migration + RPC (read/spend/grant) + `EnergyController` REST | V | ✔ | — |
-| **E4** | Tiến độ Campaign: migration + RPC complete + `CampaignController` (verify ticket) | V | ✔ | E1,E3 |
-| **E5** | Client Campaign: route `/campaign`, chọn cấp, thanh năng lượng + đếm hồi | K | — | E1,E3 |
-| **E6** | Client: chọn power-up (inventory) + HUD objective (tiến độ/thắng/thua per-cấp) | V | — | E2,E4,E5 |
+| **E3** | Năng lượng: migration + RPC (read/spend/grant) + `EnergyController` REST ✅ | V | ✔ | — |
+| **E4** | Tiến độ Campaign: migration + RPC start/complete + `CampaignController` ✅ | V | ✔ | E1,E3 |
+| **E5** | Client Campaign: route `/campaign`, chọn cấp, thanh năng lượng + đếm hồi ✅ | K | — | E1,E3 |
+| **E6** | Client: chọn power-up + HUD objective (tiến độ/thắng/thua per-cấp) ✅ | V | — | E2,E4,E5 |
+
+> **E4 tinh chỉnh khi thực thi:** bỏ play-ticket KÝ, thay bằng **nonce DB** (`campaign_plays`) —
+> `start` trừ năng lượng + tạo play (idempotent), `complete` tiêu play 1 lần. Đơn giản, DB-authoritative,
+> không cần crypto. Unlock kiểm ở controller bằng catalog shared; thưởng lấy từ catalog (không tin client).
+
+## 7. Còn lại để bạn verify tay (không test-run được ở máy dev)
+
+1. **Áp 2 migration** (`202608180001_energy.sql`, `202608180002_campaign_progress.sql`) lên Supabase,
+   smoke RPC: `read_energy` (hồi đúng nhịp 180s), `spend_energy` (trừ + idempotent),
+   `start_campaign_level` (đủ/không đủ năng lượng), `complete_campaign_level` (mở khóa + thưởng, replay không nhân đôi).
+2. **Chạy backend :8910 + client**, đăng nhập, vào `/campaign`: thanh năng lượng, chọn cấp c1, chọn power-up,
+   Bắt đầu (−1 ⚡), chơi tới đạt objective → cấp c2 mở khóa; thử hết mạng → màn THUA (không mở khóa).
+3. **Kiểm 3D thực tế** (headless không composite được): map obstacle cấp "Mê cung"/"Chung kết" hiển thị tường,
+   head_start cụm khởi đầu lớn hơn, HUD objective + mạng.
 
 ### E1 — Catalog Campaign (shared, test-first, KHÔNG chạm backend)
 
