@@ -15,6 +15,9 @@ const GameScene = dynamic(() => import("@/components/GameScene"), { ssr: false }
 const NetGameScene = dynamic(() => import("@/components/NetGameScene"), {
   ssr: false,
 });
+const CampaignScene = dynamic(() => import("@/components/CampaignScene"), {
+  ssr: false,
+});
 
 interface Session {
   mode: GameMode;
@@ -36,6 +39,10 @@ export default function Home() {
       setSession({ mode, name, serverUrl: access.serverUrl, appearance, gameTicket: access.ticket });
       return;
     }
+    if (mode === "campaign") {
+      setSession({ mode, name, serverUrl, appearance });
+      return;
+    }
     setSession({ mode, name, serverUrl, appearance, botCount: practice.botCount });
   }, []);
 
@@ -54,6 +61,17 @@ export default function Home() {
         appearance={session.appearance}
         serverUrl={session.serverUrl}
         gameTicket={session.gameTicket}
+        onExit={back}
+        showMenu={!isTelegram}
+      />
+    );
+  }
+
+  if (session.mode === "campaign") {
+    return (
+      <CampaignScene
+        playerName={session.name}
+        appearance={session.appearance}
         onExit={back}
         showMenu={!isTelegram}
       />

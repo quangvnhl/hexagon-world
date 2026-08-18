@@ -71,6 +71,38 @@ export async function equipItem(item: CatalogItem): Promise<void> {
   await json("/v1/loadout", { method: "PUT", body: JSON.stringify({ [key]: item.id }) });
 }
 
+// ---- Năng lượng + Campaign (P2) ---------------------------------------------------------------
+
+export interface EnergyStatus { current: number; max: number; regen_interval_seconds: number; next_at: string | null; }
+export interface LevelProgress { level_id: string; status: string; stars: number; best_score: number; completed_at: string; }
+export interface StartPlayResult { playId: string; energy: EnergyStatus; }
+
+/** Đọc năng lượng hiện tại (server tính hồi lười). */
+export async function getEnergy(): Promise<EnergyStatus> {
+  return json<EnergyStatus>("/v1/energy", { cache: "no-store" });
+}
+
+/** Tiến độ các cấp Campaign của người chơi. */
+export async function getCampaignProgress(): Promise<LevelProgress[]> {
+  return (await json<{ progress: LevelProgress[] }>("/v1/campaign/progress", { cache: "no-store" })).progress;
+}
+
+/** Bắt đầu một cấp: server kiểm mở khóa + trừ 1 năng lượng, trả playId (nonce) + năng lượng mới. */
+export async function startCampaignLevel(levelId: string): Promise<StartPlayResult> {
+  return json<StartPlayResult>("/v1/campaign/start", {
+    method: "POST",
+    body: JSON.stringify({ levelId, idempotencyKey: crypto.randomUUID() }),
+  });
+}
+
+/** Nộp kết quả cấp: server verify play + phát thưởng/mở khóa (thưởng lấy từ catalog). */
+export async function completeCampaignLevel(playId: string, objectiveMet: boolean, stars: number, score: number): Promise<LevelProgress> {
+  return json<LevelProgress>("/v1/campaign/complete", {
+    method: "POST",
+    body: JSON.stringify({ playId, objectiveMet, stars, score }),
+  });
+}
+
 function guestId(): string {
   const key = "hexagon.guest-id";
   let value = localStorage.getItem(key);

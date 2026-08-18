@@ -23,7 +23,7 @@ import { LobbyRewardedAdButton } from "./LobbyRewardedAdButton";
 import { measureServerPing } from "./serverPing";
 import { trailVectorAsset } from "./trailVectorAssets";
 
-export type GameMode = "solo" | "online";
+export type GameMode = "solo" | "online" | "campaign";
 type AppearanceTab = "color" | "shape" | "trail";
 type ServerPingStatus = "connecting" | "online" | "error";
 
@@ -515,12 +515,18 @@ export function StartPanel({
         <label style={{ fontSize: 12, opacity: 0.7, letterSpacing: 1 }}>
           CHẾ ĐỘ CHƠI
         </label>
-        <div className="mode-grid" style={{ display: "grid", gridTemplateColumns: "repeat(2,minmax(0,1fr))", gap: 10, marginTop: 8 }}>
+        <div className="mode-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 10, marginTop: 8 }}>
           {card(
             "solo",
             "Luyện tập",
             "Không giới hạn thời gian, hồi sinh tự do, tự chỉnh số bot — chơi thoải mái không thắng/thua.",
             "🏋️"
+          )}
+          {card(
+            "campaign",
+            "Cấp độ",
+            "Chơi từng cấp có mục tiêu, chọn vật phẩm tăng cường, tốn 1 năng lượng mỗi lượt.",
+            "🗺️"
           )}
           {card(
             "online",
@@ -594,7 +600,7 @@ export function StartPanel({
             boxShadow: "0 10px 32px rgba(49,176,255,0.42)",
           }}
         >
-          {starting ? "Đang kết nối…" : mode === "online" ? "🔍 Tìm phòng chơi" : "▶ Bắt đầu chơi"}
+          {starting ? "Đang kết nối…" : mode === "online" ? "🔍 Tìm phòng chơi" : mode === "campaign" ? "🗺️ Vào Cấp độ" : "▶ Bắt đầu chơi"}
         </button>
         {startError && <div role="alert" style={{ color: "#ff8b9a", fontSize: 11, marginTop: 7, textAlign: "center" }}>{startError}</div>}
         <LobbyRewardedAdButton />
@@ -799,7 +805,7 @@ export function StartPanel({
               display: none;
             }
             .mode-grid {
-              grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+              grid-template-columns: repeat(3, minmax(0, 1fr)) !important;
               gap: 7px !important;
             }
             :global(.mode-card) {

@@ -26,6 +26,12 @@ export interface Stats {
   /** Màu chính của người chơi cục bộ (cho popup/minimap sau khi chết). */
   colorIndex: number;
   won: boolean;
+  /** [Campaign] Đã THUA (hết mạng) — hiện màn thua. */
+  lost?: boolean;
+  /** [Campaign] Số mạng của cấp (0 = vô hạn). Hiện "mạng còn lại" khi > 0. */
+  maxLives?: number;
+  /** [Campaign] Chuỗi tiến độ objective (vd "Chiếm 12.3% / 30%"); rỗng nếu không áp dụng. */
+  objective?: string;
   /** Ván endless (Luyện tập, `win.kind === "none"`) — không có đếm ngược King-thắng / màn thắng. */
   endless?: boolean;
   kingHold: number;
@@ -246,7 +252,7 @@ export function HUD({
   // Giữ nguyên khung cảnh chết để người chơi nhìn trọn hiệu ứng trước khi popup che Canvas.
   // `deaths` nằm trong dependency để mỗi lần chết sau hồi sinh đều bắt đầu một timer mới.
   useEffect(() => {
-    if (stats.phase !== "dead" || stats.spectating || stats.won) {
+    if (stats.phase !== "dead" || stats.spectating || stats.won || stats.lost) {
       setDeathPopupReady(false);
       return;
     }
@@ -256,7 +262,7 @@ export function HUD({
       CONFIG.EFFECTS.DEATH_POPUP_DELAY * 1000
     );
     return () => window.clearTimeout(timer);
-  }, [stats.phase, stats.deaths, stats.spectating, stats.won]);
+  }, [stats.phase, stats.deaths, stats.spectating, stats.won, stats.lost]);
 
   // Bảng xếp hạng: chỉ TOP 5; nếu người chơi cục bộ hạng > 5 thì thêm 1 dòng dưới cùng.
   const sorted = [...stats.scores].sort((a, b) => b.pct - a.pct);
@@ -442,6 +448,59 @@ export function HUD({
         </div>
       )}
 
+      {/* [Campaign] Banner MỤC TIÊU + mạng còn lại (khi có objective, chưa kết thúc). */}
+      {stats.objective && !stats.won && !stats.lost && (
+        <div
+          style={{
+            position: "absolute",
+            top: `calc(${hudSafeTop} + 16px)`,
+            left: "50%",
+            transform: `translateX(-50%)${uiScale !== 1 ? ` scale(${uiScale})` : ""}`,
+            transformOrigin: "top center",
+            display: "flex",
+            flexDirection: "column",
+            alignItems: "center",
+            gap: 5,
+            pointerEvents: "none",
+          }}
+        >
+          <div
+            style={{
+              padding: "6px 14px",
+              borderRadius: 999,
+              background: "linear-gradient(90deg,#2f7bff,#5ce1ff)",
+              color: "#04121f",
+              fontFamily: "system-ui, sans-serif",
+              fontSize: 12,
+              fontWeight: 800,
+              letterSpacing: 0.6,
+              boxShadow: "0 6px 20px rgba(47,123,255,0.4)",
+            }}
+          >
+            🎯 {stats.objective}
+          </div>
+          {(stats.maxLives ?? 0) > 0 && (
+            <div
+              style={{
+                padding: "3px 11px",
+                borderRadius: 999,
+                background: "rgba(10,14,22,0.72)",
+                color: "#ff9d9d",
+                fontFamily: "system-ui, sans-serif",
+                fontSize: 11,
+                fontWeight: 700,
+                letterSpacing: 0.6,
+                backdropFilter: "blur(6px)",
+              }}
+            >
+              {"❤".repeat(Math.max(0, (stats.maxLives ?? 0) - stats.deaths))}
+              {"🖤".repeat(Math.min(stats.deaths, stats.maxLives ?? 0))} ·{" "}
+              {Math.max(0, (stats.maxLives ?? 0) - stats.deaths)} mạng
+            </div>
+          )}
+        </div>
+      )}
+
       {/* Banner KING + đếm ngược giữ ngôi */}
       {stats.king && !stats.won && !stats.endless && (
         <div
@@ -599,7 +658,8 @@ export function HUD({
       {stats.phase === "dead" &&
         deathPopupReady &&
         !stats.spectating &&
-        !stats.won && (
+        !stats.won &&
+        !stats.lost && (
         <div
           style={{
             position: "absolute",
@@ -855,6 +915,58 @@ export function HUD({
             >
               {endAction.kind === "restart" ? "▶ " : "← "}
               {endAction.label}
+            </button>
+          </div>
+        </div>
+      )}
+
+      {/* [Campaign] Màn THUA (hết mạng). Nút = hành động kết màn của mode (Campaign → về sảnh cấp). */}
+      {stats.lost && (
+        <div
+          style={{
+            position: "absolute",
+            inset: 0,
+            display: "flex",
+            alignItems: "center",
+            justifyContent: "center",
+            background: "rgba(4,6,12,0.6)",
+            backdropFilter: "blur(4px)",
+          }}
+        >
+          <div
+            style={{
+              padding: "34px 44px",
+              borderRadius: 16,
+              background: "rgba(16,20,30,0.96)",
+              border: "1px solid rgba(255,90,90,0.35)",
+              boxShadow: "0 12px 48px rgba(0,0,0,0.55)",
+              textAlign: "center",
+              color: "#e8eefc",
+              fontFamily: "system-ui, sans-serif",
+              minWidth: 300,
+            }}
+          >
+            <div style={{ fontSize: 34, fontWeight: 900, letterSpacing: 1 }}>☠️ HẾT MẠNG</div>
+            <div style={{ fontSize: 15, opacity: 0.75, marginTop: 10 }}>
+              Bạn đã dùng hết {stats.maxLives ?? 0} mạng của cấp này.
+            </div>
+            <button
+              onClick={onReturnToLobby ?? onRestart}
+              style={{
+                marginTop: 24,
+                padding: "12px 30px",
+                borderRadius: 999,
+                border: "none",
+                cursor: "pointer",
+                fontSize: 16,
+                fontWeight: 800,
+                letterSpacing: 1,
+                color: "#e8eefc",
+                background: "linear-gradient(90deg,#ff5a5a,#ff8a5a)",
+                boxShadow: "0 6px 20px rgba(255,90,90,0.4)",
+              }}
+            >
+              ← {onReturnToLobby ? "Về danh sách cấp" : "Chơi lại"}
             </button>
           </div>
         </div>

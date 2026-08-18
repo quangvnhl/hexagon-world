@@ -6,7 +6,7 @@ import { OrthographicCamera, PerspectiveCamera } from "@react-three/drei";
 import * as THREE from "three";
 import { GameState } from "@hexagon/shared";
 import { CONFIG } from "@hexagon/shared";
-import type { PlayerAppearance } from "@hexagon/shared";
+import type { PlayerAppearance, MatchConfigInput } from "@hexagon/shared";
 import { axialToPixel, parseKey } from "@hexagon/shared";
 import { HexGridView } from "./HexGridView";
 import { PlayerCube } from "./PlayerCube";
@@ -20,6 +20,7 @@ import { MiniMap } from "./MiniMap";
 import { Joystick } from "./Joystick";
 import { EndGameInterstitial } from "./EndGameInterstitial";
 import { HUD, Stats } from "./HUD";
+import type { EndScreenMode } from "./endAction";
 import { FpsMeterIfEnabled } from "./FpsMeter";
 import { TelegramGameHaptics } from "./TelegramGameHaptics";
 import { cameraFov, useCameraProfile } from "./cameraProfile";
@@ -93,6 +94,23 @@ export function MenuButton({ onExit }: { onExit: () => void }) {
       ← Menu
     </button>
   );
+}
+
+/** Chuỗi mô tả tiến độ objective (Campaign) cho HUD. Rỗng với endless/king_hold (HUD đã có UI riêng). */
+export function objectiveProgress(game: GameState): string {
+  const w = game.config.win;
+  switch (w.kind) {
+    case "territory_pct": {
+      const target = (w.targetPct ?? w.kingPct) * 100;
+      return `Chiếm ${game.territoryPct().toFixed(1)}% / ${target.toFixed(0)}%`;
+    }
+    case "survive":
+      return `Sống sót còn ${Math.max(0, Math.ceil(game.surviveRemaining))}s`;
+    case "capture_totems":
+      return `Totem ${game.human.totemsCaptured} / ${w.totemGoal ?? 0}`;
+    default:
+      return "";
+  }
 }
 
 /** Vòng lặp: đọc chuột → hướng mong muốn, cập nhật game liên tục, bám camera. */
@@ -216,6 +234,9 @@ function GameLoop({
         scores: game.scores(),
         colorIndex: game.human.colorIndex,
         won: game.won,
+        lost: game.lost,
+        maxLives: game.config.rules.maxLives,
+        objective: objectiveProgress(game),
         endless: game.config.win.kind === "none",
         kingHold: game.kingHoldRemaining,
         locked: game.roomLocked(),
@@ -257,6 +278,9 @@ export default function GameScene({
   playerName,
   appearance,
   botCount,
+  config,
+  onOutcome,
+  endMode,
   onExit,
   showMenu = true,
 }: {
@@ -264,6 +288,12 @@ export default function GameScene({
   appearance?: PlayerAppearance;
   /** Số bot cho ván Luyện tập (mặc định `CONFIG.BOT_COUNT` — hành vi cũ). */
   botCount?: number;
+  /** [Campaign] Cấu hình ván đầy đủ (map/objective/power-up đã áp). Ưu tiên hơn `botCount`. */
+  config?: MatchConfigInput;
+  /** [Campaign] Gọi ĐÚNG MỘT LẦN khi phân định thắng/thua (để nộp kết quả lên server). */
+  onOutcome?: (won: boolean) => void;
+  /** Kiểu hành động màn kết (mặc định "single" = Chơi lại; "campaign" = về danh sách cấp). */
+  endMode?: EndScreenMode;
   onExit?: () => void;
   showMenu?: boolean;
 } = {}) {
@@ -273,10 +303,12 @@ export default function GameScene({
   const game = useMemo(
     () =>
       new GameState({
-        config: { win: { kind: "none" }, bots: { count: resolvedBotCount } },
+        config: config ?? { win: { kind: "none" }, bots: { count: resolvedBotCount } },
       }),
-    [resolvedBotCount]
+    [config, resolvedBotCount]
   );
+  // [Campaign] Bắn onOutcome đúng một lần khi won/lost lần đầu bật.
+  const outcomeFired = useRef(false);
   // Gán tên người chơi vào ghế 0 (hiển thị ở xếp hạng / KING / thắng).
   useMemo(() => {
     if (playerName) game.setName(0, playerName);
@@ -314,7 +346,17 @@ export default function GameScene({
   // Id thực thể ĐANG XEM khi khán giả (-1 = tự bám thực thể dẫn đầu). Nút ◀ ▶ đổi giá trị này.
   const spectateTargetRef = useRef(-1);
 
-  const onStats = useCallback((s: Stats) => setStats(s), []);
+  const onStats = useCallback(
+    (s: Stats) => {
+      setStats(s);
+      if (onOutcome && !outcomeFired.current && (s.won || s.lost)) {
+        outcomeFired.current = true;
+        // won với chủ thể là người chơi (winnerId 0) = thắng; lost = thua.
+        onOutcome(s.won && (s.winnerId === 0 || s.winnerId === -1) ? true : false);
+      }
+    },
+    [onOutcome]
+  );
   const onRevive = useCallback(() => game.revive(), [game]);
   const onRestart = useCallback(() => game.restart(), [game]);
   const onSpectate = useCallback(() => game.spectate(), [game]);
@@ -388,6 +430,8 @@ export default function GameScene({
           onSpectatePrev={onSpectatePrev}
           onSpectateNext={onSpectateNext}
           playerName={playerName}
+          endMode={endMode}
+          onReturnToLobby={endMode === "campaign" ? onExit : undefined}
         />
       )}
       <EndGameInterstitial
