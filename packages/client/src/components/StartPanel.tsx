@@ -17,7 +17,7 @@ import {
 } from "@hexagon/shared";
 import { PlayerPreview3D } from "./PlayerPreview3D";
 import { getTelegramUserName } from "@/lib/telegram";
-import { ensureTelegramSession, getMe, startGoogleLogin, type BackendMe } from "@/lib/backend";
+import { ensureTelegramSession, getMe, startGoogleLogin, devLogin, isLocalhost, type BackendMe } from "@/lib/backend";
 import { ShopPanel } from "./ShopPanel";
 import { LobbyRewardedAdButton } from "./LobbyRewardedAdButton";
 import { measureServerPing } from "./serverPing";
@@ -333,9 +333,24 @@ export function StartPanel({
             {!accountReady ? "Đang kiểm tra tài khoản…" : account ? `✓ ${account.player.displayName} · ${account.player.platform}` : "Guest · chơi được, không lưu tài sản"}
           </span>
           {accountReady && !account && !getTelegramUserName() && (
-            <button type="button" onClick={startGoogleLogin} style={{ border: "1px solid rgba(255,255,255,.18)", borderRadius: 9, padding: "6px 10px", color: "#e8eefc", background: "rgba(255,255,255,.07)", cursor: "pointer", whiteSpace: "nowrap" }}>
-              Đăng nhập Google
-            </button>
+            <span style={{ display: "flex", gap: 6 }}>
+              <button type="button" onClick={startGoogleLogin} style={{ border: "1px solid rgba(255,255,255,.18)", borderRadius: 9, padding: "6px 10px", color: "#e8eefc", background: "rgba(255,255,255,.07)", cursor: "pointer", whiteSpace: "nowrap" }}>
+                Đăng nhập Google
+              </button>
+              {isLocalhost() && (
+                <button
+                  type="button"
+                  title="Chỉ local — server cần DEV_LOGIN=true"
+                  onClick={async () => {
+                    try { await devLogin(name.trim() || "Dev"); window.location.reload(); }
+                    catch (e) { setStartError(e instanceof Error ? e.message : "Đăng nhập dev thất bại"); }
+                  }}
+                  style={{ border: "1px solid rgba(120,220,150,.35)", borderRadius: 9, padding: "6px 10px", color: "#8ee7a8", background: "rgba(72,217,135,.08)", cursor: "pointer", whiteSpace: "nowrap" }}
+                >
+                  Đăng nhập dev
+                </button>
+              )}
+            </span>
           )}
           {account && <button type="button" onClick={() => setShowShop(true)} style={{ border: "1px solid rgba(255,210,63,.35)", borderRadius: 9, padding: "6px 10px", color: "#ffe27a", background: "rgba(255,210,63,.08)", cursor: "pointer", whiteSpace: "nowrap" }}>Shop</button>}
         </div>

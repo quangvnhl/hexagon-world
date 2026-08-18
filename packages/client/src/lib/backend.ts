@@ -53,6 +53,17 @@ export async function getMe(): Promise<BackendMe | null> {
 
 export function startGoogleLogin(): void { window.location.assign(`${API_URL}/v1/auth/web/google/start`); }
 
+/** Đăng nhập DEV (chỉ local — server phải bật `DEV_LOGIN=true`). Cấp session để thử Campaign. */
+export async function devLogin(name: string): Promise<void> {
+  await json("/v1/auth/dev", { method: "POST", body: JSON.stringify({ name }) });
+}
+
+/** true khi client đang chạy trên localhost (để hiện nút đăng nhập dev). */
+export function isLocalhost(): boolean {
+  if (typeof window === "undefined") return false;
+  return /^(localhost|127\.0\.0\.1|\[::1\])$/.test(window.location.hostname);
+}
+
 export async function getCatalog(): Promise<CatalogItem[]> { return (await json<{ items: CatalogItem[] }>("/v1/shop/catalog")).items; }
 export async function purchaseWithCoin(itemId: string): Promise<void> { await json("/v1/shop/purchases", { method: "POST", body: JSON.stringify({ itemId, idempotencyKey: crypto.randomUUID() }) }); }
 export async function createStarsInvoice(itemId: string): Promise<string> { return (await json<{ invoiceUrl: string }>("/v1/payments/telegram-stars/invoice", { method: "POST", body: JSON.stringify({ itemId, idempotencyKey: crypto.randomUUID() }) })).invoiceUrl; }
