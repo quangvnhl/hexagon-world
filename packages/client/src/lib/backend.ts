@@ -127,29 +127,8 @@ export async function completeCampaignLevel(playId: string, objectiveMet: boolea
   });
 }
 
-// ---- Admin: CRUD cấp Campaign (doc 29 L4/L5) — gửi header x-admin-key ------------------------
-
-import type { CampaignLevelDraft } from "@hexagon/shared";
-
-export interface AdminLevelRow {
-  id: string; sort_order: number; name: string; config: unknown; powerups: string[];
-  unlock_requires: string | null; rewards: { coin: number; xp: number; energy: number };
-  published: boolean; version: number; updated_at: string;
-}
-
-function adminHeaders(key: string): HeadersInit { return { "x-admin-key": key }; }
-
-export async function adminListLevels(key: string): Promise<AdminLevelRow[]> {
-  return (await json<{ levels: AdminLevelRow[] }>("/internal/v1/admin/levels", { headers: adminHeaders(key), cache: "no-store" })).levels;
-}
-
-export async function adminUpsertLevel(key: string, draft: CampaignLevelDraft): Promise<string> {
-  return (await json<{ id: string }>("/internal/v1/admin/levels", { method: "POST", headers: adminHeaders(key), body: JSON.stringify(draft) })).id;
-}
-
-export async function adminPublishLevel(key: string, id: string, published: boolean): Promise<void> {
-  await json(`/internal/v1/admin/levels/${encodeURIComponent(id)}/publish`, { method: "PUT", headers: adminHeaders(key), body: JSON.stringify({ published }) });
-}
+// Admin CRUD cấp Campaign (trình vẽ) đã TÁCH sang app admin riêng — xem packages/admin
+// (doc 30 L6). Game client không còn gọi endpoint /internal/v1/admin/*.
 
 function guestId(): string {
   const key = "hexagon.guest-id";
