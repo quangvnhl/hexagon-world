@@ -13,6 +13,8 @@
     "verify:logic": "pnpm --filter @hexagon/shared verify:logic",
     "dev:client": "pnpm --filter @hexagon/client dev",
     "dev:server": "pnpm --filter @hexagon/server start:dev",
+    "dev:admin": "pnpm --filter @hexagon/admin dev",
+    "build:admin": "pnpm --filter @hexagon/admin build",
     "test:integration": "pnpm --filter @hexagon/server test:integration"
   },
   "devDependencies": {

@@ -7,3 +7,6 @@ out/
 !/.env.example
 .pnpm-store/
 client_secret_*.apps.googleusercontent.com.json
+# App admin (Vite) build output — deploy tĩnh, không commit.
+packages/admin/dist/
+packages/admin/*.tsbuildinfo
