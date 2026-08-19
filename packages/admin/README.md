@@ -1,0 +1,48 @@
+# @hexagon/admin — Trình vẽ cấp Campaign (app admin RIÊNG)
+
+Frontend admin tách khỏi game client (doc [30](../../.implements/30-phase3-L6-admin-app-plan.md)).
+SPA thuần **Vite + React + TS**, KHÔNG SSR, KHÔNG kéo R3F. Chỉ chứa trình vẽ cấp
+Campaign: tô ô chướng ngại + form objective/thưởng/unlock → **Lưu + Publish**.
+
+## Vì sao tách riêng
+- **Cô lập:** công cụ admin không nằm trong bundle/domain người chơi (giảm bề mặt tấn công).
+- **Deploy + kiểm soát truy cập riêng** (mạng nội bộ / subdomain / IP allowlist ở proxy).
+- **Bundle game nhỏ hơn.**
+
+## Chạy local (dev)
+```bash
+# 1) Server game phải chạy (cổng 8910) và .env có :3899 trong CORS_ALLOWED_ORIGINS.
+pnpm dev:server
+
+# 2) App admin (cổng 3899)
+pnpm dev:admin           # = pnpm --filter @hexagon/admin dev
+```
+Mở http://localhost:3899 → nhập **ADMIN KEY** (khớp `ADMIN_API_KEY_SHA256` phía server)
+→ **Tải danh sách** → sửa/tạo cấp → **Lưu + Publish**. Cấp published hiện ở `/campaign`
+trong game client.
+
+> **Xem thử (2D):** preview tĩnh — dựng lại bố cục obstacle + tóm tắt luật, KHÔNG mô phỏng
+> trận. Muốn thử-chơi thật: Publish (nháp) rồi mở `/campaign` trong game client.
+
+## Cấu hình
+
+| Biến | Nơi đặt | Ý nghĩa |
+|------|---------|---------|
+| `VITE_API_URL` | app admin (`packages/admin/.env.local`) | URL server game admin gọi tới. Mặc định `http://localhost:8910`. |
+| `ADMIN_API_KEY_SHA256` | **server** (`.env`) | SHA-256 (lowercase) của admin token. App gửi token gốc ở header `x-admin-key`; server so hash. |
+| `CORS_ALLOWED_ORIGINS` | **server** (`.env`) | Phải chứa origin app admin (dev: `http://localhost:3899`). |
+
+Tạo hash admin token:
+```bash
+node -e "console.log(require('crypto').createHash('sha256').update(process.argv[1]).digest('hex'))" "YOUR_ADMIN_TOKEN"
+```
+
+## Build & deploy (tách khỏi game)
+```bash
+pnpm build:admin         # = pnpm --filter @hexagon/admin build → packages/admin/dist (tĩnh)
+```
+- `dist/` là site tĩnh — deploy lên **host RIÊNG** (subdomain nội bộ, sau reverse proxy /
+  IP allowlist). KHÔNG phục vụ chung host game.
+- Đặt `VITE_API_URL` (build-time) trỏ tới origin server thật.
+- Thêm origin admin production vào `CORS_ALLOWED_ORIGINS` của server.
+- `build:admin` **KHÔNG** nằm trong `pnpm build` mặc định → deploy độc lập với game.

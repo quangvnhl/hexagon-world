@@ -102,5 +102,23 @@ khỏi client) → L6e (deploy). Gỡ khỏi client (L6d) **làm sau khi** app r
 - `@hexagon/shared` (`validateLevelDraft` + toán hex) dùng chung; build cả 3 app + admin xanh.
 - Campaign người chơi (`/campaign`) đọc cấp từ DB **bất biến** so với L5.
 
+## 6. Trạng thái thực thi (đã code)
+
+| Lát | Trạng thái | Ghi chú |
+|-----|:----------:|---------|
+| **L6a** | ✅ | `packages/admin` scaffold (Vite 6 + React 19 + TS), cổng 3899, dep `@hexagon/shared`. Vite `commonjsOptions.include`+`optimizeDeps` để đọc named export từ CJS dist. Root `dev:admin`/`build:admin`. |
+| **L6b** | ✅ | `src/api.ts` (x-admin-key, `VITE_API_URL`) + `src/LevelEditor.tsx` (port, bỏ R3F). "Xem thử" = **preview 2D** (`HexGrid` dùng chung + chip tóm tắt). Verify tay ở Vite dev 3899. |
+| **L6c** | ✅ | `.env.example` + `.env` local thêm `:3899` vào `CORS_ALLOWED_ORIGINS`. KHÔNG đổi code server — cors mặc định đã phản chiếu `x-admin-key` + đủ method (kiểm OPTIONS thật: origin allowed → 204 `Allow-Headers: x-admin-key`). |
+| **L6d** | ✅ | Xóa `app/admin/levels/page.tsx`, `src/components/LevelEditor.tsx`, helper admin + `AdminLevelRow` trong client. `next build` xanh (7 route, hết `/admin/levels`), client test 58/58. |
+| **L6e** | ✅ | Scripts `dev`/`build`/`preview`/`typecheck` cho admin; root `dev:admin`/`build:admin` (ngoài `build` mặc định). `packages/admin/README.md` + `.env.example`. `.gitignore` bỏ `dist/` admin, giữ `.env.example`. |
+
+**Build/test sau L6:** admin `tsc --noEmit` + `vite build` xanh; client `next build` xanh + 58/58; shared/server không đổi.
+
+### Việc verify tay còn lại (cần môi trường chạy)
+- [ ] Thêm `:3899` vào `CORS_ALLOWED_ORIGINS` trong `.env` local **và RESTART server** (server đang chạy còn dùng allowlist cũ ⇒ origin admin bị chặn 500 tới khi restart).
+- [ ] Đặt `ADMIN_API_KEY_SHA256` phía server; nhập token gốc ở app admin → **Tải danh sách** phải trả 200 (không lỗi CORS).
+- [ ] Tạo/sửa 1 cấp nháp → Publish → mở `/campaign` game client thấy cấp mới (đọc từ DB, bất biến so với L5).
+- [ ] (Tùy) deploy `packages/admin/dist` lên host riêng với `VITE_API_URL` production.
+
 ---
 Xem thêm: [29-phase3-level-authoring-plan.md](29-phase3-level-authoring-plan.md) · [25-game-modes-plan.md](25-game-modes-plan.md) §4.3 · [05-roadmap.md](05-roadmap.md).
