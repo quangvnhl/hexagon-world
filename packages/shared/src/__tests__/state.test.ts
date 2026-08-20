@@ -281,3 +281,38 @@ describe("GameState: neutral head collisions", () => {
     expect(g.territoryCells()).toHaveLength(0);
   });
 });
+
+describe("GameState: totem tác giả (map.totems — doc 32)", () => {
+  it("dùng ĐÚNG totem tác giả, bỏ sinh ngẫu nhiên", () => {
+    const g = new GameState({
+      config: { bots: { count: 0 }, map: { totems: [
+        { kind: "speed", q: 1, r: 0 },
+        { kind: "slow", q: 0, r: 1 },
+        { kind: "radar", q: -1, r: 0 },
+      ] } },
+    });
+    const totems = g.totemStates();
+    expect(totems).toHaveLength(3);
+    expect(totems.map((t) => t.kind).sort()).toEqual(["radar", "slow", "speed"]);
+    expect(totems.every((t) => t.ownerId === -1)).toBe(true);
+    const at = (q: number, r: number) => totems.find((t) => t.q === q && t.r === r);
+    expect(at(1, 0)?.kind).toBe("speed");
+    expect(at(0, 1)?.kind).toBe("slow");
+  });
+
+  it("bỏ totem trùng ô và ô ngoài sân", () => {
+    const g = new GameState({
+      config: { bots: { count: 0 }, map: { radius: 10, totems: [
+        { kind: "speed", q: 0, r: 0 },
+        { kind: "slow", q: 0, r: 0 },       // trùng ô → bỏ
+        { kind: "radar", q: 9999, r: 9999 }, // ngoài sân → bỏ
+      ] } },
+    });
+    expect(g.totemStates()).toHaveLength(1);
+  });
+
+  it("vắng map.totems ⇒ giữ sinh ngẫu nhiên (bất biến)", () => {
+    const withTotems = new GameState({ config: { bots: { count: 0 } } }).totemStates().length;
+    expect(withTotems).toBeGreaterThan(0);
+  });
+});

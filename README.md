@@ -59,6 +59,11 @@ cloudflared tunnel --url http://localhost:3890
 docker compose logs --no-color --tail=200 server
 ```
 
+## Admin Key Generate
+``` bash
+node -e "const c=require('crypto');const t=c.randomBytes(24).toString('hex');console.log('TOKEN (nhập ở app):',t);console.log('SHA256 (dán vào .env ADMIN_API_KEY_SHA256):',c.createHash('sha256').update(t).digest('hex'))"
+```
+
 
 ## Tiếp theo
 

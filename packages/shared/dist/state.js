@@ -136,7 +136,24 @@ class GameState {
             for (const nb of (0, hex_1.neighbors)(keyToAxial(k)))
                 this.map.add((0, hex_1.keyOf)(nb));
         }
-        this.totemItems = (0, totems_1.createTotems)(this.playable, this.config.seed, [], this.totemSpawnConfig());
+        // Totem: cấp CHỈ ĐỊNH totem tường minh (map.totems — trình vẽ admin, doc 32) ⇒ dùng ĐÚNG
+        // danh sách đó (bỏ trùng ô / ô ngoài sân chơi / trên obstacle), BỎ sinh ngẫu nhiên. Vắng ⇒
+        // sinh ngẫu nhiên theo seed như cũ (cấp cũ + /play + /netplay bất biến).
+        const authoredTotems = this.config.map.totems;
+        if (authoredTotems && authoredTotems.length > 0) {
+            const seen = new Set();
+            this.totemItems = [];
+            for (const t of authoredTotems) {
+                const k = (0, hex_1.keyOf)({ q: t.q, r: t.r });
+                if (seen.has(k) || !this.playable.has(k))
+                    continue;
+                seen.add(k);
+                this.totemItems.push({ id: this.totemItems.length, kind: t.kind, q: t.q, r: t.r, ownerId: -1 });
+            }
+        }
+        else {
+            this.totemItems = (0, totems_1.createTotems)(this.playable, this.config.seed, [], this.totemSpawnConfig());
+        }
         const mix = this.config.bots.difficultyMix;
         const n = this.humanCount + Math.max(0, botCount);
         this.players = [];

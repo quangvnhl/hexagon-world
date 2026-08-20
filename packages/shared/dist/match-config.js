@@ -27,6 +27,7 @@ function resolveMatchConfig(input = {}) {
             mapMargin: input.map?.mapMargin ?? config_1.CONFIG.MAP_MARGIN,
             cells: input.map?.cells,
             obstacles: input.map?.obstacles,
+            totems: input.map?.totems,
         },
         bots: {
             count: input.bots?.count ?? config_1.CONFIG.BOT_COUNT,

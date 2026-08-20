@@ -31,7 +31,7 @@ exports.CAMPAIGN_LEVELS = [
         id: "c1",
         order: 1,
         name: "Khởi đầu",
-        config: { bots: { count: 6 }, rules: { maxLives: CAMPAIGN_LIVES }, win: { kind: "territory_pct", targetPct: 0.3 } },
+        config: { bots: { count: 6 }, rules: { maxLives: CAMPAIGN_LIVES, totemsEnabled: false }, win: { kind: "territory_pct", targetPct: 0.3 } },
         powerups: ["head_start"],
         unlock: { requires: null },
         rewards: { coin: 50, xp: 40, energy: 0 },
@@ -40,7 +40,7 @@ exports.CAMPAIGN_LEVELS = [
         id: "c2",
         order: 2,
         name: "Cầm cự",
-        config: { bots: { count: 8 }, rules: { maxLives: CAMPAIGN_LIVES }, win: { kind: "survive", durationSec: 60 } },
+        config: { bots: { count: 8 }, rules: { maxLives: CAMPAIGN_LIVES, totemsEnabled: false }, win: { kind: "survive", durationSec: 60 } },
         powerups: ["head_start", "speed"],
         unlock: { requires: "c1" },
         rewards: { coin: 60, xp: 55, energy: 0 },
@@ -51,7 +51,12 @@ exports.CAMPAIGN_LEVELS = [
         name: "Săn totem",
         config: {
             bots: { count: 10 },
-            rules: { totemsEnabled: true, maxLives: CAMPAIGN_LIVES },
+            // Totem tác giả đặt tường minh (doc 32) — KHÔNG sinh ngẫu nhiên. Đủ ≥ totemGoal.
+            map: { totems: [
+                    { kind: "speed", q: 4, r: 0 }, { kind: "slow", q: -4, r: 0 },
+                    { kind: "radar", q: 0, r: 4 }, { kind: "speed", q: 0, r: -4 },
+                ] },
+            rules: { totemsEnabled: false, maxLives: CAMPAIGN_LIVES },
             win: { kind: "capture_totems", totemGoal: 3 },
         },
         powerups: ["speed", "extra_life"],
@@ -65,7 +70,7 @@ exports.CAMPAIGN_LEVELS = [
         config: {
             bots: { count: 10 },
             map: { obstacles: [...wallColumn] },
-            rules: { maxLives: CAMPAIGN_LIVES },
+            rules: { maxLives: CAMPAIGN_LIVES, totemsEnabled: false },
             win: { kind: "territory_pct", targetPct: 0.35 },
         },
         powerups: ["head_start", "speed", "extra_life"],
@@ -79,7 +84,7 @@ exports.CAMPAIGN_LEVELS = [
         config: {
             bots: { count: 14 },
             map: { obstacles: [...pillars] },
-            rules: { maxLives: CAMPAIGN_LIVES },
+            rules: { maxLives: CAMPAIGN_LIVES, totemsEnabled: false },
             win: { kind: "territory_pct", targetPct: 0.45 },
         },
         powerups: ["head_start", "speed", "extra_life"],
@@ -163,6 +168,7 @@ function isUnlockedIn(levels, id, cleared) {
 // ---- Admin tạo/sửa cấp (doc 29 §L4/§L5) -------------------------------------------------------
 const WIN_KINDS = ["king_hold", "territory_pct", "survive", "capture_totems", "none"];
 const POWERUP_KINDS = ["speed", "head_start", "extra_life"];
+const TOTEM_KINDS = ["speed", "slow", "radar"];
 /** Kiểm bản nháp cấp (thuần) → mảng lỗi (rỗng = hợp lệ). Dùng ở CẢ controller (chặn publish hỏng)
  *  lẫn trình vẽ (báo lỗi tức thì). KHÔNG kiểm unlock tồn tại/chu trình — cần toàn tập (làm ở server). */
 function validateLevelDraft(d) {
@@ -183,6 +189,24 @@ function validateLevelDraft(d) {
         const v = d.rewards?.[key];
         if (!Number.isInteger(v) || v < 0)
             errs.push(`rewards.${key} phải là số nguyên ≥ 0`);
+    }
+    const totems = d.config?.map?.totems;
+    if (totems !== undefined) {
+        if (!Array.isArray(totems))
+            errs.push("map.totems phải là mảng");
+        else {
+            const seen = new Set();
+            for (const t of totems) {
+                if (!t || !TOTEM_KINDS.includes(t.kind))
+                    errs.push(`totem kind lạ: ${t?.kind}`);
+                if (!Number.isInteger(t?.q) || !Number.isInteger(t?.r))
+                    errs.push("totem q/r phải là số nguyên");
+                const k = `${t?.q},${t?.r}`;
+                if (seen.has(k))
+                    errs.push(`totem trùng ô: ${k}`);
+                seen.add(k);
+            }
+        }
     }
     try {
         (0, match_config_1.resolveMatchConfig)(d.config);

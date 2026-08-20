@@ -119,4 +119,28 @@ describe("validateLevelDraft (admin)", () => {
     const errs = validateLevelDraft(bad);
     expect(errs.length).toBeGreaterThanOrEqual(4);
   });
+
+  it("totem tác giả hợp lệ ⇒ không lỗi", () => {
+    const d: CampaignLevelDraft = {
+      ...ok,
+      config: { ...ok.config, map: { totems: [{ kind: "speed", q: 1, r: 0 }, { kind: "slow", q: 0, r: 1 }] } },
+    };
+    expect(validateLevelDraft(d)).toEqual([]);
+  });
+
+  it("bắt lỗi totem: kind lạ, toạ độ không nguyên, trùng ô", () => {
+    const d = {
+      ...ok,
+      config: { ...ok.config, map: { totems: [
+        { kind: "xyz", q: 0, r: 0 },
+        { kind: "speed", q: 1.5, r: 0 },
+        { kind: "slow", q: 2, r: 2 },
+        { kind: "radar", q: 2, r: 2 },
+      ] } },
+    } as unknown as CampaignLevelDraft;
+    const errs = validateLevelDraft(d);
+    expect(errs.some((e) => e.includes("kind lạ"))).toBe(true);
+    expect(errs.some((e) => e.includes("nguyên"))).toBe(true);
+    expect(errs.some((e) => e.includes("trùng ô"))).toBe(true);
+  });
 });

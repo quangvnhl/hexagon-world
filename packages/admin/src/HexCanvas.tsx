@@ -18,7 +18,17 @@ import {
   CONFIG,
   type HexKey,
   type Axial,
+  type TotemKind,
 } from "@hexagon/shared";
+
+export type EditorTool = "obstacle" | "totem";
+
+/** Màu + nhãn marker cho từng loại totem (đồng bộ ý nghĩa với game). */
+export const TOTEM_STYLE: Record<TotemKind, { color: string; label: string }> = {
+  speed: { color: "#ffd23f", label: "T" }, // Tốc
+  slow: { color: "#4fa8ff", label: "C" },  // Chậm
+  radar: { color: "#b06aff", label: "R" }, // Radar
+};
 
 const SQRT3 = Math.sqrt(3);
 const HEX = 1; // HEX_SIZE (= CONFIG.HEX_SIZE); world circumradius mỗi ô.
@@ -31,8 +41,14 @@ export interface HexCanvasHandle {
 interface HexCanvasProps {
   radius: number;
   obstacles: Set<HexKey>;
+  /** Totem tác giả đã đặt (doc 32). Vẽ marker theo loại. */
+  totems?: Map<HexKey, TotemKind>;
+  /** Công cụ đang dùng: tô obstacle hay đặt totem. */
+  tool?: EditorTool;
   /** Tô (erase=false) hoặc xóa (erase=true) một tập ô hợp lệ. M2. */
   onPaint?: (cells: HexKey[], erase: boolean) => void;
+  /** Đặt/gỡ totem tại 1 ô (editor tự quyết định thêm loại đang chọn hay gỡ). */
+  onPlaceTotem?: (cell: HexKey) => void;
   /** Bán kính cọ theo cube-distance (0 = 1 ô, 1 = 7 ô, …). M2. */
   brush?: number;
   readOnly?: boolean;
@@ -46,7 +62,7 @@ const CORNERS = Array.from({ length: 6 }, (_, i) => {
   return { dx: HEX * Math.cos(a), dy: HEX * Math.sin(a) };
 });
 
-export function HexCanvas({ radius, obstacles, onPaint, brush = 0, readOnly, onReady }: HexCanvasProps) {
+export function HexCanvas({ radius, obstacles, totems, tool = "obstacle", onPaint, onPlaceTotem, brush = 0, readOnly, onReady }: HexCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -67,6 +83,8 @@ export function HexCanvas({ radius, obstacles, onPaint, brush = 0, readOnly, onR
   const view = useRef({ scale: 4, ox: 0, oy: 0 });
   const obstaclesRef = useRef(obstacles);
   obstaclesRef.current = obstacles;
+  const totemsRef = useRef(totems);
+  totemsRef.current = totems;
   const hover = useRef<Axial | null>(null);
   const rafRef = useRef(0);
 
@@ -115,6 +133,30 @@ export function HexCanvas({ radius, obstacles, onPaint, brush = 0, readOnly, onR
     ctx.fillStyle = "rgba(120,220,150,0.9)";
     ctx.fill();
 
+    // Marker totem tác giả (đè lên lưới).
+    const totemMap = totemsRef.current;
+    if (totemMap && totemMap.size) {
+      const rad = Math.max(3, scale * 0.85);
+      ctx.textAlign = "center";
+      ctx.textBaseline = "middle";
+      ctx.font = `700 ${Math.max(7, scale * 1.1)}px system-ui, sans-serif`;
+      for (const [k, kind] of totemMap) {
+        const { q, r } = parseKey(k);
+        const p = axialToPixel({ q, r }, HEX);
+        const sx = p.x * scale + ox, sy = p.y * scale + oy;
+        if (sx < -rad || sx > w + rad || sy < -rad || sy > h + rad) continue;
+        const st = TOTEM_STYLE[kind];
+        ctx.beginPath();
+        ctx.arc(sx, sy, rad, 0, Math.PI * 2);
+        ctx.fillStyle = st.color;
+        ctx.fill();
+        ctx.lineWidth = Math.max(1, scale * 0.12);
+        ctx.strokeStyle = "rgba(0,0,0,0.55)";
+        ctx.stroke();
+        if (scale > 3) { ctx.fillStyle = "#04121f"; ctx.fillText(st.label, sx, sy + 0.5); }
+      }
+    }
+
     // Ô đang hover (nếu hợp lệ).
     const hv = hover.current;
     if (hv && cells.valid.has(hexKey(hv.q, hv.r))) {
@@ -156,7 +198,7 @@ export function HexCanvas({ radius, obstacles, onPaint, brush = 0, readOnly, onR
     return () => ro.disconnect();
   }, [fit]);
 
-  useEffect(() => { scheduleDraw(); }, [obstacles, scheduleDraw]);
+  useEffect(() => { scheduleDraw(); }, [obstacles, totems, scheduleDraw]);
 
   useEffect(() => {
     onReady?.({ zoomBy: (f: number) => zoomAt(f), fit });
@@ -217,11 +259,16 @@ export function HexCanvas({ radius, obstacles, onPaint, brush = 0, readOnly, onR
   const onPointerDown = useCallback((e: React.PointerEvent) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
-    canvas.setPointerCapture(e.pointerId);
+    try { canvas.setPointerCapture(e.pointerId); } catch { /* pointer capture optional */ }
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left, my = e.clientY - rect.top;
-    const paintButton = e.button === 0 && !!onPaint && !readOnly && !spaceHeld.current;
-    if (paintButton) {
+    const actionButton = e.button === 0 && !readOnly && !spaceHeld.current;
+    if (actionButton && tool === "totem" && onPlaceTotem) {
+      // Đặt/gỡ totem: 1 ô/lần (không kéo-tô). Editor quyết định thêm loại hay gỡ.
+      const a = screenToAxial(mx, my);
+      if (cells.valid.has(hexKey(a.q, a.r))) onPlaceTotem(hexKey(a.q, a.r));
+      drag.current = null;
+    } else if (actionButton && tool === "obstacle" && onPaint) {
       const a = screenToAxial(mx, my);
       const erase = e.altKey;
       drag.current = { mode: "paint", erase, last: a, px: mx, py: my };
@@ -229,7 +276,7 @@ export function HexCanvas({ radius, obstacles, onPaint, brush = 0, readOnly, onR
     } else {
       drag.current = { mode: "pan", erase: false, last: null, px: mx, py: my };
     }
-  }, [onPaint, readOnly, screenToAxial, paintAt]);
+  }, [tool, onPaint, onPlaceTotem, readOnly, screenToAxial, paintAt, cells]);
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
     const canvas = canvasRef.current;

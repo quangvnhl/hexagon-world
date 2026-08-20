@@ -46,7 +46,7 @@ export const CAMPAIGN_LEVELS: readonly CampaignLevel[] = [
     id: "c1",
     order: 1,
     name: "Khởi đầu",
-    config: { bots: { count: 6 }, rules: { maxLives: CAMPAIGN_LIVES }, win: { kind: "territory_pct", targetPct: 0.3 } },
+    config: { bots: { count: 6 }, rules: { maxLives: CAMPAIGN_LIVES, totemsEnabled: false }, win: { kind: "territory_pct", targetPct: 0.3 } },
     powerups: ["head_start"],
     unlock: { requires: null },
     rewards: { coin: 50, xp: 40, energy: 0 },
@@ -55,7 +55,7 @@ export const CAMPAIGN_LEVELS: readonly CampaignLevel[] = [
     id: "c2",
     order: 2,
     name: "Cầm cự",
-    config: { bots: { count: 8 }, rules: { maxLives: CAMPAIGN_LIVES }, win: { kind: "survive", durationSec: 60 } },
+    config: { bots: { count: 8 }, rules: { maxLives: CAMPAIGN_LIVES, totemsEnabled: false }, win: { kind: "survive", durationSec: 60 } },
     powerups: ["head_start", "speed"],
     unlock: { requires: "c1" },
     rewards: { coin: 60, xp: 55, energy: 0 },
@@ -66,7 +66,12 @@ export const CAMPAIGN_LEVELS: readonly CampaignLevel[] = [
     name: "Săn totem",
     config: {
       bots: { count: 10 },
-      rules: { totemsEnabled: true, maxLives: CAMPAIGN_LIVES },
+      // Totem tác giả đặt tường minh (doc 32) — KHÔNG sinh ngẫu nhiên. Đủ ≥ totemGoal.
+      map: { totems: [
+        { kind: "speed", q: 4, r: 0 }, { kind: "slow", q: -4, r: 0 },
+        { kind: "radar", q: 0, r: 4 }, { kind: "speed", q: 0, r: -4 },
+      ] },
+      rules: { totemsEnabled: false, maxLives: CAMPAIGN_LIVES },
       win: { kind: "capture_totems", totemGoal: 3 },
     },
     powerups: ["speed", "extra_life"],
@@ -80,7 +85,7 @@ export const CAMPAIGN_LEVELS: readonly CampaignLevel[] = [
     config: {
       bots: { count: 10 },
       map: { obstacles: [...wallColumn] },
-      rules: { maxLives: CAMPAIGN_LIVES },
+      rules: { maxLives: CAMPAIGN_LIVES, totemsEnabled: false },
       win: { kind: "territory_pct", targetPct: 0.35 },
     },
     powerups: ["head_start", "speed", "extra_life"],
@@ -94,7 +99,7 @@ export const CAMPAIGN_LEVELS: readonly CampaignLevel[] = [
     config: {
       bots: { count: 14 },
       map: { obstacles: [...pillars] },
-      rules: { maxLives: CAMPAIGN_LIVES },
+      rules: { maxLives: CAMPAIGN_LIVES, totemsEnabled: false },
       win: { kind: "territory_pct", targetPct: 0.45 },
     },
     powerups: ["head_start", "speed", "extra_life"],
@@ -185,6 +190,7 @@ export function isUnlockedIn(levels: readonly CampaignLevel[], id: string, clear
 
 const WIN_KINDS = ["king_hold", "territory_pct", "survive", "capture_totems", "none"];
 const POWERUP_KINDS: PowerupKind[] = ["speed", "head_start", "extra_life"];
+const TOTEM_KINDS = ["speed", "slow", "radar"];
 
 /** Bản nháp cấp mà admin nhập (khớp payload API + form trình vẽ). Map 1-1 sang hàng `campaign_levels`. */
 export interface CampaignLevelDraft {
@@ -211,6 +217,20 @@ export function validateLevelDraft(d: CampaignLevelDraft): string[] {
   for (const key of ["coin", "xp", "energy"] as const) {
     const v = d.rewards?.[key];
     if (!Number.isInteger(v) || v < 0) errs.push(`rewards.${key} phải là số nguyên ≥ 0`);
+  }
+  const totems = d.config?.map?.totems;
+  if (totems !== undefined) {
+    if (!Array.isArray(totems)) errs.push("map.totems phải là mảng");
+    else {
+      const seen = new Set<string>();
+      for (const t of totems) {
+        if (!t || !TOTEM_KINDS.includes(t.kind)) errs.push(`totem kind lạ: ${t?.kind}`);
+        if (!Number.isInteger(t?.q) || !Number.isInteger(t?.r)) errs.push("totem q/r phải là số nguyên");
+        const k = `${t?.q},${t?.r}`;
+        if (seen.has(k)) errs.push(`totem trùng ô: ${k}`);
+        seen.add(k);
+      }
+    }
   }
   try { resolveMatchConfig(d.config); } catch { errs.push("config không dựng được (resolveMatchConfig ném)"); }
   return errs;

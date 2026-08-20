@@ -28,8 +28,12 @@ hiện ở `/campaign` trong game client.
   **cỡ cọ** (1–4) ở thanh dưới để tô nhanh nhiều ô. Chỉ tô được ô nằm trong sân.
 - **Di chuyển (pan):** giữ **Space + kéo**, hoặc **chuột giữa/phải kéo**. **Cuộn** để zoom quanh
   con trỏ. Nút **Fit** canh vừa toàn sân.
-- **Bán kính sân:** ô *Bán kính sân* trong form → thu nhỏ sân (vd 20) để dựng cấp maze gọn, vừa
-  màn hình. Thu nhỏ sẽ **cắt** obstacle rơi ngoài sân mới (khớp hành vi sim).
+- **Bán kính sân:** ô *Bán kính sân* trong form (≤150) → thu nhỏ sân (vd 20) để dựng cấp maze gọn,
+  vừa màn hình. Áp dụng khi **rời ô nhập / Enter** (không đổi từng phím). Thu nhỏ sẽ **cắt**
+  obstacle/totem rơi ngoài sân mới (khớp hành vi sim).
+- **Totem (admin tự vẽ — doc 32):** chọn công cụ **🔮 Totem** + loại (⚡ Tốc / 🐌 Chậm / 📡 Radar),
+  **bấm 1 ô** để đặt/gỡ (marker màu hiện trên bản đồ). Campaign **KHÔNG** sinh totem ngẫu nhiên
+  nữa — chỉ có totem admin đặt. Ô totem không trùng ô chướng ngại.
 - **Panel key** (trên-trái) **thu gọn** được (▾/▸, nhớ trạng thái); **form thông tin** cố định phải.
 
 > **Xem thử (2D):** preview tĩnh — canvas sân + obstacle (đọc-thôi) + tóm tắt luật, KHÔNG mô phỏng

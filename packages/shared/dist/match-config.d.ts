@@ -1,4 +1,11 @@
 import type { HexKey } from "./hex";
+import type { TotemKind } from "./totems";
+/** Totem đặt tường minh bởi tác giả cấp (trình vẽ admin — doc 32). Loại + ô (axial). */
+export interface AuthoredTotem {
+    kind: TotemKind;
+    q: number;
+    r: number;
+}
 /** Loại điều kiện thắng (doc 25 §1.2). P0 hiện thực `king_hold` + `none`; các loại còn lại
  *  khai báo sẵn contract để mode sau cắm vào mà không phải đổi hình dạng config. */
 export type WinConditionKind = "king_hold" | "territory_pct" | "survive" | "capture_totems" | "none";
@@ -29,6 +36,9 @@ export interface MatchMapConfig {
     cells?: HexKey[];
     /** [custom, P1] Ô chướng ngại coi như barrier nội bộ. */
     obstacles?: HexKey[];
+    /** [doc 32] Totem đặt tường minh bởi tác giả. Có (≥1) ⇒ dùng ĐÚNG danh sách này, BỎ sinh
+     *  ngẫu nhiên; vắng ⇒ giữ hành vi sinh ngẫu nhiên theo seed. */
+    totems?: AuthoredTotem[];
 }
 export interface MatchBotConfig {
     count: number;

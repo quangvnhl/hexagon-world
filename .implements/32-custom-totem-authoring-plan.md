@@ -87,5 +87,22 @@ T1 ─► T3 (editor) ──────────────┴► T4 (previ
 - `validateLevelDraft` bắt lỗi totem; `capture_totems` cảnh báo goal.
 - Build cả 4 gói + test shared xanh.
 
+## 6. Trạng thái thực thi (đã code)
+
+| Lát | Trạng thái | Ghi chú |
+|-----|:----------:|---------|
+| **T1** | ✅ | `AuthoredTotem` + `MatchMapConfig.totems` + `resolveMatchConfig` passthrough; `validateLevelDraft` bắt kind/toạ độ/trùng ô. Test shared. |
+| **T2** | ✅ | `state.ts`: có `map.totems` → dùng đúng danh sách (lọc trùng/ngoài sân), BỎ ngẫu nhiên; vắng → giữ ngẫu nhiên. Test: 3 tests mới. |
+| **T3** | ✅ | `HexCanvas`: prop `totems`/`tool` + vẽ marker (màu+chữ T/C/R) + đặt/gỡ 1 ô. `LevelEditor`: công cụ 🧱/🔮, chọn loại, đếm; loại trừ obstacle↔totem; round-trip `map.totems`. |
+| **T4** | ✅ | `Preview2D` hiện totem + cảnh báo `capture_totems` goal > số totem; README cập nhật. |
+| **thêm** | ✅ | Campaign KHÔNG sinh totem ngẫu nhiên: `buildConfig` set `totemsEnabled=false`; catalog `CAMPAIGN_LEVELS` + migration `202608180006` tắt random (c3 có totem tường minh). |
+
+**Build/test:** shared 130 + server 56 xanh; admin `vite build` + typecheck cả 4 gói xanh. Verify tay
+(pane hiện): đặt totem trên canvas → footer đếm đúng (đã kiểm 3 totem). Chơi thử cần áp migration 006.
+
+### Việc verify tay còn lại
+- [ ] Áp migration `202608180006_campaign_totems_authored.sql` lên Supabase (tắt random + c3 authored).
+- [ ] Hiện pane admin: 🔮 Totem → đặt vài totem → Publish → chơi `/campaign` thấy đúng totem, không có totem lạ.
+
 ---
 Xem thêm: [31-admin-editor-upgrade-plan.md](31-admin-editor-upgrade-plan.md) · [25-game-modes-plan.md](25-game-modes-plan.md) · `packages/shared/src/totems.ts`.
