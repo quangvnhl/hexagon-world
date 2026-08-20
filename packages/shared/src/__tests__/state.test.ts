@@ -420,3 +420,23 @@ describe("GameState: tường BIÊN admin vẽ (doc 34 D)", () => {
     expect(crossed).toBe(false); // dừng trước tường, không xuyên qua
   });
 });
+
+describe("GameState: Bot đồng đội — giết bot không chiếm đất (doc 34)", () => {
+  it("giết bot đồng đội ⇒ đất KHÔNG về người chơi (về đồng đội), b.owned rỗng", () => {
+    const g = new GameState({ humanCount: 1, config: { bots: { count: 2 }, rules: { botsAllied: true }, win: { kind: "none" } } });
+    const human = g.players[0], b1 = g.players[1];
+    const cells = [...b1.owned];
+    expect(cells.length).toBeGreaterThan(0);
+    g.kill(b1, human, "cut");
+    for (const k of cells) expect(g.cellOwnerId(k)).not.toBe(human.id); // KHÔNG về người chơi
+    expect(b1.owned.size).toBe(0);
+  });
+
+  it("sameTeam: bot↔bot cùng đội khi botsAllied; người chơi khác đội", () => {
+    const g = new GameState({ config: { bots: { count: 2 }, rules: { botsAllied: true } } });
+    expect(g.sameTeam(1, 2)).toBe(true);
+    expect(g.sameTeam(0, 1)).toBe(false);
+    const g2 = new GameState({ config: { bots: { count: 2 }, rules: { botsAllied: false } } });
+    expect(g2.sameTeam(1, 2)).toBe(false);
+  });
+});

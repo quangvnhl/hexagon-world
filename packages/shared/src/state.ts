@@ -618,6 +618,20 @@ export class GameState {
     return this.config.rules.botsAllied && a.isBot && b.isBot;
   }
 
+  /** Hai id CÙNG ĐỘI: trùng id, hoặc `botsAllied` và cả hai là bot (doc 34: Bot đồng đội). Dùng cho
+   *  render viền (không vẽ ngăn cách giữa ô đồng đội) + logic đất/đuôi CHUNG. */
+  sameTeam(idA: number, idB: number): boolean {
+    if (idA === idB) return true;
+    const a = this.players[idA], b = this.players[idB];
+    return !!a && !!b && this.config.rules.botsAllied && a.isBot && b.isBot;
+  }
+
+  /** Ô `hk` thuộc ĐỘI của `e` (owner là e hoặc đồng đội). Bot đi trên ô ĐỘI = "về nhà" ⇒ không đuôi. */
+  private teamOwns(hk: HexKey, e: Entity): boolean {
+    const owner = this.cellOwner.get(hk);
+    return owner !== undefined && this.sameTeam(owner, e.id);
+  }
+
   /** Bot còn được hồi sinh không: không gắn cứ điểm ⇒ có; gắn cứ điểm ⇒ chỉ khi CHƯA bị chiếm. */
   private botCanRespawn(e: Entity): boolean {
     if (!e.isBot) return true;
@@ -898,6 +912,19 @@ export class GameState {
     e.lastPct = (this.ownedPlayable(e) / this.playable.size) * 100;
     e.lastTerritory = [];
     for (const k of e.owned) if (this.playable.has(k)) e.lastTerritory.push(k);
+    // Bot ĐỒNG ĐỘI chết (doc 34): KHÔNG trao đất cho killer. Đất chuyển cho một đồng đội còn sống
+    // (giữ nguyên màu đội); không còn đồng đội thì GIỮ NGUYÊN ô của bot đã chết. Người chơi phải
+    // DI CHUYỂN để chiếm — giết bot không tự chiếm ô.
+    if (this.config.rules.botsAllied && e.isBot) {
+      const mate = this.players.find((p) => p !== e && p.isBot && p.alive);
+      if (mate) { for (const k of [...e.owned]) this.claimCell(k, mate); e.owned = new Set(); }
+      for (const t of e.trailHexes) if (this.cellTrail.get(t) === e.id) this.cellTrail.delete(t);
+      e.trailHexes = []; e.trailSet = new Set(); e.trailPoints = [];
+      e.phase = "dead";
+      e.respawnTimer = CONFIG.BOT.RESPAWN_DELAY;
+      this.territoryRevision++; this.revision++; this.gridRevision++;
+      return;
+    }
     let releasedTerritory = false;
     if (killer && killer !== e && killer.alive) {
       // Cướp toàn bộ đất của nạn nhân cho kẻ đã hạ.
@@ -1417,8 +1444,9 @@ export class GameState {
       if (!this.allied(e, this.players[trailOwner])) this.kill(this.players[trailOwner], e, "cut");
     }
 
-    // 2. Về lãnh thổ của mình → khép vòng, chiếm đất.
-    if (this.cellOwner.get(hk) === e.id) {
+    // 2. Về lãnh thổ của mình (hoặc ĐỒNG ĐỘI — ô chung) → khép vòng, chiếm đất. Đi trên ô đội ⇒
+    //    KHÔNG thêm đuôi (bot đồng đội không hiện đuôi trên ô chung — doc 34).
+    if (this.teamOwns(hk, e)) {
       if (e.trailHexes.length > 0) this.captureFor(e);
       return false;
     }

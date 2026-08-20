@@ -219,6 +219,11 @@ export declare class GameState {
     roomLocked(): boolean;
     /** Hai bot ĐỒNG MINH (doc 34 B): cùng là bot & `botsAllied` ⇒ KHÔNG sát thương nhau. */
     private allied;
+    /** Hai id CÙNG ĐỘI: trùng id, hoặc `botsAllied` và cả hai là bot (doc 34: Bot đồng đội). Dùng cho
+     *  render viền (không vẽ ngăn cách giữa ô đồng đội) + logic đất/đuôi CHUNG. */
+    sameTeam(idA: number, idB: number): boolean;
+    /** Ô `hk` thuộc ĐỘI của `e` (owner là e hoặc đồng đội). Bot đi trên ô ĐỘI = "về nhà" ⇒ không đuôi. */
+    private teamOwns;
     /** Bot còn được hồi sinh không: không gắn cứ điểm ⇒ có; gắn cứ điểm ⇒ chỉ khi CHƯA bị chiếm. */
     private botCanRespawn;
     /** Ô spawn tại CỨ ĐIỂM của bot (nếu hợp lệ & chưa bị chiếm); null ⇒ dùng pickSpawnHex thường. */

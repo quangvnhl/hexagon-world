@@ -43,13 +43,13 @@ interface FormState {
   id: string; sortOrder: number; name: string; botCount: number; maxLives: number; radius: number;
   kind: WinConditionKind; targetPct: number; durationSec: number; totemGoal: number; holdMinutes: number; kingPct: number;
   powerups: PowerupKind[]; unlockRequires: string; coin: number; xp: number; energy: number; published: boolean;
-  showColliders: boolean; colliderShape: "hex" | "rect";
+  showColliders: boolean; colliderShape: "hex" | "rect"; botsAllied: boolean;
 }
 
 const BLANK: FormState = {
   id: "", sortOrder: 1, name: "", botCount: 8, maxLives: 3, radius: NEW_LEVEL_RADIUS,
   kind: "territory_pct", targetPct: 0.3, durationSec: 60, totemGoal: 3, holdMinutes: 3, kingPct: 20,
-  powerups: [], unlockRequires: "", coin: 50, xp: 40, energy: 0, published: false, showColliders: false, colliderShape: "hex",
+  powerups: [], unlockRequires: "", coin: 50, xp: 40, energy: 0, published: false, showColliders: false, colliderShape: "hex", botsAllied: false,
 };
 
 function clampRadius(r: number): number {
@@ -70,7 +70,7 @@ function buildConfig(f: FormState, obstacles: Set<HexKey>, totems: Map<HexKey, T
   // Campaign KHÔNG sinh totem ngẫu nhiên — chỉ dùng totem admin tự vẽ (doc 32). totemsEnabled=false
   // để cấp không có map.totems là KHÔNG có totem nào; có map.totems ⇒ sim dùng đúng danh sách đó.
   // King CHỈ bật khi mục tiêu là king_hold (doc 34 A). Bot Campaign LUÔN đồng minh (doc 34 B).
-  const rules: MatchConfigInput["rules"] = { maxLives: f.maxLives, totemsEnabled: false, kingEnabled: f.kind === "king_hold", botsAllied: true };
+  const rules: MatchConfigInput["rules"] = { maxLives: f.maxLives, totemsEnabled: false, kingEnabled: f.kind === "king_hold", botsAllied: f.botsAllied };
   const config: MatchConfigInput = { bots: { count: f.botCount }, rules, win };
   const map: Partial<MatchMapConfig> = {};
   if (f.radius !== DEFAULT_RADIUS) map.radius = f.radius; // chỉ ghi khi khác mặc định engine → cấp cũ bất biến
@@ -122,6 +122,7 @@ function rowToForm(r: AdminLevelRow): { form: FormState; obstacles: Set<HexKey>;
       coin: r.rewards?.coin ?? 0, xp: r.rewards?.xp ?? 0, energy: r.rewards?.energy ?? 0, published: r.published,
       showColliders: cfg.map?.showColliders ?? false,
       colliderShape: cfg.map?.colliderShape ?? "hex",
+      botsAllied: cfg.rules?.botsAllied ?? false,
     },
     obstacles: new Set(cfg.map?.obstacles ?? []),
     totems,
@@ -355,13 +356,11 @@ export default function LevelEditor() {
           <div><span style={{ fontSize: 10, opacity: 0.6 }}>energy</span><input type="number" value={form.energy} onChange={(e) => set("energy", Number(e.target.value))} style={inputStyle} /></div>
         </div>
 
-        <label style={labelStyle}>Hình collider chướng ngại</label>
-        <select value={form.colliderShape} onChange={(e) => set("colliderShape", e.target.value as "hex" | "rect")} style={inputStyle}>
-          <option value="hex">Lục giác (biên đa giác, góc 120° — không kẹt)</option>
-          <option value="rect">Chữ nhật (hộp bao ô — góc 90°)</option>
-        </select>
         <label style={{ ...labelStyle, display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
           <input type="checkbox" checked={form.showColliders} onChange={(e) => set("showColliders", e.target.checked)} /> Hiện đường collider (viền obstacle + biên) khi chơi
+        </label>
+        <label style={{ ...labelStyle, display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+          <input type="checkbox" checked={form.botsAllied} onChange={(e) => set("botsAllied", e.target.checked)} /> Bot đồng đội (cùng màu, ô chung, giết bot không chiếm đất)
         </label>
         <label style={{ ...labelStyle, display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
           <input type="checkbox" checked={form.published} onChange={(e) => set("published", e.target.checked)} /> Publish (hiện cho người chơi)

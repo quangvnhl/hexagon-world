@@ -99,6 +99,7 @@ export const TerritoryBorders = memo(function TerritoryBorders({
         const br = a.r + DIRECTIONS[d].r;
         const nid = game.cellOwnerId(key(bq, br));
         if (nid < 0 || nid === oid) continue; // trống hoặc cùng chủ → bỏ
+        if (game.sameTeam(oid, nid)) continue; // ĐỒNG ĐỘI (bot đồng đội) → không vẽ ngăn cách (doc 34)
         if (ownerColorKey[nid] !== ownerColorKey[oid]) continue; // khác màu nhìn thấy → bỏ
 
         const pb = axialToPixel({ q: bq, r: br }, s);
