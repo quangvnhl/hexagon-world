@@ -112,5 +112,25 @@ M1,M2 ─► M4 (UI) ─► M6 (preview+doc)
 - Cấp người chơi ở `/campaign` đọc từ DB **bất biến** so với trước (chỉ thêm khả năng đặt bán kính).
 - `tsc --noEmit` + `vite build` admin xanh; client/server/shared không đổi hành vi.
 
+## 6. Trạng thái thực thi (đã code)
+
+| Lát | Trạng thái | Ghi chú |
+|-----|:----------:|---------|
+| **M1** | ✅ | `HexCanvas.tsx`: Canvas 2D toàn sân (16651 ô @radius 130), Path2D gom + cull viewport, pan/zoom-to-cursor, hover. `draw()` tự sync backing store. |
+| **M2** | ✅ | Kéo-tô/xóa obstacle, cọ 1–4 (cube-distance), vá ô nhảy cóc (`hexLinedraw`), chặn ô ngoài sân. Trái=tô, Alt/phải=xóa, Space/giữa=pan. |
+| **M3** | ✅ | Ô "bán kính sân" (`map.radius`) + `commitRadius` cắt obstacle ngoài sân (onBlur). Chỉ ghi `map.radius` khi ≠ 130 → cấp cũ bất biến. |
+| **M4** | ✅ | UI toàn màn hình: canvas nền; panel key + danh sách cấp thu gọn (localStorage) trên-trái; form cố định phải; thanh công cụ zoom/fit/cọ/đếm ô dưới-giữa. |
+| **M5** | ✅ | Sửa cấp rõ ràng: mỗi hàng có **Sửa** + **Gỡ** (unpublish); ô đang chọn nổi bật; round-trip obstacle không mất (canvas toàn sân). |
+| **M6** | ✅ | `Preview2D` dùng `HexCanvas readOnly`; cập nhật `README.md` (thao tác pan/zoom/tô/bán kính) + doc này. |
+
+**Build/verify:** admin `tsc --noEmit` + `vite build` xanh. Tái dựng đồng bộ pipeline `draw` trong
+browser → **16651 ô** phủ ~80% chiều cao khung (đúng toàn sân, khác hẳn 127 ô cũ). Ảnh trực quan +
+thao tác chuột cần **hiện Browser pane** (rAF tạm dừng khi pane ẩn — giới hạn kiểm thử headless).
+
+### Việc verify tay còn lại
+- [ ] Hiện pane admin (3899): thấy toàn sân; pan/zoom/Fit; kéo-tô obstacle; đổi bán kính → sân co lại.
+- [ ] Tải danh sách (server có `:3899` CORS + `ADMIN_API_KEY_SHA256`) → **Sửa** c4/c5 thấy đúng obstacle → Lưu → tải lại khớp.
+- [ ] Tạo cấp maze bán kính nhỏ + tô obstacle → Publish → chơi `/campaign` thấy tường đúng.
+
 ---
 Xem thêm: [30-phase3-L6-admin-app-plan.md](30-phase3-L6-admin-app-plan.md) · [29-phase3-level-authoring-plan.md](29-phase3-level-authoring-plan.md) · [25-game-modes-plan.md](25-game-modes-plan.md).

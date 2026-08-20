@@ -120,5 +120,8 @@ khỏi client) → L6e (deploy). Gỡ khỏi client (L6d) **làm sau khi** app r
 - [ ] Tạo/sửa 1 cấp nháp → Publish → mở `/campaign` game client thấy cấp mới (đọc từ DB, bất biến so với L5).
 - [ ] (Tùy) deploy `packages/admin/dist` lên host riêng với `VITE_API_URL` production.
 
+> **Tiếp nối:** nâng cấp trình vẽ (Canvas toàn sân, sửa cấp, UI toàn màn hình) ở
+> [31-admin-editor-upgrade-plan.md](31-admin-editor-upgrade-plan.md).
+
 ---
-Xem thêm: [29-phase3-level-authoring-plan.md](29-phase3-level-authoring-plan.md) · [25-game-modes-plan.md](25-game-modes-plan.md) §4.3 · [05-roadmap.md](05-roadmap.md).
+Xem thêm: [31-admin-editor-upgrade-plan.md](31-admin-editor-upgrade-plan.md) · [29-phase3-level-authoring-plan.md](29-phase3-level-authoring-plan.md) · [25-game-modes-plan.md](25-game-modes-plan.md) §4.3 · [05-roadmap.md](05-roadmap.md).

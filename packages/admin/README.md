@@ -18,10 +18,21 @@ pnpm dev:server
 pnpm dev:admin           # = pnpm --filter @hexagon/admin dev
 ```
 Mở http://localhost:3899 → nhập **ADMIN KEY** (khớp `ADMIN_API_KEY_SHA256` phía server)
-→ **Tải danh sách** → sửa/tạo cấp → **Lưu + Publish**. Cấp published hiện ở `/campaign`
-trong game client.
+→ **Tải danh sách** → chọn **Sửa** một cấp (hoặc **+ Mới**) → **Lưu + Publish**. Cấp published
+hiện ở `/campaign` trong game client.
 
-> **Xem thử (2D):** preview tĩnh — dựng lại bố cục obstacle + tóm tắt luật, KHÔNG mô phỏng
+### Thao tác bản đồ (Canvas toàn sân — doc 31)
+- **Vẽ toàn sân thật:** bản đồ hiển thị đúng toàn bộ sân lục giác theo *bán kính sân* của cấp
+  (mặc định 130 ≈ 16.6k ô), không còn giới hạn quanh tâm.
+- **Tô obstacle:** giữ chuột trái **kéo-tô**; **Alt+trái** hoặc **chuột phải kéo** để xóa. Chọn
+  **cỡ cọ** (1–4) ở thanh dưới để tô nhanh nhiều ô. Chỉ tô được ô nằm trong sân.
+- **Di chuyển (pan):** giữ **Space + kéo**, hoặc **chuột giữa/phải kéo**. **Cuộn** để zoom quanh
+  con trỏ. Nút **Fit** canh vừa toàn sân.
+- **Bán kính sân:** ô *Bán kính sân* trong form → thu nhỏ sân (vd 20) để dựng cấp maze gọn, vừa
+  màn hình. Thu nhỏ sẽ **cắt** obstacle rơi ngoài sân mới (khớp hành vi sim).
+- **Panel key** (trên-trái) **thu gọn** được (▾/▸, nhớ trạng thái); **form thông tin** cố định phải.
+
+> **Xem thử (2D):** preview tĩnh — canvas sân + obstacle (đọc-thôi) + tóm tắt luật, KHÔNG mô phỏng
 > trận. Muốn thử-chơi thật: Publish (nháp) rồi mở `/campaign` trong game client.
 
 ## Cấu hình
