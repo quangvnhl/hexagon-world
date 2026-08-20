@@ -501,6 +501,20 @@ class GameState {
         const owner = this.cellOwner.get(hk);
         return owner !== undefined && this.sameTeam(owner, e.id);
     }
+    /** Tường cho flood fill của `e`: obstacle + (khi Bot đồng đội) ô của ĐỒNG ĐỘI. Ô đồng đội chặn
+     *  loang để khép vòng CHUNG nhưng không bị chiếm (không nằm trong owned/trail của e). */
+    teamBarriers(e) {
+        if (!(this.config.rules.botsAllied && e.isBot))
+            return this.obstacles;
+        const b = new Set(this.obstacles);
+        for (const mate of this.players) {
+            if (mate === e || !mate.isBot)
+                continue;
+            for (const k of mate.owned)
+                b.add(k);
+        }
+        return b;
+    }
     /** Bot còn được hồi sinh không: không gắn cứ điểm ⇒ có; gắn cứ điểm ⇒ chỉ khi CHƯA bị chiếm. */
     botCanRespawn(e) {
         if (!e.isBot)
@@ -1026,6 +1040,13 @@ class GameState {
                 return;
             }
         }
+        // [Campaign] THUA khi HẾT CHỖ hồi sinh: người chơi đang chết, chưa chọn xem, nhưng bản đồ KHÔNG
+        // còn ô trống hợp lệ để hồi sinh (đã bị chiếm hết) ⇒ thua ngay (doc: hết vùng đất hồi sinh = thua).
+        if (maxLives > 0 && !this.lost && this.human.phase === "dead" && !this.spectating && this.pickSpawnHex(this.human) === null) {
+            this.lost = true;
+            this.lostId = this.human.id;
+            return;
+        }
         switch (this.config.win.kind) {
             case "none":
                 return; // Luyện tập: không phân định thắng thua.
@@ -1385,7 +1406,10 @@ class GameState {
         return false;
     }
     captureFor(e) {
-        const captured = (0, floodfill_1.captureEnclosed)(this.map, e.owned, e.trailHexes, this.obstacles);
+        // Bot ĐỒNG ĐỘI (doc 34): coi ô của ĐỒNG ĐỘI như tường (barrier) để khép vòng CHUNG — flood fill
+        // áp cho các ô cùng màu. Ô đồng đội là barrier (chặn loang) nhưng KHÔNG bị chiếm/đổi chủ.
+        const barriers = this.teamBarriers(e);
+        const captured = (0, floodfill_1.captureEnclosed)(this.map, e.owned, e.trailHexes, barriers);
         // Gán mọi ô chiếm được cho e (cướp khỏi đối thủ nếu nằm trong vòng).
         for (const k of captured)
             this.claimCell(k, e);

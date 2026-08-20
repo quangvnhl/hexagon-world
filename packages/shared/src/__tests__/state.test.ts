@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { GameState } from "../state";
 import { CONFIG } from "../config";
-import { axialToPixel, pixelToAxial, key } from "../hex";
+import { axialToPixel, pixelToAxial, key, parseKey } from "../hex";
 import { insideArena } from "../arena";
 
 /** Cho game qua hết pha chuẩn bị (đứng yên 3s) để bắt đầu di chuyển. */
@@ -438,5 +438,17 @@ describe("GameState: Bot đồng đội — giết bot không chiếm đất (do
     expect(g.sameTeam(0, 1)).toBe(false);
     const g2 = new GameState({ config: { bots: { count: 2 }, rules: { botsAllied: false } } });
     expect(g2.sameTeam(1, 2)).toBe(false);
+  });
+});
+
+describe("GameState: Campaign THUA khi hết chỗ hồi sinh (doc)", () => {
+  it("bản đồ bị chiếm hết ⇒ người chơi chết + không còn ô hồi sinh ⇒ lost", () => {
+    const g = new GameState({ config: { bots: { count: 1 }, rules: { maxLives: 3 }, map: { radius: 10 }, win: { kind: "none" } } });
+    // Chiếm TOÀN BỘ playable bằng bot (id 1) → không còn ô trống hợp lệ để hồi sinh.
+    g.applyTerritory([...g.playable].map((k) => { const { q, r } = parseKey(k); return { q, r, owner: 1, kind: 0 as const }; }));
+    g.die();          // người chơi chết (không còn đất riêng để giải phóng)
+    g.update(0);
+    expect(g.lost).toBe(true);
+    expect(g.lostId).toBe(0);
   });
 });

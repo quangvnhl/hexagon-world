@@ -224,6 +224,9 @@ export declare class GameState {
     sameTeam(idA: number, idB: number): boolean;
     /** Ô `hk` thuộc ĐỘI của `e` (owner là e hoặc đồng đội). Bot đi trên ô ĐỘI = "về nhà" ⇒ không đuôi. */
     private teamOwns;
+    /** Tường cho flood fill của `e`: obstacle + (khi Bot đồng đội) ô của ĐỒNG ĐỘI. Ô đồng đội chặn
+     *  loang để khép vòng CHUNG nhưng không bị chiếm (không nằm trong owned/trail của e). */
+    private teamBarriers;
     /** Bot còn được hồi sinh không: không gắn cứ điểm ⇒ có; gắn cứ điểm ⇒ chỉ khi CHƯA bị chiếm. */
     private botCanRespawn;
     /** Ô spawn tại CỨ ĐIỂM của bot (nếu hợp lệ & chưa bị chiếm); null ⇒ dùng pickSpawnHex thường. */
