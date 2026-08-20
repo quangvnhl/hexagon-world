@@ -18,8 +18,9 @@ import {
 import { adminListLevels, adminUpsertLevel, adminPublishLevel, type AdminLevelRow } from "./api";
 import { HexCanvas, type HexCanvasHandle } from "./HexCanvas";
 
-const DEFAULT_RADIUS = CONFIG.ARENA_RADIUS;
-const MIN_RADIUS = 5, MAX_RADIUS = 300;
+const DEFAULT_RADIUS = CONFIG.ARENA_RADIUS; // 130 — sentinel: bằng mặc định engine thì BỎ map.radius (cấp cũ bất biến)
+const NEW_LEVEL_RADIUS = 20;                 // bán kính mặc định cho cấp MỚI (dễ dựng, vừa màn hình)
+const MIN_RADIUS = 5, MAX_RADIUS = 200;
 const BRUSHES = [0, 1, 2, 3];
 const POWERUPS: PowerupKind[] = ["speed", "head_start", "extra_life"];
 const POWERUP_LABEL: Record<PowerupKind, string> = { speed: "⚡ Tốc", head_start: "🟩 Khởi đầu rộng", extra_life: "❤ Thêm mạng" };
@@ -37,13 +38,13 @@ interface FormState {
 }
 
 const BLANK: FormState = {
-  id: "", sortOrder: 1, name: "", botCount: 8, maxLives: 3, radius: DEFAULT_RADIUS,
+  id: "", sortOrder: 1, name: "", botCount: 8, maxLives: 3, radius: NEW_LEVEL_RADIUS,
   kind: "territory_pct", targetPct: 0.3, durationSec: 60, totemGoal: 3,
   powerups: [], unlockRequires: "", coin: 50, xp: 40, energy: 0, published: false,
 };
 
 function clampRadius(r: number): number {
-  return Math.max(MIN_RADIUS, Math.min(MAX_RADIUS, Math.floor(r) || DEFAULT_RADIUS));
+  return Math.max(MIN_RADIUS, Math.min(MAX_RADIUS, Math.floor(r) || NEW_LEVEL_RADIUS));
 }
 
 function buildConfig(f: FormState, obstacles: Set<HexKey>): MatchConfigInput {
@@ -205,8 +206,11 @@ export default function LevelEditor() {
         </div>
         {keyPanelOpen && (
           <>
-            <label style={labelStyle}>ADMIN KEY (header x-admin-key)</label>
-            <input type="password" value={adminKey} onChange={(e) => setAdminKey(e.target.value)} style={inputStyle} placeholder="ADMIN_API_KEY…" />
+            <label style={labelStyle}>ADMIN KEY — token GỐC (không phải hash)</label>
+            <input type="password" value={adminKey} onChange={(e) => setAdminKey(e.target.value)} style={inputStyle} placeholder="token gốc, KHÔNG phải SHA-256…" />
+            <div style={{ fontSize: 10, opacity: 0.55, marginTop: 3, lineHeight: 1.4 }}>
+              Nhập <b>token gốc</b> mà server băm SHA-256 ra <code>ADMIN_API_KEY_SHA256</code> — KHÔNG dán chính chuỗi hash.
+            </div>
             <div style={{ display: "flex", gap: 6, marginTop: 8 }}>
               <button onClick={() => void load()} style={{ ...btn("#31b0ff"), flex: 1 }}>Tải danh sách</button>
               <button onClick={newLevel} style={btn("#48d987")}>+ Mới</button>
