@@ -41,6 +41,7 @@ function objectiveSummary(cfg: MatchConfigInput): string {
   if (!w) return "";
   switch (w.kind) {
     case "territory_pct": return `Chiếm ${Math.round((w.targetPct ?? 0.2) * 100)}% lãnh thổ`;
+    case "king_hold": return `Giữ King ${Math.max(1, Math.round((w.winHoldTime ?? 180) / 60))} phút`;
     case "survive": return `Sống sót ${w.durationSec ?? 60}s`;
     case "capture_totems": return `Thu ${w.totemGoal ?? 0} totem`;
     default: return "";

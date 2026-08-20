@@ -33,6 +33,7 @@ const POWERUPS: PowerupKind[] = ["speed", "head_start", "extra_life"];
 const POWERUP_LABEL: Record<PowerupKind, string> = { speed: "⚡ Tốc", head_start: "🟩 Khởi đầu rộng", extra_life: "❤ Thêm mạng" };
 const WIN_KINDS: { kind: WinConditionKind; label: string }[] = [
   { kind: "territory_pct", label: "Chiếm % lãnh thổ" },
+  { kind: "king_hold", label: "Giữ ngôi King (phút)" },
   { kind: "survive", label: "Sống sót (giây)" },
   { kind: "capture_totems", label: "Thu totem" },
   { kind: "none", label: "Không thắng/thua" },
@@ -40,14 +41,14 @@ const WIN_KINDS: { kind: WinConditionKind; label: string }[] = [
 
 interface FormState {
   id: string; sortOrder: number; name: string; botCount: number; maxLives: number; radius: number;
-  kind: WinConditionKind; targetPct: number; durationSec: number; totemGoal: number;
+  kind: WinConditionKind; targetPct: number; durationSec: number; totemGoal: number; holdMinutes: number; kingPct: number;
   powerups: PowerupKind[]; unlockRequires: string; coin: number; xp: number; energy: number; published: boolean;
   showColliders: boolean; colliderShape: "hex" | "rect";
 }
 
 const BLANK: FormState = {
   id: "", sortOrder: 1, name: "", botCount: 8, maxLives: 3, radius: NEW_LEVEL_RADIUS,
-  kind: "territory_pct", targetPct: 0.3, durationSec: 60, totemGoal: 3,
+  kind: "territory_pct", targetPct: 0.3, durationSec: 60, totemGoal: 3, holdMinutes: 3, kingPct: 20,
   powerups: [], unlockRequires: "", coin: 50, xp: 40, energy: 0, published: false, showColliders: false, colliderShape: "hex",
 };
 
@@ -62,12 +63,14 @@ function totemsToList(totems: Map<HexKey, TotemKind>): AuthoredTotem[] {
 function buildConfig(f: FormState, obstacles: Set<HexKey>, totems: Map<HexKey, TotemKind>): MatchConfigInput {
   const win =
     f.kind === "territory_pct" ? { kind: f.kind, targetPct: f.targetPct }
+    : f.kind === "king_hold" ? { kind: f.kind, winHoldTime: Math.max(1, f.holdMinutes) * 60, kingPct: f.kingPct }
     : f.kind === "survive" ? { kind: f.kind, durationSec: f.durationSec }
     : f.kind === "capture_totems" ? { kind: f.kind, totemGoal: f.totemGoal }
     : { kind: "none" as const };
   // Campaign KHÔNG sinh totem ngẫu nhiên — chỉ dùng totem admin tự vẽ (doc 32). totemsEnabled=false
   // để cấp không có map.totems là KHÔNG có totem nào; có map.totems ⇒ sim dùng đúng danh sách đó.
-  const rules: MatchConfigInput["rules"] = { maxLives: f.maxLives, totemsEnabled: false };
+  // King CHỈ bật khi mục tiêu là king_hold (doc 34 A) — mục tiêu khác tắt King.
+  const rules: MatchConfigInput["rules"] = { maxLives: f.maxLives, totemsEnabled: false, kingEnabled: f.kind === "king_hold" };
   const config: MatchConfigInput = { bots: { count: f.botCount }, rules, win };
   const map: Partial<MatchMapConfig> = {};
   if (f.radius !== DEFAULT_RADIUS) map.radius = f.radius; // chỉ ghi khi khác mặc định engine → cấp cũ bất biến
@@ -91,6 +94,7 @@ function toDraft(f: FormState, obstacles: Set<HexKey>, totems: Map<HexKey, Totem
 function objectiveLabel(f: FormState): string {
   switch (f.kind) {
     case "territory_pct": return `Chiếm ${Math.round(f.targetPct * 100)}% lãnh thổ`;
+    case "king_hold": return `Giữ King (≥${f.kingPct}%) ${f.holdMinutes} phút`;
     case "survive": return `Sống sót ${f.durationSec}s`;
     case "capture_totems": return `Thu ${f.totemGoal} totem`;
     default: return "Không thắng/thua (chơi tự do)";
@@ -109,6 +113,7 @@ function rowToForm(r: AdminLevelRow): { form: FormState; obstacles: Set<HexKey>;
       radius: cfg.map?.radius ?? DEFAULT_RADIUS,
       kind: (win.kind ?? "territory_pct") as WinConditionKind,
       targetPct: win.targetPct ?? 0.3, durationSec: win.durationSec ?? 60, totemGoal: win.totemGoal ?? 3,
+      holdMinutes: win.winHoldTime ? Math.max(1, Math.round(win.winHoldTime / 60)) : 3, kingPct: win.kingPct ?? 20,
       powerups: (r.powerups ?? []) as PowerupKind[], unlockRequires: r.unlock_requires ?? "",
       coin: r.rewards?.coin ?? 0, xp: r.rewards?.xp ?? 0, energy: r.rewards?.energy ?? 0, published: r.published,
       showColliders: cfg.map?.showColliders ?? false,
@@ -304,6 +309,12 @@ export default function LevelEditor() {
           {WIN_KINDS.map((w) => <option key={w.kind} value={w.kind}>{w.label}</option>)}
         </select>
         {form.kind === "territory_pct" && <><label style={labelStyle}>Ngưỡng % (0–1)</label><input type="number" step="0.05" value={form.targetPct} onChange={(e) => set("targetPct", Number(e.target.value))} style={inputStyle} /></>}
+        {form.kind === "king_hold" && (
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 8 }}>
+            <div><label style={labelStyle}>Số phút giữ King</label><input type="number" min={1} value={form.holdMinutes} onChange={(e) => set("holdMinutes", Number(e.target.value))} style={inputStyle} /></div>
+            <div><label style={labelStyle}>Ngưỡng % lên King</label><input type="number" min={1} max={100} value={form.kingPct} onChange={(e) => set("kingPct", Number(e.target.value))} style={inputStyle} /></div>
+          </div>
+        )}
         {form.kind === "survive" && <><label style={labelStyle}>Giây sống sót</label><input type="number" value={form.durationSec} onChange={(e) => set("durationSec", Number(e.target.value))} style={inputStyle} /></>}
         {form.kind === "capture_totems" && <><label style={labelStyle}>Số totem</label><input type="number" value={form.totemGoal} onChange={(e) => set("totemGoal", Number(e.target.value))} style={inputStyle} /></>}
 

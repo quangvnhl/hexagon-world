@@ -97,7 +97,7 @@ export function MenuButton({ onExit }: { onExit: () => void }) {
   );
 }
 
-/** Chuỗi mô tả tiến độ objective (Campaign) cho HUD. Rỗng với endless/king_hold (HUD đã có UI riêng). */
+/** Chuỗi mô tả tiến độ objective (Campaign) cho HUD. Rỗng với endless. */
 export function objectiveProgress(game: GameState): string {
   const w = game.config.win;
   switch (w.kind) {
@@ -106,6 +106,11 @@ export function objectiveProgress(game: GameState): string {
       const target = w.targetPct !== undefined ? w.targetPct * 100 : w.kingPct;
       return `Chiếm ${game.territoryPct().toFixed(1)}% / ${target.toFixed(0)}%`;
     }
+    case "king_hold":
+      // Là KING (đạt ngưỡng %) ⇒ đếm ngược giữ ngôi; chưa đạt ⇒ hiện % cần đạt.
+      return game.isKing
+        ? `Giữ King: còn ${Math.max(0, Math.ceil(game.kingHoldRemaining))}s`
+        : `Lên King: ${game.territoryPct().toFixed(1)}% / ${w.kingPct}%`;
     case "survive":
       return `Sống sót còn ${Math.max(0, Math.ceil(game.surviveRemaining))}s`;
     case "capture_totems":

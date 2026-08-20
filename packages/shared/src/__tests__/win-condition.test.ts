@@ -82,3 +82,23 @@ describe("WinCondition: capture_totems", () => {
     expect(g.won).toBe(false);
   });
 });
+
+describe("King gate (doc 34 A)", () => {
+  it("kingEnabled=false ⇒ KHÔNG lên King dù đủ %, roomLocked=false", () => {
+    const g = new GameState({
+      config: { win: { kind: "territory_pct", targetPct: 0.9 }, rules: { kingEnabled: false }, bots: { count: 0 } },
+    });
+    const cells = [...g.playable];
+    g.owned = new Set(cells.slice(0, Math.ceil(cells.length * 0.5))); // 50% ≫ kingPct 20%
+    expect(g.isKing).toBe(false);
+    expect(g.kingId()).toBe(-1);
+    expect(g.roomLocked()).toBe(false);
+  });
+
+  it("kingEnabled mặc định (true) ⇒ đủ % thì lên King", () => {
+    const g = new GameState({ config: { win: { kind: "king_hold", kingPct: 20 }, bots: { count: 0 } } });
+    const cells = [...g.playable];
+    g.owned = new Set(cells.slice(0, Math.ceil(cells.length * 0.3))); // ~30% ≥ 20%
+    expect(g.isKing).toBe(true);
+  });
+});
