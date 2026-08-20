@@ -3,10 +3,16 @@
 > **Phạm vi:** tài liệu KẾ HOẠCH cho 4 nhóm tính năng Campaign. Nền: doc 31–33 (trình vẽ, totem,
 > collider). Quy ước: mọi field config mới **default = hành vi cũ** (bất biến /play, /netplay).
 
-## Quyết định đã CHỐT
-- **D-biên:** biên admin vẽ = **CHỈ tường va chạm** (người/bot không băng qua, trượt dọc). BỎ collider
-  theo ô (hex/rect). Flood-fill/chiếm đất **KHÔNG** bị biên chặn (giữ nguyên cơ chế hiện tại).
-- **D-cứ điểm:** cứ điểm bot = **thực thể riêng** (`map.strongholds`), không phải totem.
+## Quyết định đã CHỐT (đã cập nhật theo phản hồi)
+- **Hai công cụ SONG SONG (không thay thế):**
+  - **Chướng ngại (ô):** GIỮ — là chức năng CHÍNH tạo ô lục giác chướng ngại; collider theo Ô như hiện
+    tại (doc 33, biên hex đa giác). Flood-fill vẫn chặn theo ô như cũ.
+  - **Biên (line):** CHỈ để vẽ **đường biên** (polyline) làm **tường va chạm bổ sung**; KHÔNG tô ô.
+    Biên = collision-only, không chặn flood-fill. (Bỏ ý "chỉ còn 1 loại collider".)
+- **Cứ điểm bot:** **thực thể riêng** (`map.strongholds`), MỖI cứ điểm có **số bot** riêng
+  (`botCount`). Bot của cứ điểm hồi sinh tại đó sau 3s; chiếm cứ điểm ⇒ số bot đó ngừng hồi sinh.
+- **Bot Campaign là ĐỒNG MINH:** mọi bot **cùng màu**, **đâm nhau KHÔNG chết** (chỉ đối đầu người chơi).
+- **King:** cho **chỉnh ngưỡng % (kingPct)** ở editor; King TẮT ở mục tiêu khác king_hold.
 
 ---
 
@@ -21,8 +27,8 @@
    `roomLocked()` + King-detection: trả false/`-1` khi `!kingEnabled`. Campaign `buildConfig` đặt
    `kingEnabled = (win.kind === "king_hold")` ⇒ mục tiêu khác KHÔNG có King.
 2. **Objective king_hold ở editor:** thêm vào `WIN_KINDS`; field **"Số phút giữ King"** (default 3 →
-   `winHoldTime = phút*60 = 180`); (tùy) field `kingPct` (default 20). `buildConfig` set `win.kind`,
-   `winHoldTime`, `kingPct` + `rules.kingEnabled=true`.
+   `winHoldTime = phút*60 = 180`) + field **"Ngưỡng % King" (kingPct, default 20)**. `buildConfig` set
+   `win.kind`, `winHoldTime`, `kingPct` + `rules.kingEnabled=true`.
 3. **HUD:** hiện đồng hồ giữ ngôi cho cấp king_hold (kiểm HUD đã hỗ trợ king_hold; bổ sung nếu thiếu).
 
 **Lát:** A1 shared (`kingEnabled` + gate roomLocked/isKing/kingHolder + test) · A2 editor (king_hold +
@@ -37,20 +43,24 @@ phút) · A3 client HUD/objectiveProgress cho king_hold.
 sinh bot khi `!roomLocked() && respawnTimer>0`. Chưa có khái niệm cứ điểm.
 
 **Thiết kế:**
-1. **Data:** `MatchMapConfig.strongholds?: Array<{ q: number; r: number }>` (ô cứ điểm). GameState dựng
-   danh sách `strongholds` + tập `capturedStrongholds` (rỗng lúc đầu).
-2. **Hồi sinh tại cứ điểm:** bot chết → sau 3s hồi sinh **tại một cứ điểm CÒN hoạt động** (chưa bị
-   chiếm) gần nhất/round-robin. Nếu **không còn cứ điểm hoạt động** ⇒ bot **KHÔNG** hồi sinh.
-   Sửa `spawn()`/`updateEntity`: chỗ spawn bot = ô cứ điểm (thay vì ngẫu nhiên) khi có strongholds.
-3. **Chiếm cứ điểm:** khi người chơi **sở hữu** ô cứ điểm (enterHex/applyTerritory owned) ⇒ thêm vào
-   `capturedStrongholds`. Cứ điểm bị chiếm ngừng nhận hồi sinh.
-4. **Client:** render marker cứ điểm 3D (cờ/tháp; đổi màu khi bị chiếm) + minimap.
-5. **Editor:** công cụ đặt cứ điểm (giống đặt totem 1 ô) + round-trip `map.strongholds`.
+1. **Data:** `MatchMapConfig.strongholds?: Array<{ q: number; r: number; botCount: number }>`. GameState
+   dựng danh sách + tập `capturedStrongholds`. **Tổng bot** = Σ `botCount` các cứ điểm (khi có
+   strongholds thì `bots.count` bị bỏ qua ở cấp; nếu KHÔNG có strongholds ⇒ giữ `bots.count` như cũ).
+2. **Gán bot↔cứ điểm:** mỗi bot thuộc **một cứ điểm** (theo botCount). Bot hồi sinh **tại cứ điểm của
+   mình** sau 3s. Cứ điểm bị chiếm ⇒ bot của nó **KHÔNG** hồi sinh nữa (bot đang sống vẫn chơi tới khi
+   chết). Sửa `spawn()`/`updateEntity`: chỗ spawn bot = ô cứ điểm chủ; gate respawn theo
+   `!captured(stronghold)`.
+3. **Chiếm cứ điểm:** người chơi **sở hữu** ô cứ điểm ⇒ thêm vào `capturedStrongholds` (như capture totem).
+4. **Bot ĐỒNG MINH (campaign):** thêm `rules.botsAllied` (default **false** ⇒ /play, /netplay bất biến).
+   Khi true: mọi bot cùng **teamId** (vd 1) + **cùng màu**; va chạm đầu-đầu / đâm đuôi GIỮA bot với bot
+   ⇒ KHÔNG chết. Chỉ người chơi (team 0) vs bot mới sát thương. Campaign `buildConfig` đặt `botsAllied=true`.
+5. **Client:** render marker cứ điểm 3D (cờ/tháp; đổi màu khi bị chiếm) + minimap; bot cùng màu.
+6. **Editor:** công cụ đặt cứ điểm (đặt ô + nhập `botCount`) + round-trip `map.strongholds`.
 
-**Lát:** B1 shared (config + spawn/respawn theo cứ điểm + capture + test) · B2 client render + minimap ·
-B3 editor tool.
-**Rủi ro:** vừa–cao — đổi luồng spawn bot (ảnh hưởng số bot sống). Chỉ kích hoạt khi có `strongholds`
-(cấp không đặt ⇒ bất biến). **Cần chốt:** gán bot↔cứ điểm (mọi bot dùng chung mọi cứ điểm — đề xuất).
+**Lát:** B1 shared (config strongholds + spawn/respawn theo cứ điểm + capture + `botsAllied` gate kill +
+test) · B2 client render + minimap + màu bot · B3 editor tool (đặt + số bot).
+**Rủi ro:** cao — đổi luồng spawn bot + luật sát thương (đồng minh). Chỉ kích hoạt khi có strongholds /
+`botsAllied` (cấp không đặt ⇒ bất biến). Test kỹ luật kill bot-vs-bot.
 
 ---
 
@@ -68,37 +78,32 @@ chỉ đổi hệ scale world→px theo bán kính thật.
 
 ---
 
-## D. HỆ THỐNG BIÊN MỚI (collider = đường biên admin vẽ)
+## D. Công cụ BIÊN (đường line) — tường va chạm BỔ SUNG (GIỮ công cụ Chướng ngại)
 
-**Hiện trạng:** collider theo Ô (`colliderShape` hex/rect, `slidePolyObstacles`/`slideRectObstacles`).
-Công cụ biên hiện tại chỉ TÔ Ô bên trong. Cần thay bằng **đường biên (polyline) làm tường va chạm**.
+**Hiện trạng:** collider theo Ô (doc 33, biên hex đa giác) — **GIỮ** làm chính. Công cụ "Biên" hiện tô
+ô bên trong; cần **đổi thành vẽ ĐƯỜNG BIÊN** (polyline) làm tường va chạm bổ sung, KHÔNG tô ô.
 
-**Thiết kế (theo D-biên đã chốt):**
+**Thiết kế (biên = collision-only, THÊM vào cạnh collider ô):**
 1. **Data:** `MatchMapConfig.boundaries?: Array<{ id: string; points: Array<[number, number]> }>` —
-   polyline toạ độ WORLD (điểm snap đỉnh hex hoặc tự do). Là tường HỞ (không cần khép kín).
-2. **Va chạm (shared):** thay collider-theo-ô bằng **collide-and-slide theo ĐOẠN**: người/bot là điểm
-   (bán kính nhỏ), mỗi tick chống lại các đoạn biên gần — nếu bước cắt/đâm vào đoạn thì bỏ thành phần
-   pháp tuyến (trượt dọc đoạn), lặp cho góc. Bỏ `colliderShape`, `slideRect/PolyObstacles`,
-   `insideObstacleRect`. `map.obstacles` (ô) **không còn** vai trò va chạm.
-   *(Flood-fill giữ nguyên — KHÔNG đọc biên. Ô obstacle cũ: giữ cho tô/hiển thị hay bỏ hẳn → xem "cần
-   chốt".)*
-3. **Hiển thị:** vẽ biên là đường LINE trong game (3D) + minimap; **toggle** qua `map.showColliders`
-   (hoặc cờ `showBoundaries` riêng). Đổi `ObstacleCollider` → vẽ từ `boundaries`.
-4. **Trình vẽ biên mới (editor):**
+   polyline toạ độ WORLD (điểm snap đỉnh hex hoặc tự do). Tường HỞ (không cần khép kín).
+2. **Va chạm (shared):** GIỮ collider-ô hiện tại; THÊM **collide-and-slide theo ĐOẠN** cho `boundaries`:
+   sau bước (đã giải obstacle-ô), chống tiếp các đoạn biên gần — đâm vào đoạn thì bỏ thành phần pháp
+   tuyến (trượt dọc), lặp cho góc. Áp cho cả người & bot. Flood-fill KHÔNG đọc biên.
+3. **Hiển thị:** vẽ biên là đường LINE trong game (3D) + minimap; **toggle** (dùng `map.showColliders`
+   sẵn có, hoặc thêm `showBoundaries`). `ObstacleCollider` bổ sung vẽ `boundaries`.
+4. **Trình vẽ biên mới (editor, công cụ Biên — CHỈ vẽ line):**
    - **Điểm snap = đỉnh hex.** Vẽ **stroke** bình thường; **di chuột vào** point snap ⇒ **fill màu**.
    - **Bấm khi đang hover point** ⇒ chọn đúng đỉnh đó; **bấm ngoài point** ⇒ lấy **vị trí chuột** làm
      điểm (tự do, không snap).
    - **Enter** ⇒ tạo/hoàn tất biên (một polyline). Biên hiện dạng đường line, toggle hiển thị.
    - **Chọn biên đã tạo** ⇒ chọn **nút cuối** ⇒ **vẽ tiếp** (nối thêm điểm).
    - **Backspace** xoá **nút** biên (nút cuối / nút đang chọn); nút **Delete** xoá **cả đường biên**.
-   - Round-trip `map.boundaries`.
+   - Round-trip `map.boundaries`. (Công cụ Chướng ngại giữ nguyên tô ô.)
 
-**Lát:** D1 shared data `boundaries` + resolve · D2 shared va chạm collide-and-slide theo đoạn (bỏ
-collider-ô) + test · D3 client render biên (3D + minimap) + toggle · D4 editor: trình vẽ biên mới
-(snap fill/hover, chọn/nối/xoá nút, Delete biên, Enter) · D5 gỡ `colliderShape` + công cụ ô cũ (theo
-quyết định).
-**Rủi ro:** CAO — đổi mô hình va chạm + UI editor lớn. Làm sau A/B/C. Test va chạm biên (trượt, không
-xuyên) kỹ.
+**Lát:** D1 shared data `boundaries` + resolve · D2 shared va chạm collide-and-slide theo đoạn (THÊM,
+giữ collider ô) + test · D3 client render biên (3D + minimap) + toggle · D4 editor: đổi công cụ Biên
+sang vẽ line (snap fill/hover, chọn/nối/xoá nút, Delete biên, Enter) + round-trip.
+**Rủi ro:** CAO — thêm mô hình va chạm đoạn + UI editor lớn. Làm sau A/B/C. Test va chạm biên kỹ.
 
 ## Thứ tự đề xuất
 ```
@@ -106,12 +111,9 @@ C (minimap, nhỏ) → A (King) → B (cứ điểm) → D (biên, lớn nhất)
 ```
 Mỗi nhóm commit riêng; D chia D1→D5.
 
-## Cần chốt thêm (trước khi làm nhóm tương ứng)
-- **B:** gán bot↔cứ điểm — đề xuất "mọi bot dùng chung mọi cứ điểm còn hoạt động".
-- **D:** `map.obstacles` (ô) cũ — **bỏ hẳn** công cụ tô ô (chỉ còn biên) hay **giữ** làm lớp hiển thị/
-  flood-fill? (Đề xuất: bỏ vai trò va chạm; giữ tô ô như trước là tuỳ chọn hiển thị, hoặc gỡ hẳn để
-  "chỉ còn 1 loại".)
-- **A:** có cho chỉnh `kingPct` (ngưỡng %) ở editor không, hay khoá mặc định 20%.
+## Cần chốt thêm
+- (Đã chốt hết các điểm chính.) Chi tiết nhỏ giải quyết khi làm: hình marker cứ điểm 3D, màu bot đồng
+  minh cụ thể, cổng zoom hiển thị biên trên minimap.
 
 ## Tiêu chí đóng (mỗi nhóm)
 - **A:** cấp king_hold: giữ King đủ phút ⇒ thắng; cấp khác KHÔNG có King (bot respawn/join không bị khoá).
