@@ -1009,12 +1009,14 @@ class GameState {
         const dist = this.effectiveSpeedFor(e.id) * dt;
         // Va chạm tường: dịch theo hướng nhìn rồi TRƯỢT dọc biên ở TỐC ĐỘ ĐẦY ĐỦ (slideMove).
         // Không sinh vận tốc LÙI (tránh đầu bị đẩy ngược vào ô đuôi của chính mình → chết oan).
-        const c = this.arena.slideMove(e.pos.x, e.pos.y, e.heading, dist);
-        // Chặn ô CHƯỚNG NGẠI (tường nội bộ): nếu ô đích rơi vào obstacle → KHÔNG bước tick này (đầu
-        // đứng lại như đụng tường; người/bot tự đổi hướng). Giả định bước/tick nhỏ hơn 1 ô — đủ cho
-        // 24Hz tốc độ thường; trường hợp nhảy nhiều ô qua obstacle mỏng là hiếm, chấp nhận cho MVP.
-        if (this.obstacles.size > 0 && this.obstacles.has((0, hex_1.keyOf)((0, hex_1.pixelToAxial)(c.x, c.y, this.hexSize)))) {
-            return;
+        let c = this.arena.slideMove(e.pos.x, e.pos.y, e.heading, dist);
+        // Chướng ngại (tường NỘI BỘ): TRƯỢT dọc mặt hex thay vì kẹt cứng — bỏ thành phần pháp tuyến
+        // (hướng đi VÀO obstacle), giữ tiếp tuyến. Đâm thẳng vào góc lõm không có hướng thoát → đứng.
+        if (this.obstacles.size > 0) {
+            const slid = this.slideAlongObstacles(e.pos.x, e.pos.y, c.x, c.y);
+            if (!slid)
+                return;
+            c = slid;
         }
         const mdx = c.x - e.pos.x;
         const mdy = c.y - e.pos.y;
@@ -1027,6 +1029,42 @@ class GameState {
             // Xoay đầu theo hướng DI CHUYỂN THỰC (trượt dọc tường); xa tường thì trùng heading.
             e.heading = Math.atan2(mdy, mdx);
         }
+    }
+    /**
+     * TRƯỢT dọc viền chướng ngại: nếu điểm đích `(cx,cy)` rơi vào ô obstacle, bỏ thành phần vận
+     * tốc theo PHÁP TUYẾN mặt (≈ hướng `pos → tâm ô obstacle`, ô kề ⇒ đúng mặt hex) và giữ thành
+     * phần TIẾP TUYẾN → đầu trượt men theo obstacle như men theo tường sân. Lặp tối đa 2 lần cho
+     * góc lõm 2 ô; vẫn kẹt ⇒ `null` (đâm thẳng góc, đứng lại). Kết quả được clamp về trong sân.
+     * Trả `null` = không bước tick này; ngược lại điểm đã trượt.
+     */
+    slideAlongObstacles(px, py, cx, cy) {
+        const size = this.hexSize;
+        let x = cx, y = cy;
+        for (let pass = 0; pass < 2; pass++) {
+            const hex = (0, hex_1.pixelToAxial)(x, y, size);
+            if (!this.obstacles.has((0, hex_1.keyOf)(hex))) {
+                const inside = this.arena.clampInside(x, y);
+                return { x: inside.x, y: inside.y };
+            }
+            const oc = (0, hex_1.axialToPixel)(hex, size);
+            let nx = px - oc.x, ny = py - oc.y; // pháp tuyến ra khỏi obstacle (từ tâm ô → vị trí hiện tại)
+            const nlen = Math.hypot(nx, ny) || 1;
+            nx /= nlen;
+            ny /= nlen;
+            let vx = x - px, vy = y - py;
+            const vn = vx * nx + vy * ny;
+            if (vn < 0) {
+                vx -= vn * nx;
+                vy -= vn * ny;
+            } // bỏ phần đi VÀO obstacle → còn lại trượt dọc mặt
+            x = px + vx;
+            y = py + vy;
+        }
+        // Sau 2 lần vẫn trong obstacle (kẹt góc) → đứng.
+        return this.obstacles.has((0, hex_1.keyOf)((0, hex_1.pixelToAxial)(x, y, size))) ? null : (() => {
+            const inside = this.arena.clampInside(x, y);
+            return { x: inside.x, y: inside.y };
+        })();
     }
     /** API cho test: di chuyển người chơi tới (x,y) nếu ô đích hợp lệ (không phải chướng ngại). */
     moveTo(x, y) {

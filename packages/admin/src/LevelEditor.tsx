@@ -42,12 +42,13 @@ interface FormState {
   id: string; sortOrder: number; name: string; botCount: number; maxLives: number; radius: number;
   kind: WinConditionKind; targetPct: number; durationSec: number; totemGoal: number;
   powerups: PowerupKind[]; unlockRequires: string; coin: number; xp: number; energy: number; published: boolean;
+  showColliders: boolean;
 }
 
 const BLANK: FormState = {
   id: "", sortOrder: 1, name: "", botCount: 8, maxLives: 3, radius: NEW_LEVEL_RADIUS,
   kind: "territory_pct", targetPct: 0.3, durationSec: 60, totemGoal: 3,
-  powerups: [], unlockRequires: "", coin: 50, xp: 40, energy: 0, published: false,
+  powerups: [], unlockRequires: "", coin: 50, xp: 40, energy: 0, published: false, showColliders: false,
 };
 
 function clampRadius(r: number): number {
@@ -72,6 +73,7 @@ function buildConfig(f: FormState, obstacles: Set<HexKey>, totems: Map<HexKey, T
   if (f.radius !== DEFAULT_RADIUS) map.radius = f.radius; // chỉ ghi khi khác mặc định engine → cấp cũ bất biến
   if (obstacles.size > 0) map.obstacles = [...obstacles];
   if (totems.size > 0) map.totems = totemsToList(totems);
+  if (f.showColliders) map.showColliders = true;
   if (Object.keys(map).length) config.map = map;
   return config;
 }
@@ -108,6 +110,7 @@ function rowToForm(r: AdminLevelRow): { form: FormState; obstacles: Set<HexKey>;
       targetPct: win.targetPct ?? 0.3, durationSec: win.durationSec ?? 60, totemGoal: win.totemGoal ?? 3,
       powerups: (r.powerups ?? []) as PowerupKind[], unlockRequires: r.unlock_requires ?? "",
       coin: r.rewards?.coin ?? 0, xp: r.rewards?.xp ?? 0, energy: r.rewards?.energy ?? 0, published: r.published,
+      showColliders: cfg.map?.showColliders ?? false,
     },
     obstacles: new Set(cfg.map?.obstacles ?? []),
     totems,
@@ -320,6 +323,9 @@ export default function LevelEditor() {
           <div><span style={{ fontSize: 10, opacity: 0.6 }}>energy</span><input type="number" value={form.energy} onChange={(e) => set("energy", Number(e.target.value))} style={inputStyle} /></div>
         </div>
 
+        <label style={{ ...labelStyle, display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
+          <input type="checkbox" checked={form.showColliders} onChange={(e) => set("showColliders", e.target.checked)} /> Hiện đường collider (viền obstacle + biên) khi chơi
+        </label>
         <label style={{ ...labelStyle, display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
           <input type="checkbox" checked={form.published} onChange={(e) => set("published", e.target.checked)} /> Publish (hiện cho người chơi)
         </label>

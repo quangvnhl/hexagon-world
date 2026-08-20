@@ -62,6 +62,9 @@ export interface MatchMapConfig {
   /** [doc 32] Totem đặt tường minh bởi tác giả. Có (≥1) ⇒ dùng ĐÚNG danh sách này, BỎ sinh
    *  ngẫu nhiên; vắng ⇒ giữ hành vi sinh ngẫu nhiên theo seed. */
   totems?: AuthoredTotem[];
+  /** [doc 33] Hiện đường COLLIDER (viền obstacle + biên sân) trong game — dùng cho Campaign để
+   *  thấy rõ mặt va chạm. Default false ⇒ bất biến. */
+  showColliders?: boolean;
 }
 
 export interface MatchBotConfig {
@@ -149,6 +152,7 @@ export function resolveMatchConfig(input: MatchConfigInput = {}): MatchConfig {
       cells: input.map?.cells,
       obstacles: input.map?.obstacles,
       totems: input.map?.totems,
+      showColliders: input.map?.showColliders ?? false,
     },
     bots: {
       count: input.bots?.count ?? CONFIG.BOT_COUNT,

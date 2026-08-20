@@ -225,12 +225,18 @@ export declare const CONFIG: {
      *  tường ngay tại đầu người chơi: xanh dương = hướng đi mong muốn, đỏ = pháp tuyến
      *  tường đang chạm, xanh lá = hướng trượt kết quả. Dùng để thấy vì sao chết sát biên. */
     readonly DEBUG: {
-        readonly COLLISION_VECTORS: false;
+        readonly COLLISION_VECTORS: true;
         /** Đường LINE ĐỎ ở BIÊN va chạm (ArenaCollider) — viền lục giác + mũi tên pháp tuyến 6
          *  tường. Chỉ vẽ khi COLLISION_VECTORS bật. COLOR = màu đường/​mũi tên; Z = độ cao nhô
          *  khỏi mặt sân (tránh z-fight); NORMALS = có vẽ mũi tên pháp tuyến không; NORMAL_LEN =
          *  độ dài mũi tên (world units). Lưu ý: bề rộng nét (linewidth) đa số GPU BỎ QUA nên
          *  không đưa vào — muốn dày hơn thì tăng GLOW/đổi màu cho nổi. */
+        /** Đường LINE va chạm của CHƯỚNG NGẠI (ObstacleCollider) — cạnh hex giáp ô mở. COLOR = màu;
+         *  Z = cao hơn ARENA_LINE chút để không z-fight với mặt sân/obstacle. */
+        readonly OBSTACLE_LINE: {
+            readonly COLOR: "#ffb020";
+            readonly Z: 0.4;
+        };
         readonly ARENA_LINE: {
             readonly COLOR: "#ff4d6d";
             readonly Z: 0.35;

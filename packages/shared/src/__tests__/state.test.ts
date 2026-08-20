@@ -1,7 +1,7 @@
 import { describe, it, expect } from "vitest";
 import { GameState } from "../state";
 import { CONFIG } from "../config";
-import { axialToPixel, key } from "../hex";
+import { axialToPixel, pixelToAxial, key } from "../hex";
 import { insideArena } from "../arena";
 
 /** Cho game qua hết pha chuẩn bị (đứng yên 3s) để bắt đầu di chuyển. */
@@ -314,5 +314,35 @@ describe("GameState: totem tác giả (map.totems — doc 32)", () => {
   it("vắng map.totems ⇒ giữ sinh ngẫu nhiên (bất biến)", () => {
     const withTotems = new GameState({ config: { bots: { count: 0 } } }).totemStates().length;
     expect(withTotems).toBeGreaterThan(0);
+  });
+});
+
+describe("GameState: chướng ngại TRƯỢT dọc viền (doc 33)", () => {
+  it("đâm CHÉO vào obstacle → TRƯỢT dọc mặt (tiến ngang), KHÔNG lọt vào ô obstacle", () => {
+    // Obstacle bên phải spawn; người chơi lao CHÉO lên-phải để đâm vào MẶT TRÁI rồi trượt lên.
+    const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 }, map: { obstacles: [key(3, 0)] } } });
+    skipPrep(g);
+    const e = g.players[0];
+    e.phase = "playing";
+    e.targetHeading = -0.5; e.heading = -0.5; // lên-phải (âm y = lên theo hệ world)
+
+    const startY = e.pos.y;
+    let everInside = false;
+    let contacted = false;
+    let movedAfterContact = 0;
+    let prev = { x: e.pos.x, y: e.pos.y };
+    for (let i = 0; i < 200; i++) {
+      g.update(1 / 60);
+      const hex = pixelToAxial(e.pos.x, e.pos.y, CONFIG.HEX_SIZE);
+      if (key(hex.q, hex.r) === key(3, 0)) everInside = true;
+      // "Chạm" = đã tới sát mặt trái obstacle (x vượt ~ mép giữa (2,0)-(3,0)).
+      if (e.pos.x > 4) contacted = true;
+      if (contacted) movedAfterContact += Math.hypot(e.pos.x - prev.x, e.pos.y - prev.y);
+      prev = { x: e.pos.x, y: e.pos.y };
+    }
+    expect(everInside).toBe(false);            // không xuyên obstacle
+    expect(contacted).toBe(true);              // có đến sát mặt obstacle
+    expect(movedAfterContact).toBeGreaterThan(1); // vẫn di chuyển sau khi chạm ⇒ TRƯỢT, không kẹt
+    expect(Math.abs(e.pos.y - startY)).toBeGreaterThan(1); // đã trượt ngang (đổi y đáng kể)
   });
 });

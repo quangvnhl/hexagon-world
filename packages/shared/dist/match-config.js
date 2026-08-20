@@ -28,6 +28,7 @@ function resolveMatchConfig(input = {}) {
             cells: input.map?.cells,
             obstacles: input.map?.obstacles,
             totems: input.map?.totems,
+            showColliders: input.map?.showColliders ?? false,
         },
         bots: {
             count: input.bots?.count ?? config_1.CONFIG.BOT_COUNT,

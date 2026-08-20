@@ -289,6 +289,14 @@ export declare class GameState {
     private winSubjectId;
     private checkWin;
     private updateEntity;
+    /**
+     * TRƯỢT dọc viền chướng ngại: nếu điểm đích `(cx,cy)` rơi vào ô obstacle, bỏ thành phần vận
+     * tốc theo PHÁP TUYẾN mặt (≈ hướng `pos → tâm ô obstacle`, ô kề ⇒ đúng mặt hex) và giữ thành
+     * phần TIẾP TUYẾN → đầu trượt men theo obstacle như men theo tường sân. Lặp tối đa 2 lần cho
+     * góc lõm 2 ô; vẫn kẹt ⇒ `null` (đâm thẳng góc, đứng lại). Kết quả được clamp về trong sân.
+     * Trả `null` = không bước tick này; ngược lại điểm đã trượt.
+     */
+    private slideAlongObstacles;
     /** API cho test: di chuyển người chơi tới (x,y) nếu ô đích hợp lệ (không phải chướng ngại). */
     moveTo(x: number, y: number): void;
     private stepEntity;

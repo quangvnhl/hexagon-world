@@ -34,6 +34,9 @@ hiện ở `/campaign` trong game client.
 - **Totem (admin tự vẽ — doc 32):** chọn công cụ **🔮 Totem** + loại (⚡ Tốc / 🐌 Chậm / 📡 Radar),
   **bấm 1 ô** để đặt/gỡ (marker màu hiện trên bản đồ). Campaign **KHÔNG** sinh totem ngẫu nhiên
   nữa — chỉ có totem admin đặt. Ô totem không trùng ô chướng ngại.
+- **Hiện đường collider (doc 33):** ô chọn trong form → in-game vẽ đường viền va chạm của obstacle
+  (vàng) + biên sân (đỏ) để thấy rõ mặt trượt. Obstacle nay cho 3D object **trượt** dọc viền
+  (không còn kẹt).
 - **Panel key** (trên-trái) **thu gọn** được (▾/▸, nhớ trạng thái); **form thông tin** cố định phải.
 
 > **Xem thử (2D):** preview tĩnh — canvas sân + obstacle (đọc-thôi) + tóm tắt luật, KHÔNG mô phỏng

@@ -15,6 +15,7 @@ import { TrailLine } from "./TrailLine";
 import { BorderRim } from "./BorderRim";
 import { CollisionDebug } from "./CollisionDebug";
 import { ArenaCollider } from "./ArenaCollider";
+import { ObstacleCollider } from "./ObstacleCollider";
 import { TerritoryBorders } from "./TerritoryBorders";
 import { MiniMap } from "./MiniMap";
 import { Joystick } from "./Joystick";
@@ -416,10 +417,12 @@ export default function GameScene({
         <PlayerCube game={game} />
         {CONFIG.DISPLAY.PARTICLES && <Effects game={game} />}
         <TelegramGameHaptics game={game} playerId={0} />
-        {CONFIG.DEBUG.COLLISION_VECTORS && (
+        {/* Đường collider: bật theo cấp (map.showColliders — Campaign) HOẶC debug toàn cục. */}
+        {(CONFIG.DEBUG.COLLISION_VECTORS || game.config.map.showColliders) && (
           <>
             <ArenaCollider />
-            <CollisionDebug game={game} />
+            <ObstacleCollider game={game} />
+            {CONFIG.DEBUG.COLLISION_VECTORS && <CollisionDebug game={game} />}
           </>
         )}
       </Canvas>
