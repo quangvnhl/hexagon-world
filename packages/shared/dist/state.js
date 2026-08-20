@@ -58,6 +58,8 @@ class Entity {
         this.botOutHeading = 0;
         this.botRange = 10;
         this.respawnTimer = 0;
+        /** [doc 34 B] Cứ điểm chủ của bot (index vào strongholds); -1 = không gắn cứ điểm. */
+        this.strongholdIndex = -1;
         this.id = id;
         this.isBot = isBot;
         this.color = color;
@@ -81,6 +83,11 @@ class GameState {
         this.cellOwner = new Map();
         this.cellTrail = new Map();
         this.rng = Math.random;
+        /** [doc 34 B] Cứ điểm bot: ô hợp lệ + số bot. `capturedStrongholds` = index đã bị người chơi chiếm
+         *  (bot của nó ngừng hồi sinh). `strongholdCell` = HexKey ô → index (phát hiện chiếm). */
+        this.strongholds = [];
+        this.capturedStrongholds = new Set();
+        this.strongholdCell = new Map();
         /** Tăng khi thực thể đổi (vị trí/đuôi) — cho renderer cube/line. */
         this.revision = 0;
         /** Tăng khi lưới cần tô lại (owned hoặc trail hex đổi). */
@@ -117,7 +124,17 @@ class GameState {
         this.surviveRemaining = this.config.win.durationSec ?? Number.POSITIVE_INFINITY;
         this.fixedSpawn = options.spawnAt;
         this.humanCount = Math.max(1, options.humanCount ?? 1);
-        const botCount = this.config.bots.count;
+        // Cứ điểm (doc 34 B): mỗi bot gắn 1 cứ điểm. Có cứ điểm ⇒ tổng bot = Σ botCount (bỏ bots.count);
+        // `botStronghold[b]` = index cứ điểm của bot thứ b (0-index trong nhóm bot).
+        const botStronghold = [];
+        for (const s of this.config.map.strongholds ?? []) {
+            const idx = this.strongholds.length;
+            this.strongholds.push({ q: s.q, r: s.r, botCount: Math.max(0, Math.floor(s.botCount)) });
+            this.strongholdCell.set((0, hex_1.keyOf)({ q: s.q, r: s.r }), idx);
+            for (let b = 0; b < this.strongholds[idx].botCount; b++)
+                botStronghold.push(idx);
+        }
+        const botCount = this.strongholds.length > 0 ? botStronghold.length : this.config.bots.count;
         // playable = ô có TÂM trong tường va chạm (wallLimit), TRỪ ô chướng ngại. Ô chướng ngại
         // (config.map.obstacles) chỉ tính nếu thực sự là ô hợp lệ trong sân.
         this.obstacles = new Set();
@@ -163,18 +180,21 @@ class GameState {
             this.totemItems = (0, totems_1.createTotems)(this.playable, this.config.seed, [], this.totemSpawnConfig());
         }
         const mix = this.config.bots.difficultyMix;
+        const allied = this.config.rules.botsAllied;
         const n = this.humanCount + Math.max(0, botCount);
         this.players = [];
         for (let i = 0; i < n; i++) {
-            const color = config_1.PLAYER_COLORS[i % config_1.PLAYER_COLORS.length];
             const isBot = i >= this.humanCount;
+            // Bot ĐỒNG MINH (doc 34 B): mọi bot CÙNG màu (đội 1); người chơi giữ bảng màu như cũ.
+            const color = isBot && allied ? config_1.PLAYER_COLORS[1 % config_1.PLAYER_COLORS.length] : config_1.PLAYER_COLORS[i % config_1.PLAYER_COLORS.length];
             const e = new Entity(i, isBot, color);
-            // Gán độ khó cho bot: theo difficultyMix nếu có, mặc định luân phiên toàn bảng.
             if (isBot) {
                 const b = i - this.humanCount;
                 e.botProfile = mix && mix.length > 0
                     ? mix[b % mix.length]
                     : b % config_1.CONFIG.BOT_DIFFICULTY.length;
+                if (b < botStronghold.length)
+                    e.strongholdIndex = botStronghold[b]; // gắn cứ điểm chủ
             }
             this.players.push(e);
         }
@@ -447,6 +467,36 @@ class GameState {
     roomLocked() {
         return this.kingId() !== -1;
     }
+    /** Hai bot ĐỒNG MINH (doc 34 B): cùng là bot & `botsAllied` ⇒ KHÔNG sát thương nhau. */
+    allied(a, b) {
+        return this.config.rules.botsAllied && a.isBot && b.isBot;
+    }
+    /** Bot còn được hồi sinh không: không gắn cứ điểm ⇒ có; gắn cứ điểm ⇒ chỉ khi CHƯA bị chiếm. */
+    botCanRespawn(e) {
+        if (!e.isBot)
+            return true;
+        if (this.strongholds.length === 0 || e.strongholdIndex < 0)
+            return true;
+        return !this.capturedStrongholds.has(e.strongholdIndex);
+    }
+    /** Ô spawn tại CỨ ĐIỂM của bot (nếu hợp lệ & chưa bị chiếm); null ⇒ dùng pickSpawnHex thường. */
+    strongholdSpawnHex(e) {
+        if (!e.isBot || e.strongholdIndex < 0 || this.strongholds.length === 0)
+            return null;
+        if (this.capturedStrongholds.has(e.strongholdIndex))
+            return null;
+        const s = this.strongholds[e.strongholdIndex];
+        return this.playable.has((0, hex_1.keyOf)({ q: s.q, r: s.r })) ? { q: s.q, r: s.r } : null;
+    }
+    /** Đánh dấu cứ điểm BỊ CHIẾM khi người chơi (id 0) sở hữu ô cứ điểm (doc 34 B). */
+    updateStrongholds() {
+        if (this.strongholds.length === 0)
+            return;
+        for (const [k, idx] of this.strongholdCell) {
+            if (!this.capturedStrongholds.has(idx) && this.cellOwner.get(k) === 0)
+                this.capturedStrongholds.add(idx);
+        }
+    }
     /** Id thực thể CÒN SỐNG có nhiều đất nhất (cho camera khán giả); -1 nếu không có. */
     leaderId() {
         let id = -1;
@@ -633,7 +683,7 @@ class GameState {
     /** Spawn e nếu CÒN vị trí hợp lệ (cách mọi lãnh thổ ≥ SPAWN_CLEARANCE, không đè đất
      *  đã có). Trả về false nếu KHÔNG đủ chỗ → e nằm chờ (dead) chứ không spawn. */
     spawn(e) {
-        const spawnHex = this.pickSpawnHex(e);
+        const spawnHex = this.strongholdSpawnHex(e) ?? this.pickSpawnHex(e);
         if (!spawnHex) {
             // Không còn ô trống hợp lệ → không hồi sinh; nằm chờ tới khi có chỗ.
             e.phase = "dead";
@@ -888,6 +938,7 @@ class GameState {
         for (const e of this.players)
             this.updateEntity(e, dt);
         this.resolveHeadCollisions();
+        this.updateStrongholds(); // doc 34 B: cập nhật cứ điểm bị chiếm
         // ONLINE: container (GameRoom) tự quản luật thắng ⇒ bỏ qua checkWin nội bộ (§S4).
         if (!this.externalWinControl)
             this.checkWin(dt);
@@ -999,7 +1050,7 @@ class GameState {
     updateEntity(e, dt) {
         if (e.phase === "dead") {
             // Phòng bị KING khoá → bot nằm chờ (không hồi sinh) cho tới khi mất ngôi.
-            if (e.isBot && !this.roomLocked() && e.respawnTimer > 0) {
+            if (e.isBot && !this.roomLocked() && this.botCanRespawn(e) && e.respawnTimer > 0) {
                 e.respawnTimer -= dt;
                 if (e.respawnTimer <= 0)
                     this.spawn(e);
@@ -1214,7 +1265,9 @@ class GameState {
                 return true;
             }
             // Cắt đuôi đối thủ → đối thủ chết & MẤT ĐẤT về tay e; kill() dọn cellTrail của họ.
-            this.kill(this.players[trailOwner], e, "cut");
+            // Bot đồng minh (doc 34 B): KHÔNG cắt đuôi nhau.
+            if (!this.allied(e, this.players[trailOwner]))
+                this.kill(this.players[trailOwner], e, "cut");
         }
         // 2. Về lãnh thổ của mình → khép vòng, chiếm đất.
         if (this.cellOwner.get(hk) === e.id) {
@@ -1279,9 +1332,15 @@ class GameState {
         }
         if (victims.length < 2)
             return false;
-        for (const victim of victims)
-            this.kill(victim, undefined, "headMutual");
-        return true;
+        // Chỉ chết nếu trong nhóm có kẻ KHÔNG đồng minh (bot đồng minh chồng ô nhau không sao — doc 34 B).
+        let any = false;
+        for (const victim of victims) {
+            if (victims.some((o) => o !== victim && !this.allied(victim, o))) {
+                this.kill(victim, undefined, "headMutual");
+                any = true;
+            }
+        }
+        return any;
     }
     /** Chủ đất hạ KẺ XÂM NHẬP: nếu đầu đối thủ b đang đứng trên ĐẤT của a và sát đầu a
      *  (≤ KILL_RADIUS) → b chết. Chủ đất bất khả xâm phạm trên sân nhà. */
@@ -1306,8 +1365,10 @@ class GameState {
         for (const group of neutralGroups.values()) {
             if (group.length < 2)
                 continue;
-            for (const victim of group)
-                this.kill(victim, undefined, "headMutual");
+            for (const victim of group) {
+                if (group.some((o) => o !== victim && !this.allied(victim, o)))
+                    this.kill(victim, undefined, "headMutual");
+            }
         }
         // BROAD-PHASE (spatial hash): đưa đầu mọi thực thể đang chơi vào hash, lấy các CẶP
         // ứng viên cách nhau ≤ KILL_RADIUS thay vì quét O(n²). Với cellSize = KILL_RADIUS
@@ -1331,6 +1392,8 @@ class GameState {
             const b = this.players[j];
             if (a.phase !== "playing" || b.phase !== "playing")
                 continue;
+            if (this.allied(a, b))
+                continue; // bot đồng minh — bỏ mọi sát thương đầu-đầu/xâm nhập (doc 34 B)
             const dx = a.pos.x - b.pos.x;
             const dy = a.pos.y - b.pos.y;
             if (dx * dx + dy * dy > R2)

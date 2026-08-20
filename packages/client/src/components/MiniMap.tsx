@@ -190,6 +190,14 @@ export const MiniMap = memo(function MiniMap({
           ctx.fillRect(px - cellW / 2, py - cellH / 2, cellW, cellH);
         }
       }
+      // Cứ điểm bot (doc 34 B) — vàng cam khi còn hoạt động, xanh khi đã bị chiếm.
+      for (let i = 0; i < game.strongholds.length; i++) {
+        const s = game.strongholds[i];
+        const p = axialToPixel({ q: s.q, r: s.r }, CONFIG.HEX_SIZE);
+        const [px, py] = toPx(p.x, p.y);
+        ctx.fillStyle = game.capturedStrongholds.has(i) ? "rgba(120,220,150,0.95)" : "rgba(255,180,40,0.95)";
+        ctx.fillRect(px - cellW, py - cellH, cellW * 2, cellH * 2);
+      }
       ctx.restore();
 
       // Viền lục giác mảnh (đường bao sân, không phải khung hộp).

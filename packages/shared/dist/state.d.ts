@@ -60,6 +60,8 @@ export declare class Entity {
     botOutHeading: number;
     botRange: number;
     respawnTimer: number;
+    /** [doc 34 B] Cứ điểm chủ của bot (index vào strongholds); -1 = không gắn cứ điểm. */
+    strongholdIndex: number;
     constructor(id: number, isBot: boolean, color: PlayerColor);
     get alive(): boolean;
 }
@@ -112,6 +114,15 @@ export declare class GameState {
     private readonly externalWinControl;
     private fixedSpawn?;
     private rng;
+    /** [doc 34 B] Cứ điểm bot: ô hợp lệ + số bot. `capturedStrongholds` = index đã bị người chơi chiếm
+     *  (bot của nó ngừng hồi sinh). `strongholdCell` = HexKey ô → index (phát hiện chiếm). */
+    readonly strongholds: Array<{
+        q: number;
+        r: number;
+        botCount: number;
+    }>;
+    readonly capturedStrongholds: Set<number>;
+    private readonly strongholdCell;
     /** Tăng khi thực thể đổi (vị trí/đuôi) — cho renderer cube/line. */
     revision: number;
     /** Tăng khi lưới cần tô lại (owned hoặc trail hex đổi). */
@@ -204,6 +215,14 @@ export declare class GameState {
     /** Phòng bị KHOÁ khi đã có KING: không cho ai hồi sinh/tham gia (người còn sống thì
      *  đối kháng với nhau). Hết King → mở lại. */
     roomLocked(): boolean;
+    /** Hai bot ĐỒNG MINH (doc 34 B): cùng là bot & `botsAllied` ⇒ KHÔNG sát thương nhau. */
+    private allied;
+    /** Bot còn được hồi sinh không: không gắn cứ điểm ⇒ có; gắn cứ điểm ⇒ chỉ khi CHƯA bị chiếm. */
+    private botCanRespawn;
+    /** Ô spawn tại CỨ ĐIỂM của bot (nếu hợp lệ & chưa bị chiếm); null ⇒ dùng pickSpawnHex thường. */
+    private strongholdSpawnHex;
+    /** Đánh dấu cứ điểm BỊ CHIẾM khi người chơi (id 0) sở hữu ô cứ điểm (doc 34 B). */
+    private updateStrongholds;
     /** Id thực thể CÒN SỐNG có nhiều đất nhất (cho camera khán giả); -1 nếu không có. */
     leaderId(): number;
     /** [KHÁN GIẢ] Id thực thể CÒN SỐNG kế tiếp (dir=+1) / trước (dir=-1) theo thứ tự id — để

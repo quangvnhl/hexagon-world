@@ -16,6 +16,7 @@ import { BorderRim } from "./BorderRim";
 import { CollisionDebug } from "./CollisionDebug";
 import { ArenaCollider } from "./ArenaCollider";
 import { ObstacleCollider } from "./ObstacleCollider";
+import { StrongholdInstances } from "./StrongholdInstances";
 import { TerritoryBorders } from "./TerritoryBorders";
 import { MiniMap } from "./MiniMap";
 import { Joystick } from "./Joystick";
@@ -420,6 +421,7 @@ export default function GameScene({
         <BorderRim game={game} />
         <TrailLine game={game} />
         <TotemInstances items={game.totemStates()} />
+        <StrongholdInstances game={game} />
         <PlayerCube game={game} />
         {CONFIG.DISPLAY.PARTICLES && <Effects game={game} />}
         <TelegramGameHaptics game={game} playerId={0} />

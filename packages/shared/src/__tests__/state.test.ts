@@ -377,3 +377,34 @@ describe("GameState: chướng ngại TRƯỢT dọc viền (doc 33)", () => {
     expect(startY - e.pos.y).toBeGreaterThan(3);         // trượt LÊN xa dọc tường (y giảm nhiều)
   });
 });
+
+describe("GameState: bot đồng minh + cứ điểm (doc 34 B)", () => {
+  it("bot đồng minh CHỒNG ô nhau KHÔNG chết", () => {
+    const g = new GameState({ humanCount: 1, config: { bots: { count: 2 }, rules: { botsAllied: true }, win: { kind: "none" } } });
+    const b1 = g.players[1], b2 = g.players[2];
+    const p = axialToPixel({ q: 5, r: 0 }, CONFIG.HEX_SIZE);
+    for (const b of [b1, b2]) { b.phase = "playing"; b.pos = { ...p }; b.currentHex = { q: 5, r: 0 }; }
+    g.update(0);
+    expect(b1.phase).toBe("playing");
+    expect(b2.phase).toBe("playing");
+  });
+
+  it("cứ điểm: tổng bot = Σ botCount (bỏ bots.count)", () => {
+    const g = new GameState({ config: { bots: { count: 99 }, win: { kind: "none" }, map: { strongholds: [{ q: 6, r: 0, botCount: 2 }, { q: -6, r: 0, botCount: 1 }] } } });
+    expect(g.players.filter((e) => e.isBot).length).toBe(3);
+    expect(g.players[1].strongholdIndex).toBe(0);
+    expect(g.players[3].strongholdIndex).toBe(1);
+  });
+
+  it("chiếm ô cứ điểm ⇒ captured + bot của nó ngừng hồi sinh", () => {
+    const g = new GameState({ config: { bots: { count: 0 }, win: { kind: "none" }, map: { strongholds: [{ q: 6, r: 0, botCount: 2 }] } } });
+    const bot = g.players[1];
+    g.applyTerritory([{ q: 6, r: 0, owner: 0, kind: 0 }]);
+    g.update(0);
+    expect(g.capturedStrongholds.has(0)).toBe(true);
+    // botCanRespawn (gián tiếp): kill bot rồi chạy quá RESPAWN_DELAY → vẫn dead.
+    g.kill(bot);
+    for (let i = 0; i < Math.ceil((CONFIG.BOT.RESPAWN_DELAY + 1) * 60); i++) g.update(1 / 60);
+    expect(bot.phase).toBe("dead");
+  });
+});
