@@ -1030,14 +1030,46 @@ class GameState {
             e.heading = Math.atan2(mdy, mdx);
         }
     }
+    /** Điểm `(x,y)` có nằm trong HỘP CHỮ NHẬT (AABB) của một ô obstacle nào không (doc 33). AABB
+     *  bao trọn ô lục thẳng đứng: nửa rộng = √3/2·size, nửa cao = size. Chỉ xét ô của điểm + 6 ô kề
+     *  (AABB không vươn xa hơn) → O(1). */
+    insideObstacleRect(x, y) {
+        const size = this.hexSize;
+        const halfW = (Math.sqrt(3) / 2) * size;
+        const halfH = size;
+        const base = (0, hex_1.pixelToAxial)(x, y, size);
+        for (const cand of [base, ...(0, hex_1.neighbors)(base)]) {
+            if (!this.obstacles.has((0, hex_1.keyOf)(cand)))
+                continue;
+            const c = (0, hex_1.axialToPixel)(cand, size);
+            if (Math.abs(x - c.x) <= halfW && Math.abs(y - c.y) <= halfH)
+                return true;
+        }
+        return false;
+    }
     /**
-     * TRƯỢT dọc viền chướng ngại: nếu điểm đích `(cx,cy)` rơi vào ô obstacle, bỏ thành phần vận
-     * tốc theo PHÁP TUYẾN mặt (≈ hướng `pos → tâm ô obstacle`, ô kề ⇒ đúng mặt hex) và giữ thành
-     * phần TIẾP TUYẾN → đầu trượt men theo obstacle như men theo tường sân. Lặp tối đa 2 lần cho
-     * góc lõm 2 ô; vẫn kẹt ⇒ `null` (đâm thẳng góc, đứng lại). Kết quả được clamp về trong sân.
-     * Trả `null` = không bước tick này; ngược lại điểm đã trượt.
+     * Va chạm chướng ngại — chọn theo `map.colliderShape` (doc 33):
+     * - `"rect"` (mặc định): AABB bao trọn ô lục. Giải theo TỪNG TRỤC (x rồi y) → TRƯỢT dọc cạnh
+     *   hộp đáng tin (đây là cách sửa "kẹt" của bản hex). Kẹt cả 2 trục (góc) ⇒ đứng.
+     * - `"hex"`: bỏ pháp tuyến mặt hex, giữ tiếp tuyến (bản cũ).
+     * Trả điểm đã giải (đã clamp về trong sân), hoặc `null` khi hoàn toàn không bước được.
      */
     slideAlongObstacles(px, py, cx, cy) {
+        if (this.config.map.colliderShape === "hex")
+            return this.slideHexObstacles(px, py, cx, cy);
+        // RECT/AABB — giải theo trục.
+        if (!this.insideObstacleRect(cx, cy)) {
+            const i = this.arena.clampInside(cx, cy);
+            return { x: i.x, y: i.y };
+        }
+        const dx = cx - px, dy = cy - py;
+        const nx = this.insideObstacleRect(px + dx, py) ? px : px + dx; // giữ bước x nếu không đụng
+        const ny = this.insideObstacleRect(nx, py + dy) ? py : py + dy; // rồi bước y từ x mới → trượt
+        const inside = this.arena.clampInside(nx, ny);
+        return { x: inside.x, y: inside.y };
+    }
+    /** Trượt dọc 6 CẠNH hex (colliderShape="hex") — bỏ pháp tuyến mặt, giữ tiếp tuyến. */
+    slideHexObstacles(px, py, cx, cy) {
         const size = this.hexSize;
         let x = cx, y = cy;
         for (let pass = 0; pass < 2; pass++) {
@@ -1047,7 +1079,7 @@ class GameState {
                 return { x: inside.x, y: inside.y };
             }
             const oc = (0, hex_1.axialToPixel)(hex, size);
-            let nx = px - oc.x, ny = py - oc.y; // pháp tuyến ra khỏi obstacle (từ tâm ô → vị trí hiện tại)
+            let nx = px - oc.x, ny = py - oc.y;
             const nlen = Math.hypot(nx, ny) || 1;
             nx /= nlen;
             ny /= nlen;
@@ -1056,11 +1088,10 @@ class GameState {
             if (vn < 0) {
                 vx -= vn * nx;
                 vy -= vn * ny;
-            } // bỏ phần đi VÀO obstacle → còn lại trượt dọc mặt
+            }
             x = px + vx;
             y = py + vy;
         }
-        // Sau 2 lần vẫn trong obstacle (kẹt góc) → đứng.
         return this.obstacles.has((0, hex_1.keyOf)((0, hex_1.pixelToAxial)(x, y, size))) ? null : (() => {
             const inside = this.arena.clampInside(x, y);
             return { x: inside.x, y: inside.y };

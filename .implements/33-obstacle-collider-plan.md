@@ -38,6 +38,16 @@
 - Bật `showColliders` ở cấp ⇒ in-game thấy đường collider obstacle + biên; tắt ⇒ không.
 - shared/client build + test xanh; cấp không bật cờ ⇒ bất biến.
 
+## 4b. Bổ sung — collider CHỮ NHẬT (AABB), sửa "vẫn kẹt"
+
+Bản hex slide vẫn kẹt (chuẩn hex kém tin cậy khi đâm cụm/mặt). Chuyển sang **AABB**:
+- `MatchMapConfig.colliderShape: "hex" | "rect"` (default **"rect"**). Cấu hình được ở trình vẽ.
+- **RECT:** mỗi ô obstacle = hộp chữ nhật (nửa rộng √3/2·size, nửa cao size) BAO TRỌN ô lục. Va chạm
+  giải **theo từng trục** (x rồi y) ⇒ trượt dọc cạnh hộp đáng tin, không kẹt (trừ góc). `insideObstacleRect`
+  chỉ xét ô + 6 ô kề (O(1)).
+- Viz `ObstacleCollider` vẽ **4 cạnh hộp/ô** khi rect (hoặc cạnh hex khi hex).
+- Test: đâm thẳng → dừng ĐÚNG cạnh trái hộp (không xuyên); đâm chéo → trượt.
+
 ## 5. Trạng thái thực thi (đã code)
 
 | Lát | Trạng thái | Ghi chú |

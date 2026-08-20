@@ -42,6 +42,9 @@ export interface MatchMapConfig {
     /** [doc 33] Hiện đường COLLIDER (viền obstacle + biên sân) trong game — dùng cho Campaign để
      *  thấy rõ mặt va chạm. Default false ⇒ bất biến. */
     showColliders?: boolean;
+    /** [doc 33] Hình collider của ô CHƯỚNG NGẠI: `"rect"` = hộp chữ nhật (AABB) bao trọn ô lục giác,
+     *  trượt theo TRỤC (đáng tin, không kẹt); `"hex"` = trượt theo 6 cạnh hex. Default `"rect"`. */
+    colliderShape?: "hex" | "rect";
 }
 export interface MatchBotConfig {
     count: number;

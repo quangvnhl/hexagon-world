@@ -42,13 +42,13 @@ interface FormState {
   id: string; sortOrder: number; name: string; botCount: number; maxLives: number; radius: number;
   kind: WinConditionKind; targetPct: number; durationSec: number; totemGoal: number;
   powerups: PowerupKind[]; unlockRequires: string; coin: number; xp: number; energy: number; published: boolean;
-  showColliders: boolean;
+  showColliders: boolean; colliderShape: "hex" | "rect";
 }
 
 const BLANK: FormState = {
   id: "", sortOrder: 1, name: "", botCount: 8, maxLives: 3, radius: NEW_LEVEL_RADIUS,
   kind: "territory_pct", targetPct: 0.3, durationSec: 60, totemGoal: 3,
-  powerups: [], unlockRequires: "", coin: 50, xp: 40, energy: 0, published: false, showColliders: false,
+  powerups: [], unlockRequires: "", coin: 50, xp: 40, energy: 0, published: false, showColliders: false, colliderShape: "rect",
 };
 
 function clampRadius(r: number): number {
@@ -74,6 +74,7 @@ function buildConfig(f: FormState, obstacles: Set<HexKey>, totems: Map<HexKey, T
   if (obstacles.size > 0) map.obstacles = [...obstacles];
   if (totems.size > 0) map.totems = totemsToList(totems);
   if (f.showColliders) map.showColliders = true;
+  if (f.colliderShape === "hex") map.colliderShape = "hex"; // "rect" là mặc định → không cần ghi
   if (Object.keys(map).length) config.map = map;
   return config;
 }
@@ -111,6 +112,7 @@ function rowToForm(r: AdminLevelRow): { form: FormState; obstacles: Set<HexKey>;
       powerups: (r.powerups ?? []) as PowerupKind[], unlockRequires: r.unlock_requires ?? "",
       coin: r.rewards?.coin ?? 0, xp: r.rewards?.xp ?? 0, energy: r.rewards?.energy ?? 0, published: r.published,
       showColliders: cfg.map?.showColliders ?? false,
+      colliderShape: cfg.map?.colliderShape ?? "rect",
     },
     obstacles: new Set(cfg.map?.obstacles ?? []),
     totems,
@@ -323,6 +325,11 @@ export default function LevelEditor() {
           <div><span style={{ fontSize: 10, opacity: 0.6 }}>energy</span><input type="number" value={form.energy} onChange={(e) => set("energy", Number(e.target.value))} style={inputStyle} /></div>
         </div>
 
+        <label style={labelStyle}>Hình collider chướng ngại</label>
+        <select value={form.colliderShape} onChange={(e) => set("colliderShape", e.target.value as "hex" | "rect")} style={inputStyle}>
+          <option value="rect">Chữ nhật (hộp bao ô) — trượt theo trục</option>
+          <option value="hex">Lục giác (6 cạnh)</option>
+        </select>
         <label style={{ ...labelStyle, display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
           <input type="checkbox" checked={form.showColliders} onChange={(e) => set("showColliders", e.target.checked)} /> Hiện đường collider (viền obstacle + biên) khi chơi
         </label>

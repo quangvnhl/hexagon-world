@@ -345,4 +345,17 @@ describe("GameState: chướng ngại TRƯỢT dọc viền (doc 33)", () => {
     expect(movedAfterContact).toBeGreaterThan(1); // vẫn di chuyển sau khi chạm ⇒ TRƯỢT, không kẹt
     expect(Math.abs(e.pos.y - startY)).toBeGreaterThan(1); // đã trượt ngang (đổi y đáng kể)
   });
+
+  it("collider RECT (mặc định): đâm thẳng dừng ở CẠNH TRÁI hộp, không xuyên", () => {
+    const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 }, map: { obstacles: [key(3, 0)] } } });
+    skipPrep(g);
+    const e = g.players[0];
+    e.phase = "playing";
+    e.targetHeading = 0; e.heading = 0; // thẳng +x vào obstacle (3,0)
+    for (let i = 0; i < 120; i++) g.update(1 / 60);
+    // Cạnh trái AABB của ô (3,0) = cx - √3/2·size.
+    const oc = axialToPixel({ q: 3, r: 0 }, CONFIG.HEX_SIZE);
+    const leftEdge = oc.x - (Math.sqrt(3) / 2) * CONFIG.HEX_SIZE;
+    expect(e.pos.x).toBeLessThanOrEqual(leftEdge + 1e-6); // dừng ĐÚNG ở cạnh hộp, không lọt qua
+  });
 });
