@@ -295,14 +295,24 @@ export declare class GameState {
     private insideObstacleRect;
     /**
      * Va chạm chướng ngại — chọn theo `map.colliderShape` (doc 33):
-     * - `"rect"` (mặc định): AABB bao trọn ô lục. Giải theo TỪNG TRỤC (x rồi y) → TRƯỢT dọc cạnh
-     *   hộp đáng tin (đây là cách sửa "kẹt" của bản hex). Kẹt cả 2 trục (góc) ⇒ đứng.
-     * - `"hex"`: bỏ pháp tuyến mặt hex, giữ tiếp tuyến (bản cũ).
+     * - `"hex"` (MẶC ĐỊNH): biên ĐA GIÁC theo mặt lục giác — góc lồi 120° (>90°) nên KHÔNG kẹt
+     *   như hộp chữ nhật. Trượt = bỏ thành phần pháp tuyến của mặt BIÊN gần nhất, lặp cho góc.
+     * - `"rect"`: AABB bao ô, giải theo từng trục (giữ như tuỳ chọn).
      * Trả điểm đã giải (đã clamp về trong sân), hoặc `null` khi hoàn toàn không bước được.
      */
     private slideAlongObstacles;
-    /** Trượt dọc 6 CẠNH hex (colliderShape="hex") — bỏ pháp tuyến mặt, giữ tiếp tuyến. */
-    private slideHexObstacles;
+    /** RECT/AABB — giải theo từng trục (x rồi y). */
+    private slideRectObstacles;
+    /**
+     * ĐA GIÁC hex (mặc định): trượt dọc mặt biên của ô obstacle. Bỏ thành phần vận tốc theo pháp
+     * tuyến mặt BIÊN gần điểm đích nhất (giữ tiếp tuyến ở tốc độ đầy đủ), lặp tối đa 3 lần cho góc
+     * lõm. Còn dính (residual/góc) → đẩy VUÔNG GÓC ra ngoài mặt gần nhất (giữ vị trí tiếp tuyến).
+     * Góc lồi của biên là 120° nên không tạo bẫy như góc vuông 90° của hộp chữ nhật.
+     */
+    private slidePolyObstacles;
+    /** Nếu `(x,y)` nằm TRONG một ô obstacle CÓ mặt biên: trả mặt biên (giáp ô mở) GẦN NHẤT + tâm
+     *  mặt `(mx,my)`. Không trong obstacle, hoặc ô nội bộ đặc (không mặt biên) → `null`. */
+    private nearestObstacleFace;
     /** API cho test: di chuyển người chơi tới (x,y) nếu ô đích hợp lệ (không phải chướng ngại). */
     moveTo(x: number, y: number): void;
     private stepEntity;

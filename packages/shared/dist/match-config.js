@@ -29,7 +29,7 @@ function resolveMatchConfig(input = {}) {
             obstacles: input.map?.obstacles,
             totems: input.map?.totems,
             showColliders: input.map?.showColliders ?? false,
-            colliderShape: input.map?.colliderShape ?? "rect",
+            colliderShape: input.map?.colliderShape ?? "hex",
         },
         bots: {
             count: input.bots?.count ?? config_1.CONFIG.BOT_COUNT,

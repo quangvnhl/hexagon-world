@@ -102,7 +102,8 @@ export function objectiveProgress(game: GameState): string {
   const w = game.config.win;
   switch (w.kind) {
     case "territory_pct": {
-      const target = (w.targetPct ?? w.kingPct) * 100;
+      // targetPct là PHÂN SỐ 0–1 (×100 ra %); kingPct đã là % 0–100.
+      const target = w.targetPct !== undefined ? w.targetPct * 100 : w.kingPct;
       return `Chiếm ${game.territoryPct().toFixed(1)}% / ${target.toFixed(0)}%`;
     }
     case "survive":

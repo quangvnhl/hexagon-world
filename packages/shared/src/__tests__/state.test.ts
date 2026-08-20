@@ -346,16 +346,34 @@ describe("GameState: chướng ngại TRƯỢT dọc viền (doc 33)", () => {
     expect(Math.abs(e.pos.y - startY)).toBeGreaterThan(1); // đã trượt ngang (đổi y đáng kể)
   });
 
-  it("collider RECT (mặc định): đâm thẳng dừng ở CẠNH TRÁI hộp, không xuyên", () => {
-    const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 }, map: { obstacles: [key(3, 0)] } } });
+  it("colliderShape='rect': đâm thẳng dừng ở CẠNH TRÁI hộp, không xuyên", () => {
+    const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 }, map: { obstacles: [key(3, 0)], colliderShape: "rect" } } });
     skipPrep(g);
     const e = g.players[0];
     e.phase = "playing";
-    e.targetHeading = 0; e.heading = 0; // thẳng +x vào obstacle (3,0)
+    e.targetHeading = 0; e.heading = 0;
     for (let i = 0; i < 120; i++) g.update(1 / 60);
-    // Cạnh trái AABB của ô (3,0) = cx - √3/2·size.
     const oc = axialToPixel({ q: 3, r: 0 }, CONFIG.HEX_SIZE);
     const leftEdge = oc.x - (Math.sqrt(3) / 2) * CONFIG.HEX_SIZE;
-    expect(e.pos.x).toBeLessThanOrEqual(leftEdge + 1e-6); // dừng ĐÚNG ở cạnh hộp, không lọt qua
+    expect(e.pos.x).toBeLessThanOrEqual(leftEdge + 1e-6);
+  });
+
+  it("biên đa giác (mặc định): trượt dọc TƯỜNG obstacle nhiều ô, đi xa theo cạnh, không xuyên", () => {
+    // Cột obstacle dọc bên phải; người chơi lao chéo lên-phải, trượt DỌC tường lên trên.
+    const wall = [key(3, -2), key(3, -1), key(3, 0), key(3, 1), key(3, 2)];
+    const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 }, map: { obstacles: wall } } });
+    skipPrep(g);
+    const e = g.players[0];
+    e.phase = "playing";
+    e.targetHeading = -0.6; e.heading = -0.6; // lên-phải, ép vào tường
+    const startY = e.pos.y;
+    let everInside = false;
+    for (let i = 0; i < 300; i++) {
+      g.update(1 / 60);
+      const h = pixelToAxial(e.pos.x, e.pos.y, CONFIG.HEX_SIZE);
+      if (wall.includes(key(h.q, h.r))) everInside = true;
+    }
+    expect(everInside).toBe(false);                      // không xuyên tường
+    expect(startY - e.pos.y).toBeGreaterThan(3);         // trượt LÊN xa dọc tường (y giảm nhiều)
   });
 });

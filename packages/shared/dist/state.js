@@ -8,6 +8,14 @@ const match_config_1 = require("./match-config");
 const floodfill_1 = require("./floodfill");
 const spatialhash_1 = require("./spatialhash");
 const totems_1 = require("./totems");
+/** 6 mặt của ô lục (pointy-top) cho va chạm obstacle đa giác (doc 33): pháp tuyến `n` (đơn vị,
+ *  hướng RA tới ô kề) + tiếp tuyến `t` (⟂ n, dọc cạnh). Cố định, không theo hexSize. */
+const HEX_FACES = hex_1.DIRECTIONS.map((d) => {
+    const p = (0, hex_1.axialToPixel)(d, 1);
+    const l = Math.hypot(p.x, p.y) || 1;
+    const nx = p.x / l, ny = p.y / l;
+    return { nx, ny, tx: -ny, ty: nx };
+});
 /** Một thực thể chơi (người hoặc bot): vị trí, đuôi, lãnh thổ, trạng thái. */
 class Entity {
     constructor(id, isBot, color) {
@@ -911,8 +919,11 @@ class GameState {
             case "none":
                 return; // Luyện tập: không phân định thắng thua.
             case "territory_pct": {
-                // Chủ thể đạt targetPct lãnh thổ ⇒ thắng (mặc định target = kingPct nếu bỏ trống).
-                const target = this.config.win.targetPct ?? this.config.win.kingPct;
+                // Chủ thể đạt targetPct lãnh thổ ⇒ thắng. `targetPct` là PHÂN SỐ 0–1 (trình vẽ/catalog);
+                // `pctOf` và `kingPct` tính theo % 0–100 → quy targetPct về % trước khi so.
+                const target = this.config.win.targetPct !== undefined
+                    ? this.config.win.targetPct * 100
+                    : this.config.win.kingPct;
                 const sid = this.winSubjectId();
                 if (sid >= 0 && this.pctOf(sid) >= target) {
                     this.won = true;
@@ -1049,53 +1060,94 @@ class GameState {
     }
     /**
      * Va chạm chướng ngại — chọn theo `map.colliderShape` (doc 33):
-     * - `"rect"` (mặc định): AABB bao trọn ô lục. Giải theo TỪNG TRỤC (x rồi y) → TRƯỢT dọc cạnh
-     *   hộp đáng tin (đây là cách sửa "kẹt" của bản hex). Kẹt cả 2 trục (góc) ⇒ đứng.
-     * - `"hex"`: bỏ pháp tuyến mặt hex, giữ tiếp tuyến (bản cũ).
+     * - `"hex"` (MẶC ĐỊNH): biên ĐA GIÁC theo mặt lục giác — góc lồi 120° (>90°) nên KHÔNG kẹt
+     *   như hộp chữ nhật. Trượt = bỏ thành phần pháp tuyến của mặt BIÊN gần nhất, lặp cho góc.
+     * - `"rect"`: AABB bao ô, giải theo từng trục (giữ như tuỳ chọn).
      * Trả điểm đã giải (đã clamp về trong sân), hoặc `null` khi hoàn toàn không bước được.
      */
     slideAlongObstacles(px, py, cx, cy) {
-        if (this.config.map.colliderShape === "hex")
-            return this.slideHexObstacles(px, py, cx, cy);
-        // RECT/AABB — giải theo trục.
+        if (this.config.map.colliderShape === "rect")
+            return this.slideRectObstacles(px, py, cx, cy);
+        return this.slidePolyObstacles(px, py, cx, cy);
+    }
+    /** RECT/AABB — giải theo từng trục (x rồi y). */
+    slideRectObstacles(px, py, cx, cy) {
         if (!this.insideObstacleRect(cx, cy)) {
             const i = this.arena.clampInside(cx, cy);
             return { x: i.x, y: i.y };
         }
         const dx = cx - px, dy = cy - py;
-        const nx = this.insideObstacleRect(px + dx, py) ? px : px + dx; // giữ bước x nếu không đụng
-        const ny = this.insideObstacleRect(nx, py + dy) ? py : py + dy; // rồi bước y từ x mới → trượt
+        const nx = this.insideObstacleRect(px + dx, py) ? px : px + dx;
+        const ny = this.insideObstacleRect(nx, py + dy) ? py : py + dy;
         const inside = this.arena.clampInside(nx, ny);
         return { x: inside.x, y: inside.y };
     }
-    /** Trượt dọc 6 CẠNH hex (colliderShape="hex") — bỏ pháp tuyến mặt, giữ tiếp tuyến. */
-    slideHexObstacles(px, py, cx, cy) {
+    /**
+     * ĐA GIÁC hex (mặc định): trượt dọc mặt biên của ô obstacle. Bỏ thành phần vận tốc theo pháp
+     * tuyến mặt BIÊN gần điểm đích nhất (giữ tiếp tuyến ở tốc độ đầy đủ), lặp tối đa 3 lần cho góc
+     * lõm. Còn dính (residual/góc) → đẩy VUÔNG GÓC ra ngoài mặt gần nhất (giữ vị trí tiếp tuyến).
+     * Góc lồi của biên là 120° nên không tạo bẫy như góc vuông 90° của hộp chữ nhật.
+     */
+    slidePolyObstacles(px, py, cx, cy) {
         const size = this.hexSize;
-        let x = cx, y = cy;
-        for (let pass = 0; pass < 2; pass++) {
-            const hex = (0, hex_1.pixelToAxial)(x, y, size);
-            if (!this.obstacles.has((0, hex_1.keyOf)(hex))) {
-                const inside = this.arena.clampInside(x, y);
-                return { x: inside.x, y: inside.y };
-            }
-            const oc = (0, hex_1.axialToPixel)(hex, size);
-            let nx = px - oc.x, ny = py - oc.y;
-            const nlen = Math.hypot(nx, ny) || 1;
-            nx /= nlen;
-            ny /= nlen;
-            let vx = x - px, vy = y - py;
-            const vn = vx * nx + vy * ny;
-            if (vn < 0) {
-                vx -= vn * nx;
-                vy -= vn * ny;
-            }
-            x = px + vx;
-            y = py + vy;
+        let vx = cx - px, vy = cy - py;
+        for (let iter = 0; iter < 3; iter++) {
+            const face = this.nearestObstacleFace(px + vx, py + vy);
+            if (!face)
+                break; // đích không còn trong obstacle (hoặc ô nội bộ)
+            const f = HEX_FACES[face.i];
+            const vn = vx * f.nx + vy * f.ny;
+            if (vn >= 0)
+                break; // đang đi RA khỏi mặt gần nhất → thôi
+            vx -= vn * f.nx;
+            vy -= vn * f.ny; // bỏ phần đi VÀO → trượt dọc mặt
         }
-        return this.obstacles.has((0, hex_1.keyOf)((0, hex_1.pixelToAxial)(x, y, size))) ? null : (() => {
-            const inside = this.arena.clampInside(x, y);
-            return { x: inside.x, y: inside.y };
-        })();
+        let x = px + vx, y = py + vy;
+        if (this.obstacles.has((0, hex_1.keyOf)((0, hex_1.pixelToAxial)(x, y, size)))) {
+            const face = this.nearestObstacleFace(x, y);
+            if (!face)
+                return null; // ô nội bộ đặc → chặn
+            const f = HEX_FACES[face.i];
+            const pen = (x - face.mx) * f.nx + (y - face.my) * f.ny; // <0 = đang trong sân obstacle
+            x += (1e-3 - pen) * f.nx;
+            y += (1e-3 - pen) * f.ny; // đẩy vuông góc ra ngoài mặt
+            if (this.obstacles.has((0, hex_1.keyOf)((0, hex_1.pixelToAxial)(x, y, size))))
+                return null;
+        }
+        const inside = this.arena.clampInside(x, y);
+        return { x: inside.x, y: inside.y };
+    }
+    /** Nếu `(x,y)` nằm TRONG một ô obstacle CÓ mặt biên: trả mặt biên (giáp ô mở) GẦN NHẤT + tâm
+     *  mặt `(mx,my)`. Không trong obstacle, hoặc ô nội bộ đặc (không mặt biên) → `null`. */
+    nearestObstacleFace(x, y) {
+        const size = this.hexSize;
+        const hex = (0, hex_1.pixelToAxial)(x, y, size);
+        if (!this.obstacles.has((0, hex_1.keyOf)(hex)))
+            return null;
+        const inr = (Math.sqrt(3) / 2) * size, half = size / 2;
+        const oc = (0, hex_1.axialToPixel)(hex, size);
+        let bi = -1, bd = Infinity, bmx = 0, bmy = 0;
+        for (let i = 0; i < 6; i++) {
+            const nb = { q: hex.q + hex_1.DIRECTIONS[i].q, r: hex.r + hex_1.DIRECTIONS[i].r };
+            if (this.obstacles.has((0, hex_1.keyOf)(nb)))
+                continue; // mặt nội bộ (giữa 2 obstacle)
+            const f = HEX_FACES[i];
+            const mx = oc.x + f.nx * inr, my = oc.y + f.ny * inr;
+            let t = (x - mx) * f.tx + (y - my) * f.ty;
+            if (t > half)
+                t = half;
+            else if (t < -half)
+                t = -half;
+            const qx = mx + f.tx * t, qy = my + f.ty * t;
+            const d2 = (x - qx) ** 2 + (y - qy) ** 2;
+            if (d2 < bd) {
+                bd = d2;
+                bi = i;
+                bmx = mx;
+                bmy = my;
+            }
+        }
+        return bi < 0 ? null : { i: bi, mx: bmx, my: bmy };
     }
     /** API cho test: di chuyển người chơi tới (x,y) nếu ô đích hợp lệ (không phải chướng ngại). */
     moveTo(x, y) {

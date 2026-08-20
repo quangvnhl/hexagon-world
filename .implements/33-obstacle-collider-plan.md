@@ -48,6 +48,16 @@ Bản hex slide vẫn kẹt (chuẩn hex kém tin cậy khi đâm cụm/mặt). 
 - Viz `ObstacleCollider` vẽ **4 cạnh hộp/ô** khi rect (hoặc cạnh hex khi hex).
 - Test: đâm thẳng → dừng ĐÚNG cạnh trái hộp (không xuyên); đâm chéo → trượt.
 
+## 4c. Sửa "vẫn kẹt góc vuông" — biên ĐA GIÁC hex (mặc định) + fix targetPct
+
+- **Collider mặc định → `"hex"`** (đa giác theo mặt lục, góc lồi **120° > 90°** nên không bẫy như
+  hộp chữ nhật 90°). `state.ts.slidePolyObstacles`: bỏ pháp tuyến mặt BIÊN gần đích nhất (giữ tiếp
+  tuyến, tốc độ đầy đủ), lặp ≤3 cho góc; còn dính thì đẩy vuông góc ra ngoài mặt gần nhất. Giữ
+  `"rect"` (AABB) làm tuỳ chọn. Test: trượt dọc TƯỜNG 5 ô (đi xa theo cạnh), không xuyên.
+- **Bug hệ số `targetPct`:** `targetPct` là PHÂN SỐ 0–1 (trình vẽ/catalog) nhưng win-check so trực
+  tiếp với `pctOf` (0–100) ⇒ 0.3 thắng ở 0.3%. Sửa: `targetPct*100` trước khi so (`kingPct` vẫn
+  0–100). `GameScene.objectiveProgress` chỉnh cho khớp. Cập nhật `win-condition.test` sang phân số.
+
 ## 5. Trạng thái thực thi (đã code)
 
 | Lát | Trạng thái | Ghi chú |

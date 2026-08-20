@@ -8,7 +8,8 @@ import { GameState } from "../state";
 describe("WinCondition: territory_pct", () => {
   it("ĐẠT: chủ thể nắm ≥ targetPct ⇒ won", () => {
     const g = new GameState({
-      config: { win: { kind: "territory_pct", targetPct: 10 }, bots: { count: 0 } },
+      // targetPct là PHÂN SỐ 0–1 → 0.10 = 10%.
+      config: { win: { kind: "territory_pct", targetPct: 0.10 }, bots: { count: 0 } },
     });
     const cells = [...g.playable];
     g.owned = new Set(cells.slice(0, Math.ceil(cells.length * 0.12))); // ~12% ≥ 10%
@@ -19,7 +20,7 @@ describe("WinCondition: territory_pct", () => {
 
   it("CHƯA ĐẠT: dưới targetPct ⇒ không won", () => {
     const g = new GameState({
-      config: { win: { kind: "territory_pct", targetPct: 50 }, bots: { count: 0 } },
+      config: { win: { kind: "territory_pct", targetPct: 0.50 }, bots: { count: 0 } }, // 50%
     });
     const cells = [...g.playable];
     g.owned = new Set(cells.slice(0, Math.floor(cells.length * 0.10))); // ~10% < 50%
