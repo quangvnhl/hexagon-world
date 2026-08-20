@@ -13,6 +13,7 @@ import {
   pixelToAxial,
   cubeDistance,
   hexLinedraw,
+  neighbors,
   key as hexKey,
   parseKey,
   CONFIG,
@@ -21,7 +22,7 @@ import {
   type TotemKind,
 } from "@hexagon/shared";
 
-export type EditorTool = "obstacle" | "totem";
+export type EditorTool = "obstacle" | "totem" | "boundary";
 
 /** Màu + nhãn marker cho từng loại totem (đồng bộ ý nghĩa với game). */
 export const TOTEM_STYLE: Record<TotemKind, { color: string; label: string }> = {
@@ -49,6 +50,8 @@ interface HexCanvasProps {
   onPaint?: (cells: HexKey[], erase: boolean) => void;
   /** Đặt/gỡ totem tại 1 ô (editor tự quyết định thêm loại đang chọn hay gỡ). */
   onPlaceTotem?: (cell: HexKey) => void;
+  /** Đóng đa giác BIÊN (snap đỉnh hex) → tô các ô bên trong thành obstacle. */
+  onFillPolygon?: (cells: HexKey[]) => void;
   /** Bán kính cọ theo cube-distance (0 = 1 ô, 1 = 7 ô, …). M2. */
   brush?: number;
   readOnly?: boolean;
@@ -62,7 +65,32 @@ const CORNERS = Array.from({ length: 6 }, (_, i) => {
   return { dx: HEX * Math.cos(a), dy: HEX * Math.sin(a) };
 });
 
-export function HexCanvas({ radius, obstacles, totems, tool = "obstacle", onPaint, onPlaceTotem, brush = 0, readOnly, onReady }: HexCanvasProps) {
+/** SNAP: đỉnh hex GẦN NHẤT với điểm world (xét ô của điểm + 6 ô kề để phủ mọi đỉnh biên). */
+function snapHexVertex(wx: number, wy: number): { x: number; y: number } {
+  const base = pixelToAxial(wx, wy, HEX);
+  let bx = 0, by = 0, bd = Infinity;
+  for (const cand of [base, ...neighbors(base)]) {
+    const c = axialToPixel(cand, HEX);
+    for (const k of CORNERS) {
+      const vx = c.x + k.dx, vy = c.y + k.dy;
+      const d = (vx - wx) ** 2 + (vy - wy) ** 2;
+      if (d < bd) { bd = d; bx = vx; by = vy; }
+    }
+  }
+  return { x: bx, y: by };
+}
+
+/** Điểm (x,y) có nằm trong đa giác `pts` (ray casting). */
+function pointInPoly(x: number, y: number, pts: { x: number; y: number }[]): boolean {
+  let inside = false;
+  for (let i = 0, j = pts.length - 1; i < pts.length; j = i++) {
+    const xi = pts[i].x, yi = pts[i].y, xj = pts[j].x, yj = pts[j].y;
+    if ((yi > y) !== (yj > y) && x < ((xj - xi) * (y - yi)) / (yj - yi) + xi) inside = !inside;
+  }
+  return inside;
+}
+
+export function HexCanvas({ radius, obstacles, totems, tool = "obstacle", onPaint, onPlaceTotem, onFillPolygon, brush = 0, readOnly, onReady }: HexCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -87,6 +115,9 @@ export function HexCanvas({ radius, obstacles, totems, tool = "obstacle", onPain
   totemsRef.current = totems;
   const hover = useRef<Axial | null>(null);
   const rafRef = useRef(0);
+  // Công cụ BIÊN: đa giác đang vẽ (điểm world đã snap vào đỉnh hex) + đỉnh snap dưới con trỏ.
+  const polyRef = useRef<{ x: number; y: number }[]>([]);
+  const snapRef = useRef<{ x: number; y: number } | null>(null);
 
   const draw = useCallback(() => {
     rafRef.current = 0;
@@ -103,10 +134,11 @@ export function HexCanvas({ radius, obstacles, totems, tool = "obstacle", onPain
     ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
     ctx.clearRect(0, 0, w, h);
     const { scale, ox, oy } = view.current;
-    // Cửa sổ world nhìn thấy (cull) — nới 1 ô để không hụt biên.
+    // Cửa sổ world nhìn thấy (cull) — nới 1 ô để không hụt biên. LƯU Ý: màn hình LẬT trục Y so
+    // với world (sy = -wy·scale + oy) để KHỚP hướng game 3D (world +Y hiện LÊN TRÊN, không xuống).
     const pad = HEX + 1;
     const wx0 = (-ox) / scale - pad, wx1 = (w - ox) / scale + pad;
-    const wy0 = (-oy) / scale - pad, wy1 = (h - oy) / scale + pad;
+    const wy0 = (oy - h) / scale - pad, wy1 = oy / scale + pad;
 
     const base = new Path2D();
     const obs = new Path2D();
@@ -114,7 +146,7 @@ export function HexCanvas({ radius, obstacles, totems, tool = "obstacle", onPain
     for (const c of cells.centers) {
       if (c.cx < wx0 || c.cx > wx1 || c.cy < wy0 || c.cy > wy1) continue;
       const path = obstacleSet.has(c.k) ? obs : base;
-      const sx = c.cx * scale + ox, sy = c.cy * scale + oy;
+      const sx = c.cx * scale + ox, sy = -c.cy * scale + oy;
       path.moveTo(sx + CORNERS[0].dx * scale, sy + CORNERS[0].dy * scale);
       for (let i = 1; i < 6; i++) path.lineTo(sx + CORNERS[i].dx * scale, sy + CORNERS[i].dy * scale);
       path.closePath();
@@ -143,7 +175,7 @@ export function HexCanvas({ radius, obstacles, totems, tool = "obstacle", onPain
       for (const [k, kind] of totemMap) {
         const { q, r } = parseKey(k);
         const p = axialToPixel({ q, r }, HEX);
-        const sx = p.x * scale + ox, sy = p.y * scale + oy;
+        const sx = p.x * scale + ox, sy = -p.y * scale + oy;
         if (sx < -rad || sx > w + rad || sy < -rad || sy > h + rad) continue;
         const st = TOTEM_STYLE[kind];
         ctx.beginPath();
@@ -161,13 +193,38 @@ export function HexCanvas({ radius, obstacles, totems, tool = "obstacle", onPain
     const hv = hover.current;
     if (hv && cells.valid.has(hexKey(hv.q, hv.r))) {
       const p = axialToPixel(hv, HEX);
-      const sx = p.x * scale + ox, sy = p.y * scale + oy;
+      const sx = p.x * scale + ox, sy = -p.y * scale + oy;
       ctx.beginPath();
       ctx.moveTo(sx + CORNERS[0].dx * scale, sy + CORNERS[0].dy * scale);
       for (let i = 1; i < 6; i++) ctx.lineTo(sx + CORNERS[i].dx * scale, sy + CORNERS[i].dy * scale);
       ctx.closePath();
       ctx.fillStyle = "rgba(255,255,255,0.25)";
       ctx.fill();
+    }
+
+    // Công cụ BIÊN: đa giác đang vẽ (snap đỉnh hex) + đỉnh snap dưới con trỏ.
+    const poly = polyRef.current;
+    const w2s = (p: { x: number; y: number }): [number, number] => [p.x * scale + ox, -p.y * scale + oy];
+    if (poly.length > 0) {
+      ctx.beginPath();
+      const [x0, y0] = w2s(poly[0]);
+      ctx.moveTo(x0, y0);
+      for (let i = 1; i < poly.length; i++) { const [x, y] = w2s(poly[i]); ctx.lineTo(x, y); }
+      if (snapRef.current) { const [sx, sy] = w2s(snapRef.current); ctx.lineTo(sx, sy); } // đoạn tới con trỏ
+      ctx.strokeStyle = "#48d987";
+      ctx.lineWidth = 2;
+      ctx.stroke();
+      // Đỉnh đã đặt.
+      for (const p of poly) { const [x, y] = w2s(p); ctx.beginPath(); ctx.arc(x, y, 4, 0, Math.PI * 2); ctx.fillStyle = "#48d987"; ctx.fill(); }
+    }
+    if (snapRef.current) {
+      const [sx, sy] = w2s(snapRef.current);
+      const near0 = poly.length >= 3 && Math.hypot(snapRef.current.x - poly[0].x, snapRef.current.y - poly[0].y) < 1e-6;
+      ctx.beginPath();
+      ctx.arc(sx, sy, near0 ? 8 : 5, 0, Math.PI * 2);
+      ctx.strokeStyle = near0 ? "#ffd23f" : "#8ee7a8"; // vàng = sẽ ĐÓNG biên
+      ctx.lineWidth = 2;
+      ctx.stroke();
     }
   }, [cells]);
 
@@ -208,8 +265,26 @@ export function HexCanvas({ radius, obstacles, totems, tool = "obstacle", onPain
   // --- Tương tác ---------------------------------------------------------------------------
   const screenToAxial = useCallback((sx: number, sy: number): Axial => {
     const { scale, ox, oy } = view.current;
-    return pixelToAxial((sx - ox) / scale, (sy - oy) / scale, HEX);
+    // Y màn hình LẬT so với world (khớp game 3D) → world y = (oy - sy)/scale.
+    return pixelToAxial((sx - ox) / scale, (oy - sy) / scale, HEX);
   }, []);
+
+  const screenToWorld = useCallback((sx: number, sy: number): { x: number; y: number } => {
+    const { scale, ox, oy } = view.current;
+    return { x: (sx - ox) / scale, y: (oy - sy) / scale };
+  }, []);
+
+  /** Đóng đa giác biên: tô mọi ô hợp lệ có TÂM nằm trong đa giác thành obstacle, rồi reset. */
+  const closePolygon = useCallback(() => {
+    const poly = polyRef.current;
+    if (poly.length >= 3 && onFillPolygon) {
+      const inside: HexKey[] = [];
+      for (const c of cells.centers) if (pointInPoly(c.cx, c.cy, poly)) inside.push(c.k);
+      if (inside.length) onFillPolygon(inside);
+    }
+    polyRef.current = [];
+    scheduleDraw();
+  }, [cells, onFillPolygon, scheduleDraw]);
 
   const zoomAt = useCallback((factor: number, mx?: number, my?: number) => {
     const canvas = canvasRef.current;
@@ -229,12 +304,21 @@ export function HexCanvas({ radius, obstacles, totems, tool = "obstacle", onPain
   const spaceHeld = useRef(false);
 
   useEffect(() => {
-    const onKeyDown = (e: KeyboardEvent) => { if (e.code === "Space") spaceHeld.current = true; };
+    const onKeyDown = (e: KeyboardEvent) => {
+      if (e.code === "Space") spaceHeld.current = true;
+      // Công cụ BIÊN: Esc huỷ, Backspace xoá đỉnh cuối, Enter đóng biên.
+      if (e.key === "Escape") { polyRef.current = []; scheduleDraw(); }
+      else if (e.key === "Backspace" && polyRef.current.length) { polyRef.current.pop(); scheduleDraw(); }
+      else if (e.key === "Enter") closePolygon();
+    };
     const onKeyUp = (e: KeyboardEvent) => { if (e.code === "Space") spaceHeld.current = false; };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
     return () => { window.removeEventListener("keydown", onKeyDown); window.removeEventListener("keyup", onKeyUp); };
-  }, []);
+  }, [closePolygon, scheduleDraw]);
+
+  // Đổi công cụ khác BIÊN ⇒ huỷ đa giác đang vẽ.
+  useEffect(() => { if (tool !== "boundary") { polyRef.current = []; snapRef.current = null; scheduleDraw(); } }, [tool, scheduleDraw]);
 
   /** Các ô trong cọ quanh tâm (q,r), lọc theo sân hợp lệ. */
   const brushCells = useCallback((center: Axial): HexKey[] => {
@@ -263,7 +347,14 @@ export function HexCanvas({ radius, obstacles, totems, tool = "obstacle", onPain
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left, my = e.clientY - rect.top;
     const actionButton = e.button === 0 && !readOnly && !spaceHeld.current;
-    if (actionButton && tool === "totem" && onPlaceTotem) {
+    if (actionButton && tool === "boundary") {
+      // BIÊN: thêm đỉnh (đã snap đỉnh hex). Bấm lại vào đỉnh đầu (≥3 điểm) ⇒ ĐÓNG + tô ô trong.
+      const v = snapHexVertex(screenToWorld(mx, my).x, screenToWorld(mx, my).y);
+      const poly = polyRef.current;
+      if (poly.length >= 3 && Math.hypot(v.x - poly[0].x, v.y - poly[0].y) < 1e-6) closePolygon();
+      else { poly.push(v); scheduleDraw(); }
+      drag.current = null;
+    } else if (actionButton && tool === "totem" && onPlaceTotem) {
       // Đặt/gỡ totem: 1 ô/lần (không kéo-tô). Editor quyết định thêm loại hay gỡ.
       const a = screenToAxial(mx, my);
       if (cells.valid.has(hexKey(a.q, a.r))) onPlaceTotem(hexKey(a.q, a.r));
@@ -276,7 +367,7 @@ export function HexCanvas({ radius, obstacles, totems, tool = "obstacle", onPain
     } else {
       drag.current = { mode: "pan", erase: false, last: null, px: mx, py: my };
     }
-  }, [tool, onPaint, onPlaceTotem, readOnly, screenToAxial, paintAt, cells]);
+  }, [tool, onPaint, onPlaceTotem, readOnly, screenToAxial, screenToWorld, closePolygon, paintAt, cells]);
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
     const canvas = canvasRef.current;
@@ -284,6 +375,8 @@ export function HexCanvas({ radius, obstacles, totems, tool = "obstacle", onPain
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left, my = e.clientY - rect.top;
     hover.current = screenToAxial(mx, my);
+    if (tool === "boundary" && !readOnly) { const w = screenToWorld(mx, my); snapRef.current = snapHexVertex(w.x, w.y); }
+    else snapRef.current = null;
     const d = drag.current;
     if (!d) { scheduleDraw(); return; }
     if (d.mode === "pan") {
@@ -301,7 +394,7 @@ export function HexCanvas({ radius, obstacles, totems, tool = "obstacle", onPain
       }
       d.last = a;
     }
-  }, [screenToAxial, scheduleDraw, paintAt]);
+  }, [tool, readOnly, screenToAxial, screenToWorld, scheduleDraw, paintAt]);
 
   const endDrag = useCallback((e: React.PointerEvent) => {
     const canvas = canvasRef.current;

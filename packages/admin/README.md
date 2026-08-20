@@ -24,8 +24,12 @@ hiện ở `/campaign` trong game client.
 ### Thao tác bản đồ (Canvas toàn sân — doc 31)
 - **Vẽ toàn sân thật:** bản đồ hiển thị đúng toàn bộ sân lục giác theo *bán kính sân* của cấp
   (mặc định 130 ≈ 16.6k ô), không còn giới hạn quanh tâm.
-- **Tô obstacle:** giữ chuột trái **kéo-tô**; **Alt+trái** hoặc **chuột phải kéo** để xóa. Chọn
+- **Hướng bản đồ:** canvas LẬT trục Y để **khớp game 3D** (world +Y hiện LÊN TRÊN) — vẽ sao thấy vậy.
+- **Tô obstacle (🧱):** giữ chuột trái **kéo-tô**; **Alt+trái** hoặc **chuột phải kéo** để xóa. Chọn
   **cỡ cọ** (1–4) ở thanh dưới để tô nhanh nhiều ô. Chỉ tô được ô nằm trong sân.
+- **Vẽ biên (✏️):** bấm đặt các **đỉnh** (tự **snap vào đỉnh lục giác** gần nhất) tạo đa giác; bấm
+  lại vào **đỉnh đầu** (đốm vàng) hoặc **Enter** để **đóng + tô** mọi ô bên trong thành obstacle.
+  **Backspace** xoá đỉnh cuối, **Esc** huỷ. Dựng khối obstacle lớn nhanh, biên gọn.
 - **Di chuyển (pan):** giữ **Space + kéo**, hoặc **chuột giữa/phải kéo**. **Cuộn** để zoom quanh
   con trỏ. Nút **Fit** canh vừa toàn sân.
 - **Bán kính sân:** ô *Bán kính sân* trong form (≤150) → thu nhỏ sân (vd 20) để dựng cấp maze gọn,

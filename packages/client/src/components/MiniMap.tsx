@@ -180,6 +180,16 @@ export const MiniMap = memo(function MiniMap({
       ctx.fillStyle = "rgba(12,16,24,0.82)";
       ctx.fillRect(0, 0, canvas.width, canvas.height);
       ctx.drawImage(terr, 0, 0);
+      // Chướng ngại (tường nội bộ) — ô đỏ mờ để phân biệt với lãnh thổ + nền.
+      if (game.obstacles.size > 0) {
+        ctx.fillStyle = "rgba(255,106,90,0.55)";
+        for (const k of game.obstacles) {
+          const cell = parseKey(k);
+          const p = axialToPixel(cell, CONFIG.HEX_SIZE);
+          const [px, py] = toPx(p.x, p.y);
+          ctx.fillRect(px - cellW / 2, py - cellH / 2, cellW, cellH);
+        }
+      }
       ctx.restore();
 
       // Viền lục giác mảnh (đường bao sân, không phải khung hộp).

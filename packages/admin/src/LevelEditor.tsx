@@ -240,7 +240,8 @@ export default function LevelEditor() {
   return (
     <div style={{ position: "fixed", inset: 0, overflow: "hidden", background: "#0a0e16" }}>
       <HexCanvas radius={form.radius} obstacles={obstacles} totems={totems} tool={tool}
-        onPaint={handlePaint} onPlaceTotem={handlePlaceTotem} brush={brush} onReady={(a) => (canvasApi.current = a)} />
+        onPaint={handlePaint} onPlaceTotem={handlePlaceTotem} onFillPolygon={(c) => handlePaint(c, false)}
+        brush={brush} onReady={(a) => (canvasApi.current = a)} />
 
       {/* Panel trên-trái: Admin Key + danh sách cấp (thu gọn được) */}
       <div style={{ ...panelStyle, top: 12, left: 12, width: keyPanelOpen ? 300 : "auto", maxHeight: "calc(100vh - 24px)", overflow: "auto", padding: keyPanelOpen ? 14 : 8 }}>
@@ -348,6 +349,7 @@ export default function LevelEditor() {
       <div style={{ ...panelStyle, bottom: 12, left: "50%", transform: "translateX(-50%)", padding: "8px 12px", display: "flex", alignItems: "center", gap: 10, flexWrap: "wrap", maxWidth: "calc(100vw - 380px)" }}>
         <div style={{ display: "flex", gap: 4 }}>
           <button onClick={() => setTool("obstacle")} style={{ ...btn(tool === "obstacle" ? "rgba(255,106,90,0.35)" : "rgba(255,255,255,0.08)"), color: tool === "obstacle" ? "#ffd0c9" : "#cdd7ea" }}>🧱 Chướng ngại</button>
+          <button onClick={() => setTool("boundary")} style={{ ...btn(tool === "boundary" ? "rgba(72,217,135,0.3)" : "rgba(255,255,255,0.08)"), color: tool === "boundary" ? "#b6f0cd" : "#cdd7ea" }}>✏️ Biên</button>
           <button onClick={() => setTool("totem")} style={{ ...btn(tool === "totem" ? "rgba(49,176,255,0.3)" : "rgba(255,255,255,0.08)"), color: tool === "totem" ? "#bdecff" : "#cdd7ea" }}>🔮 Totem</button>
         </div>
         <div style={{ display: "flex", gap: 4 }}>
@@ -355,14 +357,15 @@ export default function LevelEditor() {
           <button onClick={() => canvasApi.current?.zoomBy(1.25)} style={{ ...btn("rgba(255,255,255,0.12)"), color: "#cdd7ea" }}>+</button>
           <button onClick={() => canvasApi.current?.fit()} style={{ ...btn("rgba(255,255,255,0.12)"), color: "#cdd7ea" }}>Fit</button>
         </div>
-        {tool === "obstacle" ? (
+        {tool === "obstacle" && (
           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
             <span style={{ fontSize: 10, opacity: 0.6 }}>CỌ</span>
             {BRUSHES.map((b) => (
               <button key={b} onClick={() => setBrush(b)} style={{ ...btn(b === brush ? "rgba(49,176,255,0.3)" : "rgba(255,255,255,0.08)"), color: b === brush ? "#bdecff" : "#cdd7ea", padding: "6px 10px" }}>{b + 1}</button>
             ))}
           </div>
-        ) : (
+        )}
+        {tool === "totem" && (
           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
             <span style={{ fontSize: 10, opacity: 0.6 }}>LOẠI</span>
             {TOTEM_KINDS.map((k) => (
@@ -371,9 +374,9 @@ export default function LevelEditor() {
           </div>
         )}
         <span style={{ fontSize: 11, opacity: 0.7 }}>
-          {tool === "obstacle"
-            ? `${obstacles.size} chướng ngại · kéo tô · Alt/phải xóa · Space/giữa pan`
-            : `${totems.size} totem · bấm đặt/gỡ · Space/giữa pan`}
+          {tool === "obstacle" && `${obstacles.size} chướng ngại · kéo tô · Alt/phải xóa · Space/giữa pan`}
+          {tool === "totem" && `${totems.size} totem · bấm đặt/gỡ · Space/giữa pan`}
+          {tool === "boundary" && `Bấm đặt đỉnh (snap hex) · bấm đỉnh đầu/Enter để đóng+tô · Backspace xoá đỉnh · Esc huỷ`}
         </span>
       </div>
     </div>
