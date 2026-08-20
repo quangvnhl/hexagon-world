@@ -408,3 +408,15 @@ describe("GameState: bot đồng minh + cứ điểm (doc 34 B)", () => {
     expect(bot.phase).toBe("dead");
   });
 });
+
+describe("GameState: tường BIÊN admin vẽ (doc 34 D)", () => {
+  it("đâm thẳng vào biên dọc x=3 → KHÔNG băng qua", () => {
+    const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 }, map: { boundaries: [{ id: "w", points: [[3, -5], [3, 5]] }] } } });
+    skipPrep(g);
+    const e = g.players[0];
+    e.phase = "playing"; e.targetHeading = 0; e.heading = 0;
+    let crossed = false;
+    for (let i = 0; i < 300; i++) { g.update(1 / 60); if (e.pos.x >= 3) crossed = true; }
+    expect(crossed).toBe(false); // dừng trước tường, không xuyên qua
+  });
+});

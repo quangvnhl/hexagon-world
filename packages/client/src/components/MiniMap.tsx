@@ -198,6 +198,21 @@ export const MiniMap = memo(function MiniMap({
         ctx.fillStyle = game.capturedStrongholds.has(i) ? "rgba(120,220,150,0.95)" : "rgba(255,180,40,0.95)";
         ctx.fillRect(px - cellW, py - cellH, cellW * 2, cellH * 2);
       }
+      // Tường BIÊN admin vẽ (doc 34 D) — đường xanh lá.
+      const boundaries = game.config.map.boundaries ?? [];
+      if (boundaries.length > 0) {
+        ctx.strokeStyle = "rgba(72,217,135,0.95)";
+        ctx.lineWidth = Math.max(1, 1.4 * dpr);
+        for (const b of boundaries) {
+          if (b.points.length < 2) continue;
+          ctx.beginPath();
+          for (let i = 0; i < b.points.length; i++) {
+            const [bx, by] = toPx(b.points[i][0], b.points[i][1]);
+            if (i === 0) ctx.moveTo(bx, by); else ctx.lineTo(bx, by);
+          }
+          ctx.stroke();
+        }
+      }
       ctx.restore();
 
       // Viền lục giác mảnh (đường bao sân, không phải khung hộp).

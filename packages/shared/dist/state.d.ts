@@ -123,6 +123,8 @@ export declare class GameState {
     }>;
     readonly capturedStrongholds: Set<number>;
     private readonly strongholdCell;
+    /** [doc 34 D] Đoạn tường BIÊN admin vẽ (world) — va chạm collide-and-slide, không chặn flood-fill. */
+    private readonly boundarySegs;
     /** Tăng khi thực thể đổi (vị trí/đuôi) — cho renderer cube/line. */
     revision: number;
     /** Tăng khi lưới cần tô lại (owned hoặc trail hex đổi). */
@@ -334,6 +336,9 @@ export declare class GameState {
      * Góc lồi của biên là 120° nên không tạo bẫy như góc vuông 90° của hộp chữ nhật.
      */
     private slidePolyObstacles;
+    /** [doc 34 D] TRƯỢT dọc tường BIÊN admin vẽ: nếu bước `pos→c` cắt một đoạn biên, bỏ thành phần
+     *  vận tốc đi XUYÊN đoạn (giữ tiếp tuyến) → trượt dọc tường, không băng qua. Lặp cho nhiều đoạn. */
+    private slideAlongBoundaries;
     /** Nếu `(x,y)` nằm TRONG một ô obstacle CÓ mặt biên: trả mặt biên (giáp ô mở) GẦN NHẤT + tâm
      *  mặt `(mx,my)`. Không trong obstacle, hoặc ô nội bộ đặc (không mặt biên) → `null`. */
     private nearestObstacleFace;

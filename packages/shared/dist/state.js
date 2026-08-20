@@ -16,6 +16,15 @@ const HEX_FACES = hex_1.DIRECTIONS.map((d) => {
     const nx = p.x / l, ny = p.y / l;
     return { nx, ny, tx: -ny, ty: nx };
 });
+/** Hai đoạn (p1→p2) và (p3→p4) có CẮT nhau không (doc 34 D — va chạm biên). */
+function segmentsCross(p1x, p1y, p2x, p2y, p3x, p3y, p4x, p4y) {
+    const d = (p2x - p1x) * (p4y - p3y) - (p2y - p1y) * (p4x - p3x);
+    if (Math.abs(d) < 1e-12)
+        return false; // song song
+    const t = ((p3x - p1x) * (p4y - p3y) - (p3y - p1y) * (p4x - p3x)) / d;
+    const u = ((p3x - p1x) * (p2y - p1y) - (p3y - p1y) * (p2x - p1x)) / d;
+    return t >= 0 && t <= 1 && u >= 0 && u <= 1;
+}
 /** Một thực thể chơi (người hoặc bot): vị trí, đuôi, lãnh thổ, trạng thái. */
 class Entity {
     constructor(id, isBot, color) {
@@ -88,6 +97,8 @@ class GameState {
         this.strongholds = [];
         this.capturedStrongholds = new Set();
         this.strongholdCell = new Map();
+        /** [doc 34 D] Đoạn tường BIÊN admin vẽ (world) — va chạm collide-and-slide, không chặn flood-fill. */
+        this.boundarySegs = [];
         /** Tăng khi thực thể đổi (vị trí/đuôi) — cho renderer cube/line. */
         this.revision = 0;
         /** Tăng khi lưới cần tô lại (owned hoặc trail hex đổi). */
@@ -135,6 +146,12 @@ class GameState {
                 botStronghold.push(idx);
         }
         const botCount = this.strongholds.length > 0 ? botStronghold.length : this.config.bots.count;
+        // Tường BIÊN (doc 34 D): tách polyline thành các ĐOẠN cho va chạm.
+        for (const b of this.config.map.boundaries ?? []) {
+            for (let i = 0; i + 1 < b.points.length; i++) {
+                this.boundarySegs.push({ ax: b.points[i][0], ay: b.points[i][1], bx: b.points[i + 1][0], by: b.points[i + 1][1] });
+            }
+        }
         // playable = ô có TÂM trong tường va chạm (wallLimit), TRỪ ô chướng ngại. Ô chướng ngại
         // (config.map.obstacles) chỉ tính nếu thực sự là ô hợp lệ trong sân.
         this.obstacles = new Set();
@@ -1087,6 +1104,9 @@ class GameState {
                 return;
             c = slid;
         }
+        // Tường BIÊN admin vẽ (doc 34 D) — trượt dọc, không băng qua.
+        if (this.boundarySegs.length > 0)
+            c = this.slideAlongBoundaries(e.pos.x, e.pos.y, c.x, c.y);
         const mdx = c.x - e.pos.x;
         const mdy = c.y - e.pos.y;
         const moved = Math.hypot(mdx, mdy);
@@ -1174,6 +1194,37 @@ class GameState {
         }
         const inside = this.arena.clampInside(x, y);
         return { x: inside.x, y: inside.y };
+    }
+    /** [doc 34 D] TRƯỢT dọc tường BIÊN admin vẽ: nếu bước `pos→c` cắt một đoạn biên, bỏ thành phần
+     *  vận tốc đi XUYÊN đoạn (giữ tiếp tuyến) → trượt dọc tường, không băng qua. Lặp cho nhiều đoạn. */
+    slideAlongBoundaries(px, py, cx, cy) {
+        if (this.boundarySegs.length === 0)
+            return { x: cx, y: cy };
+        let vx = cx - px, vy = cy - py;
+        for (let iter = 0; iter < 3; iter++) {
+            let hit = false;
+            for (const s of this.boundarySegs) {
+                if (!segmentsCross(px, py, px + vx, py + vy, s.ax, s.ay, s.bx, s.by))
+                    continue;
+                let nx = -(s.by - s.ay), ny = s.bx - s.ax; // pháp tuyến đoạn
+                const nl = Math.hypot(nx, ny) || 1;
+                nx /= nl;
+                ny /= nl;
+                if ((px - s.ax) * nx + (py - s.ay) * ny < 0) {
+                    nx = -nx;
+                    ny = -ny;
+                } // hướng RA phía pos
+                const vn = vx * nx + vy * ny;
+                if (vn < 0) {
+                    vx -= vn * nx;
+                    vy -= vn * ny;
+                    hit = true;
+                } // bỏ phần đi XUYÊN tường
+            }
+            if (!hit)
+                break;
+        }
+        return { x: px + vx, y: py + vy };
     }
     /** Nếu `(x,y)` nằm TRONG một ô obstacle CÓ mặt biên: trả mặt biên (giáp ô mở) GẦN NHẤT + tâm
      *  mặt `(mx,my)`. Không trong obstacle, hoặc ô nội bộ đặc (không mặt biên) → `null`. */

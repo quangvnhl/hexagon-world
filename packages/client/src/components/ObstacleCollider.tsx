@@ -60,6 +60,28 @@ export const ObstacleCollider = memo(function ObstacleCollider({ game }: { game:
     return segs;
   }, [obstacles, size, shape, color, Z]);
 
-  if (obstacles.size === 0) return null;
-  return <primitive object={line} />;
+  // Tường BIÊN admin vẽ (doc 34 D) — polyline world, màu xanh lá để phân biệt với biên obstacle.
+  const boundaryLine = useMemo(() => {
+    const boundaries = game.config.map.boundaries ?? [];
+    if (boundaries.length === 0) return null;
+    const pts: number[] = [];
+    for (const b of boundaries) {
+      for (let i = 0; i + 1 < b.points.length; i++) {
+        pts.push(b.points[i][0], b.points[i][1], Z + 0.05, b.points[i + 1][0], b.points[i + 1][1], Z + 0.05);
+      }
+    }
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute("position", new THREE.Float32BufferAttribute(pts, 3));
+    const segs = new THREE.LineSegments(geo, new THREE.LineBasicMaterial({ color: new THREE.Color("#48d987"), toneMapped: false }));
+    segs.frustumCulled = false;
+    return segs;
+  }, [game.config.map.boundaries, Z]);
+
+  if (obstacles.size === 0 && !boundaryLine) return null;
+  return (
+    <>
+      {obstacles.size > 0 && <primitive object={line} />}
+      {boundaryLine && <primitive object={boundaryLine} />}
+    </>
+  );
 });

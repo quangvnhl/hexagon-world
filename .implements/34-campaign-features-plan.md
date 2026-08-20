@@ -111,6 +111,18 @@ C (minimap, nhỏ) → A (King) → B (cứ điểm) → D (biên, lớn nhất)
 ```
 Mỗi nhóm commit riêng; D chia D1→D5.
 
+## Trạng thái thực thi (đã code)
+- **C ✅** GameState.arenaR/arenaInradius; MiniMap theo bán kính cấp.
+- **A ✅** rules.kingEnabled gate King; editor objective king_hold (phút + kingPct); HUD hiển thị.
+- **B ✅** map.strongholds (ô+botCount) spawn/respawn/capture; rules.botsAllied (bot cùng màu, không sát
+  thương nhau); StrongholdInstances 3D + minimap; công cụ 🚩 Cứ điểm.
+- **D ✅** map.boundaries (polyline) va chạm collide-and-slide theo đoạn (thêm, giữ collider ô);
+  ObstacleCollider + minimap vẽ biên (toggle qua showColliders); công cụ ✏️ Biên vẽ LINE: snap
+  fill-on-hover / click tự do, Enter tạo, Backspace xoá nút, Esc huỷ, bấm điểm cuối để vẽ tiếp, Xoá biên.
+
+**Build/test:** shared 139 + client 58 + server 56 xanh; typecheck 4 gói + builds xanh. Verify live:
+King fields, đặt cứ điểm "1 cứ điểm (3 bot)", tạo biên "1 BIÊN". Cảm giác lái/3D/minimap cần hiện pane.
+
 ## Cần chốt thêm
 - (Đã chốt hết các điểm chính.) Chi tiết nhỏ giải quyết khi làm: hình marker cứ điểm 3D, màu bot đồng
   minh cụ thể, cổng zoom hiển thị biên trên minimap.
