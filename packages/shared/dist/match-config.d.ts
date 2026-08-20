@@ -46,6 +46,19 @@ export interface MatchMapConfig {
      *  >90° nên KHÔNG kẹt, trượt tin cậy); `"rect"` = hộp chữ nhật AABB (góc 90° dễ kẹt góc).
      *  Default `"hex"`. */
     colliderShape?: "hex" | "rect";
+    /** [doc 34 B] Cứ điểm bot: ô + số bot gắn với cứ điểm. Bot hồi sinh tại đó sau delay; người chơi
+     *  sở hữu ô ⇒ cứ điểm "bị chiếm" ⇒ bot của nó ngừng hồi sinh. */
+    strongholds?: Array<{
+        q: number;
+        r: number;
+        botCount: number;
+    }>;
+    /** [doc 34 D] Đường BIÊN va chạm admin vẽ (polyline toạ độ world). Tường HỞ; collision-only
+     *  (không chặn flood-fill). */
+    boundaries?: Array<{
+        id: string;
+        points: Array<[number, number]>;
+    }>;
 }
 export interface MatchBotConfig {
     count: number;
@@ -89,6 +102,11 @@ export interface MatchRules {
     /** [Campaign] Số mạng của CHỦ THỂ trước khi THUA. `0` = VÔ HẠN (hồi sinh tự do — hành vi
      *  mặc định /play, /netplay). `>0` = chết đủ số này ⇒ `GameState.lost` (doc 28 §E2b). */
     maxLives: number;
+    /** [doc 34 A] Bật cơ chế KING (lên ngôi ≥ kingPct, khoá phòng). Default `true` ⇒ /play, /netplay
+     *  bất biến. Campaign đặt `false` cho mục tiêu KHÁC `king_hold` (tắt King). */
+    kingEnabled: boolean;
+    /** [doc 34 B] Bot ĐỒNG MINH: cùng đội/màu, đâm nhau KHÔNG chết (Campaign). Default `false`. */
+    botsAllied: boolean;
 }
 export interface MatchConfig {
     map: MatchMapConfig;

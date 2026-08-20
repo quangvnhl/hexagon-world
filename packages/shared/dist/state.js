@@ -417,11 +417,18 @@ class GameState {
     territoryPct() {
         return (this.ownedPlayable(this.human) / this.playable.size) * 100;
     }
+    /** Bán kính ngoại tiếp sân THẬT của ván (theo config.map.radius) — cho minimap/HUD (doc 34 C). */
+    get arenaR() { return this.arena.arenaR; }
+    /** Bán kính nội tiếp sân THẬT của ván — cho minimap. */
+    get arenaInradius() { return this.arena.inradius; }
     get isKing() {
-        return this.territoryPct() >= this.config.win.kingPct;
+        return this.config.rules.kingEnabled && this.territoryPct() >= this.config.win.kingPct;
     }
-    /** Id KING hiện tại: thực thể CÒN SỐNG có % cao nhất và ≥ KING_PCT; -1 nếu không có. */
+    /** Id KING hiện tại: thực thể CÒN SỐNG có % cao nhất và ≥ KING_PCT; -1 nếu không có.
+     *  King TẮT (kingEnabled=false, doc 34 A) ⇒ luôn -1 (không lên ngôi, không khoá phòng). */
     kingId() {
+        if (!this.config.rules.kingEnabled)
+            return -1;
         let id = -1;
         let max = -1;
         for (const e of this.players) {

@@ -30,6 +30,8 @@ function resolveMatchConfig(input = {}) {
             totems: input.map?.totems,
             showColliders: input.map?.showColliders ?? false,
             colliderShape: input.map?.colliderShape ?? "hex",
+            strongholds: input.map?.strongholds,
+            boundaries: input.map?.boundaries,
         },
         bots: {
             count: input.bots?.count ?? config_1.CONFIG.BOT_COUNT,
@@ -50,6 +52,8 @@ function resolveMatchConfig(input = {}) {
             },
             totemsEnabled: input.rules?.totemsEnabled ?? true,
             maxLives: input.rules?.maxLives ?? 0,
+            kingEnabled: input.rules?.kingEnabled ?? true,
+            botsAllied: input.rules?.botsAllied ?? false,
             totems: {
                 speedCount: input.rules?.totems?.speedCount ?? config_1.CONFIG.TOTEMS.SPEED.COUNT,
                 speedBonus: input.rules?.totems?.speedBonus ?? config_1.CONFIG.TOTEMS.SPEED.BONUS_PER_TOTEM,

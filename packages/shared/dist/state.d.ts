@@ -193,8 +193,13 @@ export declare class GameState {
     hasTrail(k: HexKey): boolean;
     /** Số ô người chơi đang sở hữu / tổng ô chơi được (%). */
     territoryPct(): number;
+    /** Bán kính ngoại tiếp sân THẬT của ván (theo config.map.radius) — cho minimap/HUD (doc 34 C). */
+    get arenaR(): number;
+    /** Bán kính nội tiếp sân THẬT của ván — cho minimap. */
+    get arenaInradius(): number;
     get isKing(): boolean;
-    /** Id KING hiện tại: thực thể CÒN SỐNG có % cao nhất và ≥ KING_PCT; -1 nếu không có. */
+    /** Id KING hiện tại: thực thể CÒN SỐNG có % cao nhất và ≥ KING_PCT; -1 nếu không có.
+     *  King TẮT (kingEnabled=false, doc 34 A) ⇒ luôn -1 (không lên ngôi, không khoá phòng). */
     kingId(): number;
     /** Phòng bị KHOÁ khi đã có KING: không cho ai hồi sinh/tham gia (người còn sống thì
      *  đối kháng với nhau). Hết King → mở lại. */

@@ -4,7 +4,6 @@ import { memo, useEffect, useRef } from "react";
 import { GameState } from "@hexagon/shared";
 import { CONFIG } from "@hexagon/shared";
 import { parseKey, axialToPixel } from "@hexagon/shared";
-import { ARENA_R, ARENA_INRADIUS } from "@hexagon/shared";
 import type { WorldUiEntity } from "@hexagon/shared";
 import type { TerritoryCell } from "@hexagon/shared";
 import {
@@ -69,8 +68,9 @@ export const MiniMap = memo(function MiniMap({
   useEffect(() => {
     // Sân lục giác flat-top: rộng nhất = bán kính ngoại tiếp (trục x), cao nhất =
     // bán kính nội tiếp (trục y).
-    const halfW = ARENA_R;
-    const halfH = ARENA_INRADIUS;
+    // Bán kính THẬT của cấp (doc 34 C) — minimap khớp bán kính sân đã thiết lập, không dùng hằng global.
+    const halfW = game.arenaR;
+    const halfH = game.arenaInradius;
     const mobile = window.matchMedia("(max-width: 620px), (pointer: coarse)").matches;
     const W = mobile ? 128 : 190;
     const H = Math.round((W * halfH) / halfW);
@@ -166,7 +166,7 @@ export const MiniMap = memo(function MiniMap({
         ctx.beginPath();
         for (let k = 0; k < 6; k++) {
           const a = (k * Math.PI) / 3;
-          const [vx, vy] = toPx(Math.cos(a) * ARENA_R, Math.sin(a) * ARENA_R);
+          const [vx, vy] = toPx(Math.cos(a) * game.arenaR, Math.sin(a) * game.arenaR);
           if (k === 0) ctx.moveTo(vx, vy);
           else ctx.lineTo(vx, vy);
         }
