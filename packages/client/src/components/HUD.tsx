@@ -68,6 +68,8 @@ export interface Stats {
   speedTotemCount?: number;
   radarActive?: boolean;
   insideEnemySlowZone?: boolean;
+  /** [doc 35] Sự kiện TOTEM MỚI kể từ lần đẩy stats trước (chiếm/bị chiếm lại) — HUD hiện toast. */
+  totemEvents?: { seq: number; tone: "gain" | "lose"; text: string }[];
 }
 
 /** Nút tròn nhỏ ◀ ▶ để chuyển người đang xem (khán giả). */
@@ -244,6 +246,21 @@ export function HUD({
   const [deathPopupReady, setDeathPopupReady] = useState(false);
   const [showInstructions, setShowInstructions] = useState(true);
 
+  // [doc 35] Toast TOTEM: nhận sự kiện MỚI qua stats.totemEvents, khử trùng theo seq, tự ẩn sau 2.6s.
+  const [totemToasts, setTotemToasts] = useState<{ seq: number; tone: "gain" | "lose"; text: string }[]>([]);
+  const lastToastSeq = useRef(0);
+  useEffect(() => {
+    const evs = stats.totemEvents;
+    if (!evs || evs.length === 0) return;
+    const fresh = evs.filter((e) => e.seq > lastToastSeq.current);
+    if (fresh.length === 0) return;
+    lastToastSeq.current = Math.max(lastToastSeq.current, ...evs.map((e) => e.seq));
+    setTotemToasts((prev) => [...prev, ...fresh]);
+    for (const e of fresh) {
+      window.setTimeout(() => setTotemToasts((prev) => prev.filter((t) => t.seq !== e.seq)), 2600);
+    }
+  }, [stats.totemEvents]);
+
   // Hiện hướng dẫn ở đầu mỗi ván, giữ đủ 5 giây rồi mới bắt đầu fade out.
   // `won` đổi từ true về false khi chơi lại, nên timer cũng được khởi động lại.
   useEffect(() => {
@@ -319,6 +336,45 @@ export function HUD({
 
   return (
     <>
+      {/* [doc 35] Toast TOTEM (chiếm / bị chiếm lại) — giữa-trên, xếp chồng, tự ẩn. */}
+      {totemToasts.length > 0 && (
+        <div
+          style={{
+            position: "absolute",
+            top: "18%",
+            left: "50%",
+            transform: "translateX(-50%)",
+            display: "flex",
+            flexDirection: "column",
+            gap: 6,
+            alignItems: "center",
+            pointerEvents: "none",
+            zIndex: 20,
+          }}
+        >
+          {totemToasts.map((t) => (
+            <div
+              key={t.seq}
+              style={{
+                padding: "8px 16px",
+                borderRadius: 999,
+                fontFamily: "system-ui, sans-serif",
+                fontSize: 14,
+                fontWeight: 800,
+                letterSpacing: 0.3,
+                color: "#04121f",
+                background: t.tone === "gain" ? "linear-gradient(90deg,#48d987,#31d0ff)" : "linear-gradient(90deg,#ffb347,#ff5a5a)",
+                boxShadow: "0 4px 18px rgba(0,0,0,0.45)",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {t.tone === "gain" ? "🔮 " : "⚠ "}
+              {t.text}
+            </div>
+          ))}
+        </div>
+      )}
+
       {/* Bảng chỉ số góc trên trái */}
       <div
         style={{

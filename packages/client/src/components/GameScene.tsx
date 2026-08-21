@@ -140,6 +140,10 @@ function GameLoop({
   const cameraProfile = useCameraProfile(width, height);
   const statAcc = useRef(0);
   const lastPhase = useRef(game.phase);
+  // [doc 35] Theo dõi CHỦ totem để báo khi người chơi (id 0) CHIẾM được / BỊ chiếm lại. seq tăng dần
+  // để HUD khử trùng lặp thông báo.
+  const totemOwners = useRef<Map<number, number>>(new Map());
+  const noticeSeq = useRef(0);
   // Hệ số zoom hiện tại (lerp mượt về target theo diện tích) — bắt đầu ở mức gần nhất.
   const zoom = useRef(cameraProfile.settings.ZOOM.MIN);
   // Raycaster + mặt phẳng mặt đất (z=0) để quy đổi vị trí chuột → điểm world.
@@ -231,6 +235,19 @@ function GameLoop({
     if (statAcc.current >= 0.2 || game.phase !== lastPhase.current) {
       statAcc.current = 0;
       lastPhase.current = game.phase;
+      // Sự kiện TOTEM (doc 35): so CHỦ totem với lần trước → người chơi CHIẾM (owner 0) hoặc BỊ CHIẾM
+      // LẠI (đang là 0 → sang chủ khác). Gắn nhãn theo loại; đẩy kèm stats cho HUD hiện toast.
+      const totemEvents: { seq: number; tone: "gain" | "lose"; text: string }[] = [];
+      const kindLabel: Record<string, string> = { speed: "Tốc ⚡", slow: "Chậm 🐌", radar: "Radar 📡" };
+      for (const t of game.totemStates()) {
+        const prev = totemOwners.current.get(t.id);
+        if (prev === undefined) { totemOwners.current.set(t.id, t.ownerId); continue; }
+        if (t.ownerId === prev) continue;
+        totemOwners.current.set(t.id, t.ownerId);
+        const label = kindLabel[t.kind] ?? t.kind;
+        if (t.ownerId === 0) totemEvents.push({ seq: ++noticeSeq.current, tone: "gain", text: `Bạn chiếm được Totem ${label}` });
+        else if (prev === 0 && t.ownerId > 0) totemEvents.push({ seq: ++noticeSeq.current, tone: "lose", text: `Đối thủ chiếm lại Totem ${label}` });
+      }
       const modifiers = game.gameplayModifiersFor(0);
       onStats({
         pct: game.territoryPct(),
@@ -282,6 +299,7 @@ function GameLoop({
         speedTotemCount: modifiers.speedTotemCount,
         radarActive: modifiers.radarActive,
         insideEnemySlowZone: modifiers.insideEnemySlowZone,
+        totemEvents,
       });
     }
   });

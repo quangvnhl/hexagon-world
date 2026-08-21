@@ -440,7 +440,7 @@ export default function LevelEditor() {
           {tool === "obstacle" && `${obstacles.size} chướng ngại · kéo tô · Alt/phải xóa · Space/giữa pan`}
           {tool === "totem" && `${totems.size} totem · bấm đặt/gỡ · Space/giữa pan`}
           {tool === "stronghold" && `${strongholds.size} cứ điểm (${shBotCount} bot) · bấm đặt/gỡ · bot đồng minh, chiếm ⇒ ngừng hồi sinh`}
-          {tool === "boundary" && `Bấm đặt nút (snap đỉnh hex khi tô vàng, else vị trí chuột) · Enter tạo biên · Backspace xoá nút · Esc huỷ · bấm điểm cuối biên để vẽ tiếp`}
+          {tool === "boundary" && `Bấm đặt nút (snap đỉnh vàng/else vị trí chuột) · Enter tạo biên · bấm điểm cuối biên để vẽ tiếp · CHUỘT PHẢI vào 1 điểm để CHỌN → Delete xoá điểm (biên <2 điểm sẽ bị xoá) · Esc bỏ`}
           {tool === "startzone" && `${startZone ? "Đã đặt ô khởi động" : "Chưa đặt (khởi động NGẪU NHIÊN)"} · bấm ô để đặt/gỡ · chỉ ảnh hưởng lần xuất hiện ĐẦU (hồi sinh vẫn ngẫu nhiên)`}
         </span>
       </div>

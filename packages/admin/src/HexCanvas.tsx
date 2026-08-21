@@ -141,6 +141,8 @@ export function HexCanvas({ radius, obstacles, totems, strongholds, boundaries, 
   const snapRef = useRef<{ vx: number; vy: number; px: number; py: number; onVertex: boolean } | null>(null);
   const boundariesRef = useRef(boundaries);
   boundariesRef.current = boundaries;
+  // Nút biên ĐANG CHỌN (để xoá 1 điểm) — {bid, idx}. Chuột PHẢI vào 1 nút để chọn (doc 35).
+  const selNodeRef = useRef<{ bid: string; idx: number } | null>(null);
 
   const draw = useCallback(() => {
     rafRef.current = 0;
@@ -274,6 +276,17 @@ export function HexCanvas({ radius, obstacles, totems, strongholds, boundaries, 
       if (dots) for (const p of pts) { ctx.beginPath(); ctx.arc(w2sx(p[0]), w2sy(p[1]), 3.5, 0, Math.PI * 2); ctx.fillStyle = color; ctx.fill(); }
     };
     for (const b of boundariesRef.current ?? []) drawPolyline(b.points, "#31d0ff", true); // biên đã tạo (xanh dương)
+    // Nút biên ĐANG CHỌN: vòng đỏ to (chuột phải để chọn, Delete để xoá — doc 35).
+    const selN = selNodeRef.current;
+    if (selN) {
+      const b = (boundariesRef.current ?? []).find((x) => x.id === selN.bid);
+      const p = b?.points[selN.idx];
+      if (p) {
+        ctx.beginPath(); ctx.arc(w2sx(p[0]), w2sy(p[1]), 7, 0, Math.PI * 2);
+        ctx.fillStyle = "#ff5a5a"; ctx.fill();
+        ctx.lineWidth = 2; ctx.strokeStyle = "#fff"; ctx.stroke();
+      }
+    }
     const draft = draftRef.current;
     if (draft.length > 0) {
       const withCursor = snapRef.current ? [...draft, [snapRef.current.px, snapRef.current.py] as [number, number]] : draft;
@@ -400,6 +413,36 @@ export function HexCanvas({ radius, obstacles, totems, strongholds, boundaries, 
     return null;
   }, []);
 
+  /** Nút biên GẦN NHẤT trong ngưỡng (mọi điểm, không chỉ đầu/cuối) — cho chọn-để-xoá (doc 35). */
+  const pickBoundaryNode = useCallback((wx: number, wy: number): { bid: string; idx: number } | null => {
+    const list = boundariesRef.current ?? [];
+    const thr = 12 / view.current.scale;
+    let best: { bid: string; idx: number } | null = null, bd = thr * thr;
+    for (const b of list) {
+      for (let i = 0; i < b.points.length; i++) {
+        const dx = b.points[i][0] - wx, dy = b.points[i][1] - wy;
+        const d = dx * dx + dy * dy;
+        if (d <= bd) { bd = d; best = { bid: b.id, idx: i }; }
+      }
+    }
+    return best;
+  }, []);
+
+  /** Xoá NÚT đang chọn khỏi biên của nó; biên còn <2 nút ⇒ xoá luôn cả biên (doc 35). */
+  const deleteSelectedNode = useCallback(() => {
+    const sel = selNodeRef.current;
+    if (!sel || !onBoundariesChange) return;
+    const next: Array<{ id: string; points: [number, number][] }> = [];
+    for (const b of boundariesRef.current ?? []) {
+      if (b.id !== sel.bid) { next.push(b); continue; }
+      const pts = b.points.filter((_, i) => i !== sel.idx);
+      if (pts.length >= 2) next.push({ id: b.id, points: pts });
+    }
+    selNodeRef.current = null;
+    onBoundariesChange(next);
+    scheduleDraw();
+  }, [onBoundariesChange, scheduleDraw]);
+
   const zoomAt = useCallback((factor: number, mx?: number, my?: number) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -420,19 +463,24 @@ export function HexCanvas({ radius, obstacles, totems, strongholds, boundaries, 
   useEffect(() => {
     const onKeyDown = (e: KeyboardEvent) => {
       if (e.code === "Space") spaceHeld.current = true;
-      // Công cụ BIÊN (doc 34 D): Esc huỷ draft, Backspace xoá nút cuối, Enter TẠO biên.
-      if (e.key === "Escape") { draftRef.current = []; scheduleDraw(); }
-      else if (e.key === "Backspace" && draftRef.current.length) { draftRef.current.pop(); scheduleDraw(); }
+      // Công cụ BIÊN: Esc huỷ draft + bỏ chọn; Enter TẠO biên; Delete xoá NÚT đang chọn; Backspace
+      // xoá nút cuối draft (đang vẽ) HOẶC xoá nút đang chọn khi draft trống (doc 34 D + doc 35).
+      if (e.key === "Escape") { draftRef.current = []; selNodeRef.current = null; scheduleDraw(); }
+      else if (e.key === "Delete") { deleteSelectedNode(); }
+      else if (e.key === "Backspace") {
+        if (draftRef.current.length) { draftRef.current.pop(); scheduleDraw(); }
+        else if (selNodeRef.current) deleteSelectedNode();
+      }
       else if (e.key === "Enter") commitBoundary();
     };
     const onKeyUp = (e: KeyboardEvent) => { if (e.code === "Space") spaceHeld.current = false; };
     window.addEventListener("keydown", onKeyDown);
     window.addEventListener("keyup", onKeyUp);
     return () => { window.removeEventListener("keydown", onKeyDown); window.removeEventListener("keyup", onKeyUp); };
-  }, [commitBoundary, scheduleDraw]);
+  }, [commitBoundary, deleteSelectedNode, scheduleDraw]);
 
-  // Đổi công cụ khác BIÊN ⇒ huỷ polyline đang vẽ.
-  useEffect(() => { if (tool !== "boundary") { draftRef.current = []; snapRef.current = null; scheduleDraw(); } }, [tool, scheduleDraw]);
+  // Đổi công cụ khác BIÊN ⇒ huỷ polyline đang vẽ + bỏ chọn nút.
+  useEffect(() => { if (tool !== "boundary") { draftRef.current = []; snapRef.current = null; selNodeRef.current = null; scheduleDraw(); } }, [tool, scheduleDraw]);
 
   /** Các ô trong cọ quanh tâm (q,r), lọc theo sân hợp lệ. */
   const brushCells = useCallback((center: Axial): HexKey[] => {
@@ -460,8 +508,16 @@ export function HexCanvas({ radius, obstacles, totems, strongholds, boundaries, 
     try { canvas.setPointerCapture(e.pointerId); } catch { /* pointer capture optional */ }
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    // CHUỘT PHẢI trên công cụ BIÊN: bấm vào 1 NÚT ⇒ CHỌN (để xoá bằng Delete); ngoài nút ⇒ pan (else).
+    if (tool === "boundary" && e.button === 2 && !readOnly) {
+      const w = screenToWorld(mx, my);
+      const hit = pickBoundaryNode(w.x, w.y);
+      if (hit) { selNodeRef.current = hit; scheduleDraw(); drag.current = null; return; }
+      selNodeRef.current = null;
+    }
     const actionButton = e.button === 0 && !readOnly && !spaceHeld.current;
     if (actionButton && tool === "boundary") {
+      selNodeRef.current = null; // thao tác trái (vẽ/nối) ⇒ bỏ chọn nút
       // BIÊN (doc 34 D): hover đỉnh ⇒ snap đỉnh; ngoài đỉnh ⇒ vị trí chuột. Draft trống + bấm gần
       // điểm cuối/đầu biên đã tạo ⇒ nối tiếp biên đó.
       const w = screenToWorld(mx, my);
@@ -497,7 +553,7 @@ export function HexCanvas({ radius, obstacles, totems, strongholds, boundaries, 
     } else {
       drag.current = { mode: "pan", erase: false, last: null, px: mx, py: my };
     }
-  }, [tool, onPaint, onPlaceTotem, onPlaceStronghold, onPlaceStartZone, onBoundariesChange, readOnly, screenToAxial, screenToWorld, pickBoundaryEndpoint, paintAt, cells]);
+  }, [tool, onPaint, onPlaceTotem, onPlaceStronghold, onPlaceStartZone, onBoundariesChange, readOnly, screenToAxial, screenToWorld, pickBoundaryEndpoint, pickBoundaryNode, paintAt, cells]);
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
     const canvas = canvasRef.current;
