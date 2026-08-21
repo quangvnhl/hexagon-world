@@ -288,29 +288,33 @@ export function HexCanvas({ radius, obstacles, totems, strongholds, boundaries, 
       if (s.onVertex) { ctx.fillStyle = "#ffd23f"; ctx.fill(); } else ctx.stroke();
     }
 
-    // THƯỚC KẺ XY (doc 35): crosshair qua TÂM ô hover + nhãn toạ độ axial (q,r) & world (x,y). Bật
-    // theo showRuler. Đường canh theo TÂM ô để "đọc" đúng ô đang trỏ khi vẽ.
-    if (showRulerRef.current && hv && cells.valid.has(hexKey(hv.q, hv.r))) {
-      const p = axialToPixel(hv, HEX);
-      const sx = p.x * scale + ox, sy = -p.y * scale + oy;
+    // THƯỚC KẺ XY (doc 35): crosshair BÁM CON TRỎ (không nhảy về tâm ô) để căn nét khi vẽ biên. Khi
+    // công cụ BIÊN đang SNAP đỉnh hex, thước bám đúng ĐIỂM SẼ ĐẶT (snap) → đặt nút biên chính xác.
+    const m = mouseRef.current;
+    if (showRulerRef.current && m) {
+      const sn = snapRef.current;
+      // Điểm neo (screen) + toạ độ world tương ứng.
+      let ax: number, ay: number, wx: number, wy: number;
+      if (tool === "boundary" && sn) { wx = sn.px; wy = sn.py; ax = wx * scale + ox; ay = -wy * scale + oy; }
+      else { ax = m.x; ay = m.y; wx = (m.x - ox) / scale; wy = (oy - m.y) / scale; }
       ctx.save();
       ctx.setLineDash([5, 4]);
       ctx.lineWidth = 1;
       ctx.strokeStyle = "rgba(255,210,63,0.75)";
-      ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, h); ctx.stroke(); // dọc (trục X đọc)
-      ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(w, sy); ctx.stroke(); // ngang (trục Y đọc)
+      ctx.beginPath(); ctx.moveTo(ax, 0); ctx.lineTo(ax, h); ctx.stroke(); // dọc
+      ctx.beginPath(); ctx.moveTo(0, ay); ctx.lineTo(w, ay); ctx.stroke(); // ngang
       ctx.setLineDash([]);
-      // Nhãn toạ độ cạnh con trỏ.
-      const m = mouseRef.current;
-      const lx = (m ? m.x : sx) + 12, ly = (m ? m.y : sy) - 12;
-      const label = `q,r = ${hv.q}, ${hv.r}   x,y = ${p.x.toFixed(1)}, ${p.y.toFixed(1)}`;
+      const cell = pixelToAxial(wx, wy, HEX);
+      const label = `x,y = ${wx.toFixed(2)}, ${wy.toFixed(2)}   ·   q,r = ${cell.q}, ${cell.r}`;
       ctx.font = "600 12px system-ui, sans-serif";
       ctx.textAlign = "left"; ctx.textBaseline = "middle";
       const tw = ctx.measureText(label).width;
+      const lx = m.x + 14, ly = m.y - 14;
       ctx.fillStyle = "rgba(10,14,22,0.85)";
       ctx.fillRect(lx - 5, ly - 10, tw + 10, 20);
       ctx.fillStyle = "#ffd23f";
       ctx.fillText(label, lx, ly);
+      ctx.restore();
     }
   }, [cells, tool, readOnly]);
 
@@ -553,7 +557,7 @@ export function HexCanvas({ radius, obstacles, totems, strongholds, boundaries, 
         onPointerMove={onPointerMove}
         onPointerUp={endDrag}
         onPointerCancel={endDrag}
-        onPointerLeave={() => { hover.current = null; scheduleDraw(); }}
+        onPointerLeave={() => { hover.current = null; mouseRef.current = null; scheduleDraw(); }}
         onWheel={onWheel}
         onContextMenu={(e) => e.preventDefault()}
       />
