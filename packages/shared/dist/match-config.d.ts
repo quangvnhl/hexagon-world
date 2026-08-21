@@ -59,6 +59,12 @@ export interface MatchMapConfig {
         id: string;
         points: Array<[number, number]>;
     }>;
+    /** [doc 35] Ô KHỞI ĐỘNG người chơi: vị trí xuất hiện LẦN ĐẦU (đầu ván). HỒI SINH vẫn NGẪU NHIÊN.
+     *  Vắng ⇒ khởi động ngẫu nhiên như cũ (bất biến /play, /netplay). */
+    startSpawn?: {
+        q: number;
+        r: number;
+    };
 }
 export interface MatchBotConfig {
     count: number;

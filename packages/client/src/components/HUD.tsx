@@ -17,6 +17,11 @@ export interface Score {
 export interface Stats {
   pct: number;
   king: boolean;
+  /** Ngưỡng % MỤC TIÊU của ván cho thanh diện tích (Campaign: targetPct/kingPct theo cấp). Vắng ⇒
+   *  dùng CONFIG.KING_PCT (online/luyện tập bất biến). */
+  targetPct?: number;
+  /** Cơ chế KING có bật không (đổi nhãn "Mục tiêu King" ↔ "Mục tiêu"). */
+  kingEnabled?: boolean;
   /** Id KING authoritative hiện tại; -1/undefined nếu chưa có. */
   kingId?: number;
   deaths: number;
@@ -351,14 +356,15 @@ export function HUD({
           <div
             style={{
               height: "100%",
-              width: `${Math.min(100, (stats.pct / CONFIG.KING_PCT) * 100)}%`,
+              width: `${Math.min(100, (stats.pct / (stats.targetPct ?? CONFIG.KING_PCT)) * 100)}%`,
               background: stats.king ? "#ffd23f" : "#31b0ff",
               transition: "width 120ms linear",
             }}
           />
         </div>
         <div style={{ fontSize: 9, opacity: 0.6, marginTop: 4 }}>
-          Mục tiêu King: {CONFIG.KING_PCT}% · Chết: {stats.deaths}
+          {stats.kingEnabled === false ? "Mục tiêu" : "Mục tiêu King"}:{" "}
+          {(stats.targetPct ?? CONFIG.KING_PCT).toFixed(0)}% · Chết: {stats.deaths}
         </div>
         {(stats.effectiveSpeed !== undefined ||
           stats.speedTotemCount ||

@@ -244,6 +244,12 @@ function GameLoop({
         won: game.won,
         lost: game.lost,
         lostReason: game.lostReason,
+        // Ngưỡng MỤC TIÊU thật của cấp: territory_pct → targetPct×100; còn lại → kingPct.
+        targetPct:
+          game.config.win.kind === "territory_pct" && game.config.win.targetPct !== undefined
+            ? game.config.win.targetPct * 100
+            : game.config.win.kingPct,
+        kingEnabled: game.config.rules.kingEnabled,
         maxLives: game.config.rules.maxLives,
         objective: objectiveProgress(game),
         endless: game.config.win.kind === "none",

@@ -60,7 +60,7 @@ function totemsToList(totems: Map<HexKey, TotemKind>): AuthoredTotem[] {
   return [...totems].map(([k, kind]) => { const { q, r } = parseKey(k); return { kind, q, r }; });
 }
 
-function buildConfig(f: FormState, obstacles: Set<HexKey>, totems: Map<HexKey, TotemKind>, strongholds: Map<HexKey, number>, boundaries: Array<{ id: string; points: [number, number][] }>): MatchConfigInput {
+function buildConfig(f: FormState, obstacles: Set<HexKey>, totems: Map<HexKey, TotemKind>, strongholds: Map<HexKey, number>, boundaries: Array<{ id: string; points: [number, number][] }>, startZone: HexKey | null): MatchConfigInput {
   const win =
     f.kind === "territory_pct" ? { kind: f.kind, targetPct: f.targetPct }
     : f.kind === "king_hold" ? { kind: f.kind, winHoldTime: Math.max(1, f.holdMinutes) * 60, kingPct: f.kingPct }
@@ -78,16 +78,17 @@ function buildConfig(f: FormState, obstacles: Set<HexKey>, totems: Map<HexKey, T
   if (totems.size > 0) map.totems = totemsToList(totems);
   if (strongholds.size > 0) map.strongholds = [...strongholds].map(([k, botCount]) => { const { q, r } = parseKey(k); return { q, r, botCount }; });
   if (boundaries.length > 0) map.boundaries = boundaries;
+  if (startZone) { const { q, r } = parseKey(startZone); map.startSpawn = { q, r }; } // ô khởi động (doc 35)
   if (f.showColliders) map.showColliders = true;
   if (f.colliderShape === "rect") map.colliderShape = "rect"; // "hex" là mặc định → không cần ghi
   if (Object.keys(map).length) config.map = map;
   return config;
 }
 
-function toDraft(f: FormState, obstacles: Set<HexKey>, totems: Map<HexKey, TotemKind>, strongholds: Map<HexKey, number>, boundaries: Array<{ id: string; points: [number, number][] }>): CampaignLevelDraft {
+function toDraft(f: FormState, obstacles: Set<HexKey>, totems: Map<HexKey, TotemKind>, strongholds: Map<HexKey, number>, boundaries: Array<{ id: string; points: [number, number][] }>, startZone: HexKey | null): CampaignLevelDraft {
   return {
     id: f.id.trim(), sortOrder: f.sortOrder, name: f.name.trim(),
-    config: buildConfig(f, obstacles, totems, strongholds, boundaries), powerups: f.powerups,
+    config: buildConfig(f, obstacles, totems, strongholds, boundaries, startZone), powerups: f.powerups,
     unlockRequires: f.unlockRequires.trim() || null,
     rewards: { coin: f.coin, xp: f.xp, energy: f.energy }, published: f.published,
   };
@@ -103,7 +104,7 @@ function objectiveLabel(f: FormState): string {
   }
 }
 
-function rowToForm(r: AdminLevelRow): { form: FormState; obstacles: Set<HexKey>; totems: Map<HexKey, TotemKind>; strongholds: Map<HexKey, number>; boundaries: Array<{ id: string; points: [number, number][] }> } {
+function rowToForm(r: AdminLevelRow): { form: FormState; obstacles: Set<HexKey>; totems: Map<HexKey, TotemKind>; strongholds: Map<HexKey, number>; boundaries: Array<{ id: string; points: [number, number][] }>; startZone: HexKey | null } {
   const cfg = (r.config ?? {}) as MatchConfigInput;
   const win = cfg.win ?? { kind: "territory_pct" };
   const totems = new Map<HexKey, TotemKind>();
@@ -128,6 +129,7 @@ function rowToForm(r: AdminLevelRow): { form: FormState; obstacles: Set<HexKey>;
     totems,
     strongholds,
     boundaries: (cfg.map?.boundaries ?? []).map((b) => ({ id: b.id, points: b.points.map((p) => [p[0], p[1]] as [number, number]) })),
+    startZone: cfg.map?.startSpawn ? hexKey(cfg.map.startSpawn.q, cfg.map.startSpawn.r) : null,
   };
 }
 
@@ -155,6 +157,8 @@ export default function LevelEditor() {
   const [strongholds, setStrongholds] = useState<Map<HexKey, number>>(new Map());
   const [shBotCount, setShBotCount] = useState(3);
   const [boundaries, setBoundaries] = useState<Array<{ id: string; points: [number, number][] }>>([]);
+  const [startZone, setStartZone] = useState<HexKey | null>(null); // ô khởi động người chơi (doc 35)
+  const [showRuler, setShowRuler] = useState(false);               // thước kẻ XY (doc 35)
   const [status, setStatus] = useState<string>("");
   const [previewing, setPreviewing] = useState(false);
   const [brush, setBrush] = useState(1);
@@ -211,6 +215,13 @@ export default function LevelEditor() {
     setTotems((prev) => { if (!prev.has(k)) return prev; const n = new Map(prev); n.delete(k); return n; });
   }, [shBotCount]);
 
+  /** Đặt/gỡ ô KHỞI ĐỘNG (doc 35): bấm ô đang chọn = gỡ; bỏ obstacle trên ô đó (không thể khởi động
+   *  trong tường). Chỉ 1 ô khởi động cho mỗi cấp. */
+  const handlePlaceStartZone = useCallback((k: HexKey) => {
+    setStartZone((prev) => (prev === k ? null : k));
+    setObstacles((prev) => { if (!prev.has(k)) return prev; const n = new Set(prev); n.delete(k); return n; });
+  }, []);
+
   /** Đổi bán kính sân + cắt obstacle/totem/cứ điểm rơi ngoài sân mới (khớp hành vi sim). */
   const commitRadius = useCallback((raw: number) => {
     const rad = clampRadius(raw);
@@ -223,28 +234,29 @@ export default function LevelEditor() {
     const nextSh = new Map<HexKey, number>();
     for (const [k, v] of strongholds) { if (valid.has(k)) nextSh.set(k, v); else dropped++; }
     setObstacles(nextObs); setTotems(nextTot); setStrongholds(nextSh);
+    if (startZone && !valid.has(startZone)) { setStartZone(null); dropped++; }
     setForm((f) => ({ ...f, radius: rad }));
     setStatus(dropped ? `Bán kính ${rad}: đã bỏ ${dropped} ô ngoài sân` : `Bán kính sân = ${rad}`);
-  }, [obstacles, totems, strongholds]);
+  }, [obstacles, totems, strongholds, startZone]);
 
-  const errors = useMemo(() => validateLevelDraft(toDraft(form, obstacles, totems, strongholds, boundaries)), [form, obstacles, totems, strongholds, boundaries]);
+  const errors = useMemo(() => validateLevelDraft(toDraft(form, obstacles, totems, strongholds, boundaries, startZone)), [form, obstacles, totems, strongholds, boundaries, startZone]);
 
   const publish = useCallback(async () => {
     if (errors.length) { setStatus("Còn lỗi: " + errors.join("; ")); return; }
     setStatus("Đang lưu…");
     try {
-      const draft = toDraft(form, obstacles, totems, strongholds, boundaries);
+      const draft = toDraft(form, obstacles, totems, strongholds, boundaries, startZone);
       await adminUpsertLevel(adminKey, draft);
       await adminPublishLevel(adminKey, draft.id, form.published);
       setStatus(`Đã lưu "${draft.id}"${form.published ? " (đã publish)" : " (nháp)"}`);
       setSelectedId(draft.id);
       setRows(await adminListLevels(adminKey));
     } catch (e) { setStatus(e instanceof Error ? e.message : "Lưu thất bại"); }
-  }, [errors, form, obstacles, totems, strongholds, boundaries, adminKey]);
+  }, [errors, form, obstacles, totems, strongholds, boundaries, startZone, adminKey]);
 
   const editRow = useCallback((r: AdminLevelRow) => {
-    const { form: f, obstacles: o, totems: t, strongholds: sh, boundaries: bd } = rowToForm(r);
-    setForm(f); setObstacles(o); setTotems(t); setStrongholds(sh); setBoundaries(bd); setSelectedId(r.id); setStatus(`Đang sửa "${r.id}"`);
+    const { form: f, obstacles: o, totems: t, strongholds: sh, boundaries: bd, startZone: sz } = rowToForm(r);
+    setForm(f); setObstacles(o); setTotems(t); setStrongholds(sh); setBoundaries(bd); setStartZone(sz); setSelectedId(r.id); setStatus(`Đang sửa "${r.id}"`);
   }, []);
 
   const unpublishRow = useCallback(async (r: AdminLevelRow) => {
@@ -254,18 +266,25 @@ export default function LevelEditor() {
   }, [adminKey]);
 
   const newLevel = useCallback(() => {
-    setForm({ ...BLANK, sortOrder: rows.length + 1 }); setObstacles(new Set()); setTotems(new Map()); setStrongholds(new Map()); setBoundaries([]); setSelectedId(null); setStatus("Cấp mới");
+    setForm({ ...BLANK, sortOrder: rows.length + 1 }); setObstacles(new Set()); setTotems(new Map()); setStrongholds(new Map()); setBoundaries([]); setStartZone(null); setSelectedId(null); setStatus("Cấp mới");
   }, [rows.length]);
 
   if (previewing) {
-    return <Preview2D form={form} obstacles={obstacles} totems={totems} strongholds={strongholds} boundaries={boundaries} onClose={() => setPreviewing(false)} />;
+    return <Preview2D form={form} obstacles={obstacles} totems={totems} strongholds={strongholds} boundaries={boundaries} startZone={startZone} onClose={() => setPreviewing(false)} />;
   }
 
   return (
     <div style={{ position: "fixed", inset: 0, overflow: "hidden", background: "#0a0e16" }}>
-      <HexCanvas radius={form.radius} obstacles={obstacles} totems={totems} strongholds={strongholds} boundaries={boundaries} tool={tool}
-        onPaint={handlePaint} onPlaceTotem={handlePlaceTotem} onPlaceStronghold={handlePlaceStronghold} onBoundariesChange={setBoundaries}
-        brush={brush} onReady={(a) => (canvasApi.current = a)} />
+      <HexCanvas radius={form.radius} obstacles={obstacles} totems={totems} strongholds={strongholds} boundaries={boundaries} startZone={startZone} tool={tool}
+        onPaint={handlePaint} onPlaceTotem={handlePlaceTotem} onPlaceStronghold={handlePlaceStronghold} onPlaceStartZone={handlePlaceStartZone} onBoundariesChange={setBoundaries}
+        brush={brush} showRuler={showRuler} onReady={(a) => (canvasApi.current = a)} />
+
+      {/* Panel trên-giữa: thước kẻ XY (doc 35) */}
+      <div style={{ ...panelStyle, top: 12, left: "50%", transform: "translateX(-50%)", padding: "6px 12px", display: "flex", alignItems: "center", gap: 8 }}>
+        <label style={{ display: "flex", alignItems: "center", gap: 6, fontSize: 12, cursor: "pointer" }}>
+          <input type="checkbox" checked={showRuler} onChange={(e) => setShowRuler(e.target.checked)} /> 📐 Thước kẻ XY
+        </label>
+      </div>
 
       {/* Panel trên-trái: Admin Key + danh sách cấp (thu gọn được) */}
       <div style={{ ...panelStyle, top: 12, left: 12, width: keyPanelOpen ? 300 : "auto", maxHeight: "calc(100vh - 24px)", overflow: "auto", padding: keyPanelOpen ? 14 : 8 }}>
@@ -380,11 +399,13 @@ export default function LevelEditor() {
           <button onClick={() => setTool("boundary")} style={{ ...btn(tool === "boundary" ? "rgba(72,217,135,0.3)" : "rgba(255,255,255,0.08)"), color: tool === "boundary" ? "#b6f0cd" : "#cdd7ea" }}>✏️ Biên</button>
           <button onClick={() => setTool("totem")} style={{ ...btn(tool === "totem" ? "rgba(49,176,255,0.3)" : "rgba(255,255,255,0.08)"), color: tool === "totem" ? "#bdecff" : "#cdd7ea" }}>🔮 Totem</button>
           <button onClick={() => setTool("stronghold")} style={{ ...btn(tool === "stronghold" ? "rgba(255,180,40,0.3)" : "rgba(255,255,255,0.08)"), color: tool === "stronghold" ? "#ffdf9e" : "#cdd7ea" }}>🚩 Cứ điểm</button>
+          <button onClick={() => setTool("startzone")} style={{ ...btn(tool === "startzone" ? "rgba(72,217,135,0.3)" : "rgba(255,255,255,0.08)"), color: tool === "startzone" ? "#b6f0cd" : "#cdd7ea" }}>🏁 Khởi động</button>
         </div>
         <div style={{ display: "flex", gap: 4 }}>
           <button onClick={() => canvasApi.current?.zoomBy(1 / 1.25)} style={{ ...btn("rgba(255,255,255,0.12)"), color: "#cdd7ea" }}>−</button>
           <button onClick={() => canvasApi.current?.zoomBy(1.25)} style={{ ...btn("rgba(255,255,255,0.12)"), color: "#cdd7ea" }}>+</button>
-          <button onClick={() => canvasApi.current?.fit()} style={{ ...btn("rgba(255,255,255,0.12)"), color: "#cdd7ea" }}>Fit</button>
+          <button onClick={() => canvasApi.current?.reset100()} style={{ ...btn("rgba(255,255,255,0.12)"), color: "#cdd7ea" }}>🔍 100%</button>
+          <button onClick={() => canvasApi.current?.fit()} style={{ ...btn("rgba(255,255,255,0.12)"), color: "#cdd7ea" }}>🗺 Toàn cảnh</button>
         </div>
         {tool === "obstacle" && (
           <div style={{ display: "flex", alignItems: "center", gap: 4 }}>
@@ -420,6 +441,7 @@ export default function LevelEditor() {
           {tool === "totem" && `${totems.size} totem · bấm đặt/gỡ · Space/giữa pan`}
           {tool === "stronghold" && `${strongholds.size} cứ điểm (${shBotCount} bot) · bấm đặt/gỡ · bot đồng minh, chiếm ⇒ ngừng hồi sinh`}
           {tool === "boundary" && `Bấm đặt nút (snap đỉnh hex khi tô vàng, else vị trí chuột) · Enter tạo biên · Backspace xoá nút · Esc huỷ · bấm điểm cuối biên để vẽ tiếp`}
+          {tool === "startzone" && `${startZone ? "Đã đặt ô khởi động" : "Chưa đặt (khởi động NGẪU NHIÊN)"} · bấm ô để đặt/gỡ · chỉ ảnh hưởng lần xuất hiện ĐẦU (hồi sinh vẫn ngẫu nhiên)`}
         </span>
       </div>
     </div>
@@ -427,7 +449,7 @@ export default function LevelEditor() {
 }
 
 /** Preview 2D (doc 30 L6b, doc 31 M6, doc 32) — canvas đọc-thôi + tóm tắt config. */
-function Preview2D({ form, obstacles, totems, strongholds, boundaries, onClose }: { form: FormState; obstacles: Set<HexKey>; totems: Map<HexKey, TotemKind>; strongholds: Map<HexKey, number>; boundaries: Array<{ id: string; points: [number, number][] }>; onClose: () => void }) {
+function Preview2D({ form, obstacles, totems, strongholds, boundaries, startZone, onClose }: { form: FormState; obstacles: Set<HexKey>; totems: Map<HexKey, TotemKind>; strongholds: Map<HexKey, number>; boundaries: Array<{ id: string; points: [number, number][] }>; startZone: HexKey | null; onClose: () => void }) {
   const byKind = { speed: 0, slow: 0, radar: 0 };
   for (const k of totems.values()) byKind[k]++;
   const totemGoalWarn = form.kind === "capture_totems" && form.totemGoal > totems.size;
@@ -440,12 +462,13 @@ function Preview2D({ form, obstacles, totems, strongholds, boundaries, onClose }
     { label: "Ô chướng ngại", value: String(obstacles.size) },
     { label: "Totem", value: totems.size ? `${totems.size} (⚡${byKind.speed} 🐌${byKind.slow} 📡${byKind.radar})` : "—" },
     { label: "Cứ điểm bot", value: strongholds.size ? `${strongholds.size} (${[...strongholds.values()].reduce((a, b) => a + b, 0)} bot)` : "—" },
+    { label: "Ô khởi động", value: startZone ? (() => { const { q, r } = parseKey(startZone); return `q,r = ${q}, ${r}`; })() : "— (ngẫu nhiên)" },
     { label: "Power-up", value: form.powerups.length ? form.powerups.map((p) => POWERUP_LABEL[p]).join(", ") : "—" },
     { label: "Thưởng", value: `${form.coin} coin · ${form.xp} xp · ${form.energy} energy` },
   ];
   return (
     <div style={{ position: "fixed", inset: 0, overflow: "hidden", background: "#0a0e16", fontFamily: "system-ui, sans-serif" }}>
-      <HexCanvas radius={form.radius} obstacles={obstacles} totems={totems} strongholds={strongholds} boundaries={boundaries} readOnly />
+      <HexCanvas radius={form.radius} obstacles={obstacles} totems={totems} strongholds={strongholds} boundaries={boundaries} startZone={startZone} readOnly />
       <div style={{ ...panelStyle, top: 12, left: 12, right: 12, padding: "10px 14px", display: "flex", alignItems: "center", justifyContent: "space-between", gap: 12 }}>
         <strong style={{ fontSize: 15 }}>👁️ Xem thử (2D): {form.name || form.id || "(chưa đặt tên)"}</strong>
         <button onClick={onClose} style={{ ...btn("rgba(255,255,255,0.14)"), color: "#cdd7ea" }}>← Về trình vẽ</button>

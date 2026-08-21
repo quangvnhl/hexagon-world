@@ -115,6 +115,9 @@ export declare class GameState {
     /** CONTAINER tự quản luật thắng (xem `GameStateOptions.externalWinControl`). */
     private readonly externalWinControl;
     private fixedSpawn?;
+    /** [doc 35] Ô KHỞI ĐỘNG người chơi (chỉ dùng cho lần spawn ĐẦU; hồi sinh sau vẫn ngẫu nhiên). */
+    private startSpawn?;
+    private startSpawnUsed;
     private rng;
     /** [doc 34 B] Cứ điểm bot: ô hợp lệ + số bot. `capturedStrongholds` = index đã bị người chơi chiếm
      *  (bot của nó ngừng hồi sinh). `strongholdCell` = HexKey ô → index (phát hiện chiếm). */

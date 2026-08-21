@@ -32,6 +32,7 @@ function resolveMatchConfig(input = {}) {
             colliderShape: input.map?.colliderShape ?? "hex",
             strongholds: input.map?.strongholds,
             boundaries: input.map?.boundaries,
+            startSpawn: input.map?.startSpawn,
         },
         bots: {
             count: input.bots?.count ?? config_1.CONFIG.BOT_COUNT,

@@ -480,3 +480,25 @@ describe("GameState: doc 34 hoàn thiện (cứ điểm động + totem/thống 
     expect(botRow!.pct).toBeCloseTo(sum, 5);
   });
 });
+
+describe("GameState: ô KHỞI ĐỘNG người chơi (doc 35)", () => {
+  it("map.startSpawn ⇒ người chơi xuất hiện LẦN ĐẦU tại ô đó", () => {
+    const g = new GameState({ config: { bots: { count: 0 }, win: { kind: "none" }, map: { radius: 12, startSpawn: { q: 3, r: 0 } } } });
+    expect(g.human.currentHex).toEqual({ q: 3, r: 0 });
+  });
+
+  it("HỒI SINH sau lần đầu KHÔNG ghim ô khởi động (đã tiêu thụ 1 lần)", () => {
+    const g = new GameState({ config: { bots: { count: 0 }, win: { kind: "none" }, map: { radius: 12, startSpawn: { q: 3, r: 0 } } } });
+    expect(g.human.currentHex).toEqual({ q: 3, r: 0 });
+    g.die();
+    expect(g.revive()).toBe(true);
+    expect(g.human.phase).not.toBe("dead"); // hồi sinh thành công (ô ngẫu nhiên, không lỗi)
+  });
+
+  it("restart ⇒ lại xuất hiện tại ô khởi động", () => {
+    const g = new GameState({ config: { bots: { count: 0 }, win: { kind: "none" }, map: { radius: 12, startSpawn: { q: -3, r: 2 } } } });
+    g.die();
+    g.restart();
+    expect(g.human.currentHex).toEqual({ q: -3, r: 2 });
+  });
+});

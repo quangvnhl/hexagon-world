@@ -97,6 +97,7 @@ class GameState {
         /** Chủ sở hữu / chủ đuôi của từng ô (id thực thể) — cho render nhanh & va chạm. */
         this.cellOwner = new Map();
         this.cellTrail = new Map();
+        this.startSpawnUsed = false;
         this.rng = Math.random;
         /** [doc 34 B] Cứ điểm bot: ô hợp lệ + số bot. `capturedStrongholds` = index đã bị người chơi chiếm
          *  (bot của nó ngừng hồi sinh). `strongholdCell` = HexKey ô → index (phát hiện chiếm). */
@@ -144,6 +145,8 @@ class GameState {
         this.kingHoldRemaining = this.config.win.winHoldTime;
         this.surviveRemaining = this.config.win.durationSec ?? Number.POSITIVE_INFINITY;
         this.fixedSpawn = options.spawnAt;
+        const ss = this.config.map.startSpawn;
+        this.startSpawn = ss ? { q: ss.q, r: ss.r } : undefined;
         this.humanCount = Math.max(1, options.humanCount ?? 1);
         // Cứ điểm (doc 34 B): mỗi bot gắn 1 cứ điểm. Có cứ điểm ⇒ tổng bot = Σ botCount (bỏ bots.count);
         // `botStronghold[b]` = index cứ điểm của bot thứ b (0-index trong nhóm bot).
@@ -970,6 +973,7 @@ class GameState {
         this.lostReason = "";
         this.kingHolderId = -1;
         this.spectating = false;
+        this.startSpawnUsed = false; // chơi lại ⇒ lại xuất hiện ở ô khởi động
         this.kingHoldRemaining = this.config.win.winHoldTime;
         this.surviveRemaining = this.config.win.durationSec ?? Number.POSITIVE_INFINITY;
         for (const e of this.players) {
@@ -993,6 +997,13 @@ class GameState {
     pickSpawnHex(e) {
         if (e === this.human && this.fixedSpawn)
             return this.fixedSpawn;
+        // [doc 35] Ô KHỞI ĐỘNG: chỉ áp cho lần spawn ĐẦU của người chơi (đầu ván); tiêu thụ 1 lần ⇒ hồi
+        // sinh sau đó ngẫu nhiên. canRevive/spawn khác không đụng vì human chưa "dead" trước lần đầu.
+        if (e === this.human && !this.startSpawnUsed && this.startSpawn) {
+            this.startSpawnUsed = true;
+            if (this.playable.has((0, hex_1.keyOf)(this.startSpawn)))
+                return this.startSpawn;
+        }
         const inset = (this.config.rules.startRadius + 1) * this.hexSize * Math.sqrt(3);
         const lim = this.arena.wallLimit - inset; // biên lấy mẫu (theo tường va chạm thật đã co wallScale)
         const clearance = this.config.rules.spawnClearance;

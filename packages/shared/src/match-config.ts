@@ -75,6 +75,9 @@ export interface MatchMapConfig {
   /** [doc 34 D] Đường BIÊN va chạm admin vẽ (polyline toạ độ world). Tường HỞ; collision-only
    *  (không chặn flood-fill). */
   boundaries?: Array<{ id: string; points: Array<[number, number]> }>;
+  /** [doc 35] Ô KHỞI ĐỘNG người chơi: vị trí xuất hiện LẦN ĐẦU (đầu ván). HỒI SINH vẫn NGẪU NHIÊN.
+   *  Vắng ⇒ khởi động ngẫu nhiên như cũ (bất biến /play, /netplay). */
+  startSpawn?: { q: number; r: number };
 }
 
 export interface MatchBotConfig {
@@ -173,6 +176,7 @@ export function resolveMatchConfig(input: MatchConfigInput = {}): MatchConfig {
       colliderShape: input.map?.colliderShape ?? "hex",
       strongholds: input.map?.strongholds,
       boundaries: input.map?.boundaries,
+      startSpawn: input.map?.startSpawn,
     },
     bots: {
       count: input.bots?.count ?? CONFIG.BOT_COUNT,

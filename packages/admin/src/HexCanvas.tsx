@@ -22,7 +22,13 @@ import {
   type TotemKind,
 } from "@hexagon/shared";
 
-export type EditorTool = "obstacle" | "totem" | "boundary" | "stronghold";
+export type EditorTool = "obstacle" | "totem" | "boundary" | "stronghold" | "startzone";
+
+/** Mức zoom (world→screen px/đơn vị). DEFAULT = "100%" mặc định (KHÔNG fit-toàn-sân để tránh lag khi
+ *  sân lớn). MIN/MAX giới hạn cuộn/±; nút "Toàn cảnh" (fit) được phép vượt MIN để hiện tối đa. */
+const SCALE_DEFAULT = 12;
+const SCALE_MIN = 4;
+const SCALE_MAX = 60;
 
 /** Màu + nhãn marker cho từng loại totem (đồng bộ ý nghĩa với game). */
 export const TOTEM_STYLE: Record<TotemKind, { color: string; label: string }> = {
@@ -36,6 +42,9 @@ const HEX = 1; // HEX_SIZE (= CONFIG.HEX_SIZE); world circumradius mỗi ô.
 
 export interface HexCanvasHandle {
   zoomBy: (factor: number) => void;
+  /** Về mức 100% mặc định (căn giữa) — "Phóng chuẩn". */
+  reset100: () => void;
+  /** Fit toàn sân (hiện tối đa) — nút "Toàn cảnh". */
   fit: () => void;
 }
 
@@ -48,6 +57,12 @@ interface HexCanvasProps {
   strongholds?: Map<HexKey, number>;
   /** Đặt/gỡ cứ điểm tại 1 ô. */
   onPlaceStronghold?: (cell: HexKey) => void;
+  /** [doc 35] Ô KHỞI ĐỘNG người chơi (vị trí xuất hiện đầu ván); null = ngẫu nhiên. */
+  startZone?: HexKey | null;
+  /** Đặt/gỡ ô khởi động (bấm ô đang chọn = gỡ). */
+  onPlaceStartZone?: (cell: HexKey) => void;
+  /** [doc 35] Hiện THƯỚC KẺ XY (crosshair + toạ độ) tại ô hover. */
+  showRuler?: boolean;
   /** Công cụ đang dùng: tô obstacle hay đặt totem. */
   tool?: EditorTool;
   /** Tô (erase=false) hoặc xóa (erase=true) một tập ô hợp lệ. M2. */
@@ -87,7 +102,7 @@ function snapHexVertex(wx: number, wy: number): { x: number; y: number } {
 }
 
 
-export function HexCanvas({ radius, obstacles, totems, strongholds, boundaries, tool = "obstacle", onPaint, onPlaceTotem, onPlaceStronghold, onBoundariesChange, brush = 0, readOnly, onReady }: HexCanvasProps) {
+export function HexCanvas({ radius, obstacles, totems, strongholds, boundaries, startZone, tool = "obstacle", onPaint, onPlaceTotem, onPlaceStronghold, onPlaceStartZone, onBoundariesChange, brush = 0, readOnly, showRuler, onReady }: HexCanvasProps) {
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const wrapRef = useRef<HTMLDivElement>(null);
 
@@ -105,14 +120,20 @@ export function HexCanvas({ radius, obstacles, totems, strongholds, boundaries, 
   }, [radius]);
 
   // View: world→screen là  s = w*scale + offset  (CSS px). Giữ trong ref (không gây re-render).
-  const view = useRef({ scale: 4, ox: 0, oy: 0 });
+  const view = useRef({ scale: SCALE_DEFAULT, ox: 0, oy: 0 });
   const obstaclesRef = useRef(obstacles);
   obstaclesRef.current = obstacles;
   const totemsRef = useRef(totems);
   totemsRef.current = totems;
   const strongholdsRef = useRef(strongholds);
   strongholdsRef.current = strongholds;
+  const startZoneRef = useRef(startZone);
+  startZoneRef.current = startZone;
+  const showRulerRef = useRef(showRuler);
+  showRulerRef.current = showRuler;
   const hover = useRef<Axial | null>(null);
+  // Vị trí chuột màn hình gần nhất (cho thước kẻ).
+  const mouseRef = useRef<{ x: number; y: number } | null>(null);
   const rafRef = useRef(0);
   // Công cụ BIÊN (doc 34 D): polyline đang vẽ (draft) + snap dưới con trỏ.
   const draftRef = useRef<[number, number][]>([]);
@@ -210,6 +231,25 @@ export function HexCanvas({ radius, obstacles, totems, strongholds, boundaries, 
       }
     }
 
+    // Ô KHỞI ĐỘNG người chơi (doc 35): vòng tròn xanh lá + cờ 🏁.
+    const sz = startZoneRef.current;
+    if (sz) {
+      const { q, r } = parseKey(sz);
+      const p = axialToPixel({ q, r }, HEX);
+      const sx = p.x * scale + ox, sy = -p.y * scale + oy;
+      const rad = Math.max(4, scale * 0.9);
+      ctx.beginPath();
+      ctx.arc(sx, sy, rad, 0, Math.PI * 2);
+      ctx.fillStyle = "rgba(72,217,135,0.85)";
+      ctx.fill();
+      ctx.lineWidth = Math.max(1, scale * 0.14); ctx.strokeStyle = "rgba(0,0,0,0.55)"; ctx.stroke();
+      if (scale > 3) {
+        ctx.textAlign = "center"; ctx.textBaseline = "middle";
+        ctx.font = `700 ${Math.max(8, scale * 1.1)}px system-ui, sans-serif`;
+        ctx.fillStyle = "#04121f"; ctx.fillText("🏁", sx, sy + 0.5);
+      }
+    }
+
     // Ô đang hover (nếu hợp lệ).
     const hv = hover.current;
     if (hv && cells.valid.has(hexKey(hv.q, hv.r))) {
@@ -247,12 +287,47 @@ export function HexCanvas({ radius, obstacles, totems, strongholds, boundaries, 
       ctx.lineWidth = 2; ctx.strokeStyle = "#ffd23f";
       if (s.onVertex) { ctx.fillStyle = "#ffd23f"; ctx.fill(); } else ctx.stroke();
     }
+
+    // THƯỚC KẺ XY (doc 35): crosshair qua TÂM ô hover + nhãn toạ độ axial (q,r) & world (x,y). Bật
+    // theo showRuler. Đường canh theo TÂM ô để "đọc" đúng ô đang trỏ khi vẽ.
+    if (showRulerRef.current && hv && cells.valid.has(hexKey(hv.q, hv.r))) {
+      const p = axialToPixel(hv, HEX);
+      const sx = p.x * scale + ox, sy = -p.y * scale + oy;
+      ctx.save();
+      ctx.setLineDash([5, 4]);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = "rgba(255,210,63,0.75)";
+      ctx.beginPath(); ctx.moveTo(sx, 0); ctx.lineTo(sx, h); ctx.stroke(); // dọc (trục X đọc)
+      ctx.beginPath(); ctx.moveTo(0, sy); ctx.lineTo(w, sy); ctx.stroke(); // ngang (trục Y đọc)
+      ctx.setLineDash([]);
+      // Nhãn toạ độ cạnh con trỏ.
+      const m = mouseRef.current;
+      const lx = (m ? m.x : sx) + 12, ly = (m ? m.y : sy) - 12;
+      const label = `q,r = ${hv.q}, ${hv.r}   x,y = ${p.x.toFixed(1)}, ${p.y.toFixed(1)}`;
+      ctx.font = "600 12px system-ui, sans-serif";
+      ctx.textAlign = "left"; ctx.textBaseline = "middle";
+      const tw = ctx.measureText(label).width;
+      ctx.fillStyle = "rgba(10,14,22,0.85)";
+      ctx.fillRect(lx - 5, ly - 10, tw + 10, 20);
+      ctx.fillStyle = "#ffd23f";
+      ctx.fillText(label, lx, ly);
+    }
   }, [cells, tool, readOnly]);
 
   const scheduleDraw = useCallback(() => {
     if (!rafRef.current) rafRef.current = requestAnimationFrame(draw);
   }, [draw]);
 
+  // Về mức 100% mặc định (căn giữa) — KHÔNG fit-toàn-sân ⇒ tránh dựng cả chục nghìn ô lúc load/đổi
+  // bán kính (nguồn gây lag). Muốn thấy tối đa thì bấm "Toàn cảnh".
+  const reset100 = useCallback(() => {
+    const canvas = canvasRef.current;
+    if (!canvas) return;
+    view.current = { scale: SCALE_DEFAULT, ox: canvas.clientWidth / 2, oy: canvas.clientHeight / 2 };
+    scheduleDraw();
+  }, [scheduleDraw]);
+
+  // Fit TOÀN SÂN (hiện tối đa) — nút "Toàn cảnh"; được phép xuống dưới SCALE_MIN.
   const fit = useCallback(() => {
     const canvas = canvasRef.current;
     if (!canvas) return;
@@ -264,24 +339,24 @@ export function HexCanvas({ radius, obstacles, totems, strongholds, boundaries, 
     scheduleDraw();
   }, [cells, scheduleDraw]);
 
-  // Fit lại khi đổi bán kính sân.
-  useEffect(() => { fit(); }, [fit]);
+  // Về 100% khi đổi bán kính sân (thay cho fit-all cũ).
+  useEffect(() => { reset100(); }, [cells, reset100]);
 
-  // Vẽ lại khi container đổi kích thước (draw() tự đồng bộ backing store + fit lại).
+  // Vẽ lại + căn giữa 100% khi container đổi kích thước.
   useEffect(() => {
     const wrap = wrapRef.current;
     if (!wrap) return;
-    const ro = new ResizeObserver(() => fit());
+    const ro = new ResizeObserver(() => reset100());
     ro.observe(wrap);
     return () => ro.disconnect();
-  }, [fit]);
+  }, [reset100]);
 
-  useEffect(() => { scheduleDraw(); }, [obstacles, totems, strongholds, boundaries, scheduleDraw]);
+  useEffect(() => { scheduleDraw(); }, [obstacles, totems, strongholds, boundaries, startZone, showRuler, scheduleDraw]);
 
   useEffect(() => {
-    onReady?.({ zoomBy: (f: number) => zoomAt(f), fit });
+    onReady?.({ zoomBy: (f: number) => zoomAt(f), reset100, fit });
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [fit]);
+  }, [fit, reset100]);
 
   // --- Tương tác ---------------------------------------------------------------------------
   const screenToAxial = useCallback((sx: number, sy: number): Axial => {
@@ -326,7 +401,7 @@ export function HexCanvas({ radius, obstacles, totems, strongholds, boundaries, 
     if (!canvas) return;
     const cx = mx ?? canvas.clientWidth / 2, cy = my ?? canvas.clientHeight / 2;
     const v = view.current;
-    const nScale = Math.max(1, Math.min(60, v.scale * factor));
+    const nScale = Math.max(SCALE_MIN, Math.min(SCALE_MAX, v.scale * factor));
     // Giữ điểm world dưới con trỏ cố định.
     v.ox = cx - ((cx - v.ox) / v.scale) * nScale;
     v.oy = cy - ((cy - v.oy) / v.scale) * nScale;
@@ -406,6 +481,10 @@ export function HexCanvas({ radius, obstacles, totems, strongholds, boundaries, 
       const a = screenToAxial(mx, my);
       if (cells.valid.has(hexKey(a.q, a.r))) onPlaceStronghold(hexKey(a.q, a.r));
       drag.current = null;
+    } else if (actionButton && tool === "startzone" && onPlaceStartZone) {
+      const a = screenToAxial(mx, my);
+      if (cells.valid.has(hexKey(a.q, a.r))) onPlaceStartZone(hexKey(a.q, a.r));
+      drag.current = null;
     } else if (actionButton && tool === "obstacle" && onPaint) {
       const a = screenToAxial(mx, my);
       const erase = e.altKey;
@@ -414,13 +493,14 @@ export function HexCanvas({ radius, obstacles, totems, strongholds, boundaries, 
     } else {
       drag.current = { mode: "pan", erase: false, last: null, px: mx, py: my };
     }
-  }, [tool, onPaint, onPlaceTotem, onPlaceStronghold, onBoundariesChange, readOnly, screenToAxial, screenToWorld, pickBoundaryEndpoint, paintAt, cells]);
+  }, [tool, onPaint, onPlaceTotem, onPlaceStronghold, onPlaceStartZone, onBoundariesChange, readOnly, screenToAxial, screenToWorld, pickBoundaryEndpoint, paintAt, cells]);
 
   const onPointerMove = useCallback((e: React.PointerEvent) => {
     const canvas = canvasRef.current;
     if (!canvas) return;
     const rect = canvas.getBoundingClientRect();
     const mx = e.clientX - rect.left, my = e.clientY - rect.top;
+    mouseRef.current = { x: mx, y: my };
     hover.current = screenToAxial(mx, my);
     if (tool === "boundary" && !readOnly) {
       const w = screenToWorld(mx, my);
