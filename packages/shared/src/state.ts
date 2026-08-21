@@ -628,6 +628,12 @@ export class GameState {
     return this.kingId() !== -1;
   }
 
+  /** Mode CẤP ĐỘ (Campaign): có SỐ MẠNG hữu hạn (`maxLives > 0`). /play & /netplay = 0 (vô hạn). Dùng
+   *  để nới luật: campaign KHÔNG khoá hồi sinh người chơi khi bot lên King (doc 35). */
+  private isCampaign(): boolean {
+    return this.config.rules.maxLives > 0;
+  }
+
   /** Hai bot ĐỒNG MINH (doc 34 B): cùng là bot & `botsAllied` ⇒ KHÔNG sát thương nhau. */
   private allied(a: Entity, b: Entity): boolean {
     return this.config.rules.botsAllied && a.isBot && b.isBot;
@@ -1043,7 +1049,8 @@ export class GameState {
     if (this.human.phase !== "dead") return false;
     if (this.lost) return false; // [Campaign] hết mạng → không hồi sinh nữa
     if (this.spectating) return false; // đã chọn XEM → chờ hết ván
-    if (this.roomLocked()) return false; // phòng có KING → chờ mất ngôi mới vào lại
+    // Campaign: bot lên King KHÔNG khoá hồi sinh người chơi (doc 35). /play & online giữ khoá cũ.
+    if (!this.isCampaign() && this.roomLocked()) return false;
     return this.spawn(this.human); // false nếu bản đồ đã đầy (không đủ chỗ hợp lệ)
   }
 
@@ -1052,7 +1059,7 @@ export class GameState {
     if (this.human.phase !== "dead") return false;
     if (this.lost) return false; // [Campaign] hết mạng → không hồi sinh nữa
     if (this.spectating) return false;
-    if (this.roomLocked()) return false;
+    if (!this.isCampaign() && this.roomLocked()) return false; // campaign: bot King không khoá (doc 35)
     return this.pickSpawnHex(this.human) !== null;
   }
 

@@ -225,6 +225,9 @@ export declare class GameState {
     /** Phòng bị KHOÁ khi đã có KING: không cho ai hồi sinh/tham gia (người còn sống thì
      *  đối kháng với nhau). Hết King → mở lại. */
     roomLocked(): boolean;
+    /** Mode CẤP ĐỘ (Campaign): có SỐ MẠNG hữu hạn (`maxLives > 0`). /play & /netplay = 0 (vô hạn). Dùng
+     *  để nới luật: campaign KHÔNG khoá hồi sinh người chơi khi bot lên King (doc 35). */
+    private isCampaign;
     /** Hai bot ĐỒNG MINH (doc 34 B): cùng là bot & `botsAllied` ⇒ KHÔNG sát thương nhau. */
     private allied;
     /** Hai id CÙNG ĐỘI: trùng id, hoặc `botsAllied` và cả hai là bot (doc 34: Bot đồng đội). Dùng cho

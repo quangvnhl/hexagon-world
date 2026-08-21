@@ -497,6 +497,11 @@ class GameState {
     roomLocked() {
         return this.kingId() !== -1;
     }
+    /** Mode CẤP ĐỘ (Campaign): có SỐ MẠNG hữu hạn (`maxLives > 0`). /play & /netplay = 0 (vô hạn). Dùng
+     *  để nới luật: campaign KHÔNG khoá hồi sinh người chơi khi bot lên King (doc 35). */
+    isCampaign() {
+        return this.config.rules.maxLives > 0;
+    }
     /** Hai bot ĐỒNG MINH (doc 34 B): cùng là bot & `botsAllied` ⇒ KHÔNG sát thương nhau. */
     allied(a, b) {
         return this.config.rules.botsAllied && a.isBot && b.isBot;
@@ -927,8 +932,9 @@ class GameState {
             return false; // [Campaign] hết mạng → không hồi sinh nữa
         if (this.spectating)
             return false; // đã chọn XEM → chờ hết ván
-        if (this.roomLocked())
-            return false; // phòng có KING → chờ mất ngôi mới vào lại
+        // Campaign: bot lên King KHÔNG khoá hồi sinh người chơi (doc 35). /play & online giữ khoá cũ.
+        if (!this.isCampaign() && this.roomLocked())
+            return false;
         return this.spawn(this.human); // false nếu bản đồ đã đầy (không đủ chỗ hợp lệ)
     }
     /** Người chơi có thể hồi sinh ngay bây giờ không? (chưa chọn xem, không bị khoá, còn chỗ). */
@@ -939,8 +945,8 @@ class GameState {
             return false; // [Campaign] hết mạng → không hồi sinh nữa
         if (this.spectating)
             return false;
-        if (this.roomLocked())
-            return false;
+        if (!this.isCampaign() && this.roomLocked())
+            return false; // campaign: bot King không khoá (doc 35)
         return this.pickSpawnHex(this.human) !== null;
     }
     /** Người chơi chọn XEM (khán giả): từ bỏ hồi sinh, chờ đến khi hết ván mới chơi lại. */

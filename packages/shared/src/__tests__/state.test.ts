@@ -502,3 +502,32 @@ describe("GameState: ô KHỞI ĐỘNG người chơi (doc 35)", () => {
     expect(g.human.currentHex).toEqual({ q: -3, r: 2 });
   });
 });
+
+describe("GameState: Campaign — bot King KHÔNG khoá hồi sinh người chơi (doc 35)", () => {
+  // Dựng cảnh bot LÀ KING deterministic: cấp cho bot (id 1) một cụm ô ≥ kingPct rồi cho bot "playing".
+  const makeBotKing = (maxLives: number) => {
+    const g = new GameState({ config: { bots: { count: 1 }, rules: { maxLives, kingEnabled: true, totemsEnabled: false }, win: { kind: "none", kingPct: 1 }, map: { radius: 20 } } });
+    const cells = [...g.playable].slice(0, 8); // 8/331 ≈ 2.4% > kingPct 1% ⇒ bot là King; để trống tâm cho hồi sinh
+    g.applyTerritory(cells.map((k) => { const { q, r } = parseKey(k); return { q, r, owner: 1, kind: 0 as const }; }));
+    g.players[1].phase = "playing";
+    return g;
+  };
+
+  it("campaign (maxLives>0): người chơi chết + bot là King ⇒ VẪN hồi sinh được", () => {
+    const g = makeBotKing(3);
+    g.die();
+    expect(g.roomLocked()).toBe(true);      // bot vượt kingPct=1 ⇒ có KING
+    expect(g.kingId()).toBe(1);             // King là BOT
+    expect(g.canRevive()).toBe(true);
+    expect(g.revive()).toBe(true);
+    expect(g.human.phase).not.toBe("dead");
+  });
+
+  it("/play (maxLives=0): bot King VẪN khoá hồi sinh (bất biến)", () => {
+    const g = makeBotKing(0);
+    g.die();
+    expect(g.roomLocked()).toBe(true);
+    expect(g.canRevive()).toBe(false);
+    expect(g.revive()).toBe(false);
+  });
+});
