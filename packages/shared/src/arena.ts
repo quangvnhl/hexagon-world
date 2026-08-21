@@ -63,11 +63,13 @@ export class ArenaGeometry {
     return true;
   }
 
-  /** Kéo điểm trở về TRONG lục giác lồi (chiếu lên các nửa mặt phẳng bị vi phạm). */
-  clampInside(x: number, y: number): { x: number; y: number } {
+  /** Kéo điểm trở về TRONG lục giác lồi (chiếu lên các nửa mặt phẳng bị vi phạm). `inset` co biên
+   *  va chạm vào trong (bán kính THÂN nhân vật) → tâm dừng cách tường ≥ inset. */
+  clampInside(x: number, y: number, inset = 0): { x: number; y: number } {
+    const lim = this.wallLimit - inset;
     for (let pass = 0; pass < 2; pass++) {
       for (const w of WALLS) {
-        const d = x * w.nx + y * w.ny - this.wallLimit;
+        const d = x * w.nx + y * w.ny - lim;
         if (d > 0) {
           x -= d * w.nx;
           y -= d * w.ny;
@@ -93,19 +95,21 @@ export class ArenaGeometry {
     y: number,
     heading: number,
     dist: number,
+    inset = 0,
   ): { x: number; y: number; blocked: boolean } {
     const vx0 = Math.cos(heading);
     const vy0 = Math.sin(heading);
+    const lim = this.wallLimit - inset; // biên co theo bán kính THÂN
 
     // Các tường mà bước dự định sẽ VƯỢT (điểm đích ra ngoài & vận tốc hướng ra).
     const active: number[] = [];
     for (let k = 0; k < WALLS.length; k++) {
       const w = WALLS[k];
-      const dest = (x + vx0 * dist) * w.nx + (y + vy0 * dist) * w.ny - this.wallLimit;
+      const dest = (x + vx0 * dist) * w.nx + (y + vy0 * dist) * w.ny - lim;
       if (dest > 0 && vx0 * w.nx + vy0 * w.ny > 0) active.push(k);
     }
     if (active.length === 0) {
-      const c = this.clampInside(x + vx0 * dist, y + vy0 * dist);
+      const c = this.clampInside(x + vx0 * dist, y + vy0 * dist, inset);
       return { x: c.x, y: c.y, blocked: false };
     }
 
@@ -143,7 +147,7 @@ export class ArenaGeometry {
     // Chuẩn hoá → trượt ở TỐC ĐỘ ĐẦY ĐỦ; clamp cho chắc trong sân.
     vx /= len;
     vy /= len;
-    const c = this.clampInside(x + vx * dist, y + vy * dist);
+    const c = this.clampInside(x + vx * dist, y + vy * dist, inset);
     return { x: c.x, y: c.y, blocked: true };
   }
 

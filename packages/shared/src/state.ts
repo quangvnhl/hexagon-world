@@ -37,6 +37,15 @@ import {
   type TotemState,
 } from "./totems";
 
+/** Điểm gần nhất trên ĐOẠN (ax,ay)-(bx,by) tới điểm (px,py) — cho va chạm THÂN (capsule) với biên. */
+function closestOnSeg(px: number, py: number, ax: number, ay: number, bx: number, by: number): { x: number; y: number } {
+  const dx = bx - ax, dy = by - ay;
+  const l2 = dx * dx + dy * dy;
+  let t = l2 > 0 ? ((px - ax) * dx + (py - ay) * dy) / l2 : 0;
+  if (t < 0) t = 0; else if (t > 1) t = 1;
+  return { x: ax + dx * t, y: ay + dy * t };
+}
+
 /** Hai đoạn (p1→p2) và (p3→p4) có CẮT nhau không (doc 34 D — va chạm biên). */
 function segmentsCross(p1x: number, p1y: number, p2x: number, p2y: number, p3x: number, p3y: number, p4x: number, p4y: number): boolean {
   const d = (p2x - p1x) * (p4y - p3y) - (p2y - p1y) * (p4x - p3x);
@@ -182,6 +191,8 @@ export class GameState {
   private readonly arena: ArenaGeometry;
   /** Kích thước hex của ván (tiện đọc; = config.map.hexSize). */
   private readonly hexSize: number;
+  /** Bán kính THÂN (collider tròn) với tường sân + tường biên vẽ (= config.rules.bodyRadius). */
+  private readonly bodyRadius: number;
   /** CONTAINER tự quản luật thắng (xem `GameStateOptions.externalWinControl`). */
   private readonly externalWinControl: boolean;
 
@@ -242,6 +253,7 @@ export class GameState {
       this.config.map.hexSize,
     );
     this.hexSize = this.config.map.hexSize;
+    this.bodyRadius = Math.max(0, this.config.rules.bodyRadius);
     this.externalWinControl = options.externalWinControl ?? false;
     this.headHash = new SpatialHash<{ id: number; x: number; y: number }>(
       this.config.rules.killRadius,
@@ -1301,10 +1313,12 @@ export class GameState {
 
     // Va chạm tường: dịch theo hướng nhìn rồi TRƯỢT dọc biên ở TỐC ĐỘ ĐẦY ĐỦ (slideMove).
     // Không sinh vận tốc LÙI (tránh đầu bị đẩy ngược vào ô đuôi của chính mình → chết oan).
-    let c: { x: number; y: number } = this.arena.slideMove(e.pos.x, e.pos.y, e.heading, dist);
+    // THÂN nhân vật = collider TRÒN bán kính bodyRadius: biên sân co vào bodyRadius (mép thân dừng
+    // ở tường, không để tâm lún vào). bodyRadius=0 ⇒ collider điểm như cũ (/play, /netplay bất biến).
+    let c: { x: number; y: number } = this.arena.slideMove(e.pos.x, e.pos.y, e.heading, dist, this.bodyRadius);
     // Ô CHƯỚNG NGẠI KHÔNG còn collider riêng (doc 34): chỉ dùng làm barrier flood-fill + ô không chơi
     // được. Muốn chặn di chuyển thì admin VẼ tường BIÊN quanh nó. Va chạm duy nhất = tường biên vẽ.
-    // Tường BIÊN admin vẽ (doc 34 D) — trượt dọc, không băng qua.
+    // Tường BIÊN admin vẽ (doc 34 D) — trượt dọc theo THÂN tròn (đẩy tâm ra ≥ bodyRadius), không băng qua.
     if (this.boundarySegs.length > 0) c = this.slideAlongBoundaries(e.pos.x, e.pos.y, c.x, c.y);
     const mdx = c.x - e.pos.x;
     const mdy = c.y - e.pos.y;
@@ -1319,10 +1333,14 @@ export class GameState {
     }
   }
 
-  /** [doc 34 D] TRƯỢT dọc tường BIÊN admin vẽ: nếu bước `pos→c` cắt một đoạn biên, bỏ thành phần
-   *  vận tốc đi XUYÊN đoạn (giữ tiếp tuyến) → trượt dọc tường, không băng qua. Lặp cho nhiều đoạn. */
+  /** [doc 34 D] Va chạm THÂN TRÒN (bán kính bodyRadius) với tường BIÊN admin vẽ. Hai pha:
+   *   A) CHỐNG XUYÊN TÂM: nếu bước `pos→c` cắt một đoạn, bỏ thành phần vận tốc đi XUYÊN (trượt dọc).
+   *   B) ĐẨY THÂN RA: nếu tâm đích còn cách đoạn < bodyRadius, đẩy vuông góc ra tới đúng bodyRadius
+   *      (bo tròn ở đầu mút đoạn). bodyRadius=0 ⇒ chỉ còn pha A (collider điểm như trước). */
   private slideAlongBoundaries(px: number, py: number, cx: number, cy: number): { x: number; y: number } {
     if (this.boundarySegs.length === 0) return { x: cx, y: cy };
+    const r = this.bodyRadius;
+    // Pha A — chống xuyên tâm (giữ nguyên hành vi cũ).
     let vx = cx - px, vy = cy - py;
     for (let iter = 0; iter < 3; iter++) {
       let hit = false;
@@ -1336,7 +1354,28 @@ export class GameState {
       }
       if (!hit) break;
     }
-    return { x: px + vx, y: py + vy };
+    let x = px + vx, y = py + vy;
+    if (r <= 0) return { x, y };
+    // Pha B — đẩy THÂN ra khỏi mọi đoạn (điểm–đoạn ≥ r; đầu mút bo tròn).
+    for (let iter = 0; iter < 4; iter++) {
+      let hit = false;
+      for (const s of this.boundarySegs) {
+        const q = closestOnSeg(x, y, s.ax, s.ay, s.bx, s.by);
+        let nx = x - q.x, ny = y - q.y;
+        let d = Math.hypot(nx, ny);
+        if (d >= r) continue;                      // thân không chạm đoạn này
+        if (d < 1e-9) {                            // tâm ĐÚNG trên đoạn → dùng pháp tuyến đoạn về phía pos
+          nx = -(s.by - s.ay); ny = s.bx - s.ax;
+          const nl = Math.hypot(nx, ny) || 1; nx /= nl; ny /= nl;
+          if ((px - q.x) * nx + (py - q.y) * ny < 0) { nx = -nx; ny = -ny; }
+        } else { nx /= d; ny /= d; }
+        x = q.x + nx * r; y = q.y + ny * r;        // đặt thân TIẾP XÚC đoạn
+        hit = true;
+      }
+      if (!hit) break;
+    }
+    const inside = this.arena.clampInside(x, y, r);
+    return { x: inside.x, y: inside.y };
   }
 
   /** API cho test: di chuyển người chơi tới (x,y) nếu ô đích hợp lệ (không phải chướng ngại). */

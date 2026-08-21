@@ -48,9 +48,11 @@ export const CollisionDebug = memo(function CollisionDebug({
     line.frustumCulled = false;
     return line;
   };
+  // Vòng THÂN phản ánh bán kính collider tròn THẬT của ván (config.rules.bodyRadius); 0 ⇒ fallback
+  // về hằng debug để vẫn thấy được cỡ thân tham chiếu.
   const cubeOutline = useMemo(
-    () => makeRing(CONFIG.DEBUG.CUBE_COLLIDER_RADIUS, 0x8be9ff),
-    []
+    () => makeRing(game.config.rules.bodyRadius > 0 ? game.config.rules.bodyRadius : CONFIG.DEBUG.CUBE_COLLIDER_RADIUS, 0x8be9ff),
+    [game.config.rules.bodyRadius]
   );
   const killCircle = useMemo(
     () => makeRing(CONFIG.DEBUG.KILL_RING_RADIUS, 0xffd23f),

@@ -112,6 +112,8 @@ export interface MatchRules {
   botTurnRate: number; // BOT.TURN_RATE (bot)
   trailPointDist: number; // TRAIL_POINT_DIST
   killRadius: number; // KILL_RADIUS
+  /** Bán kính THÂN (collider tròn) với tường sân + tường biên vẽ (BODY_RADIUS). 0 = collider điểm. */
+  bodyRadius: number; // BODY_RADIUS
   selfTrailGrace: number; // SELF_TRAIL_GRACE
   /** Đường cong tốc độ nền (SPEED.BY_KING_PCT). */
   speed: MatchSpeedRules;
@@ -184,6 +186,7 @@ export function resolveMatchConfig(input: MatchConfigInput = {}): MatchConfig {
       botTurnRate: input.rules?.botTurnRate ?? CONFIG.BOT.TURN_RATE,
       trailPointDist: input.rules?.trailPointDist ?? CONFIG.TRAIL_POINT_DIST,
       killRadius: input.rules?.killRadius ?? CONFIG.KILL_RADIUS,
+      bodyRadius: input.rules?.bodyRadius ?? CONFIG.BODY_RADIUS,
       selfTrailGrace: input.rules?.selfTrailGrace ?? CONFIG.SELF_TRAIL_GRACE,
       speed: {
         min: input.rules?.speed?.min ?? CONFIG.SPEED.BY_KING_PCT.MIN,

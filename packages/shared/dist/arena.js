@@ -45,11 +45,13 @@ class ArenaGeometry {
         }
         return true;
     }
-    /** Kéo điểm trở về TRONG lục giác lồi (chiếu lên các nửa mặt phẳng bị vi phạm). */
-    clampInside(x, y) {
+    /** Kéo điểm trở về TRONG lục giác lồi (chiếu lên các nửa mặt phẳng bị vi phạm). `inset` co biên
+     *  va chạm vào trong (bán kính THÂN nhân vật) → tâm dừng cách tường ≥ inset. */
+    clampInside(x, y, inset = 0) {
+        const lim = this.wallLimit - inset;
         for (let pass = 0; pass < 2; pass++) {
             for (const w of exports.WALLS) {
-                const d = x * w.nx + y * w.ny - this.wallLimit;
+                const d = x * w.nx + y * w.ny - lim;
                 if (d > 0) {
                     x -= d * w.nx;
                     y -= d * w.ny;
@@ -69,19 +71,20 @@ class ArenaGeometry {
      * Đâm gần VUÔNG GÓC hoặc ép đúng GÓC lồi (trượt quá ít) thì giữ bước đã clamp (đứng/nhích
      * nhẹ) — tránh "văng" ngang. `blocked` = bước bị tường cắt bớt (đang áp biên).
      */
-    slideMove(x, y, heading, dist) {
+    slideMove(x, y, heading, dist, inset = 0) {
         const vx0 = Math.cos(heading);
         const vy0 = Math.sin(heading);
+        const lim = this.wallLimit - inset; // biên co theo bán kính THÂN
         // Các tường mà bước dự định sẽ VƯỢT (điểm đích ra ngoài & vận tốc hướng ra).
         const active = [];
         for (let k = 0; k < exports.WALLS.length; k++) {
             const w = exports.WALLS[k];
-            const dest = (x + vx0 * dist) * w.nx + (y + vy0 * dist) * w.ny - this.wallLimit;
+            const dest = (x + vx0 * dist) * w.nx + (y + vy0 * dist) * w.ny - lim;
             if (dest > 0 && vx0 * w.nx + vy0 * w.ny > 0)
                 active.push(k);
         }
         if (active.length === 0) {
-            const c = this.clampInside(x + vx0 * dist, y + vy0 * dist);
+            const c = this.clampInside(x + vx0 * dist, y + vy0 * dist, inset);
             return { x: c.x, y: c.y, blocked: false };
         }
         // Bỏ thành phần PHÁP TUYẾN của các tường đang chặn → vận tốc TRƯỢT dọc tường. Lặp 2
@@ -117,7 +120,7 @@ class ArenaGeometry {
         // Chuẩn hoá → trượt ở TỐC ĐỘ ĐẦY ĐỦ; clamp cho chắc trong sân.
         vx /= len;
         vy /= len;
-        const c = this.clampInside(x + vx * dist, y + vy * dist);
+        const c = this.clampInside(x + vx * dist, y + vy * dist, inset);
         return { x: c.x, y: c.y, blocked: true };
     }
     /**

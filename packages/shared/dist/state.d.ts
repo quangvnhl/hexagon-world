@@ -110,6 +110,8 @@ export declare class GameState {
     private readonly arena;
     /** Kích thước hex của ván (tiện đọc; = config.map.hexSize). */
     private readonly hexSize;
+    /** Bán kính THÂN (collider tròn) với tường sân + tường biên vẽ (= config.rules.bodyRadius). */
+    private readonly bodyRadius;
     /** CONTAINER tự quản luật thắng (xem `GameStateOptions.externalWinControl`). */
     private readonly externalWinControl;
     private fixedSpawn?;
@@ -331,8 +333,10 @@ export declare class GameState {
     private winSubjectId;
     private checkWin;
     private updateEntity;
-    /** [doc 34 D] TRƯỢT dọc tường BIÊN admin vẽ: nếu bước `pos→c` cắt một đoạn biên, bỏ thành phần
-     *  vận tốc đi XUYÊN đoạn (giữ tiếp tuyến) → trượt dọc tường, không băng qua. Lặp cho nhiều đoạn. */
+    /** [doc 34 D] Va chạm THÂN TRÒN (bán kính bodyRadius) với tường BIÊN admin vẽ. Hai pha:
+     *   A) CHỐNG XUYÊN TÂM: nếu bước `pos→c` cắt một đoạn, bỏ thành phần vận tốc đi XUYÊN (trượt dọc).
+     *   B) ĐẨY THÂN RA: nếu tâm đích còn cách đoạn < bodyRadius, đẩy vuông góc ra tới đúng bodyRadius
+     *      (bo tròn ở đầu mút đoạn). bodyRadius=0 ⇒ chỉ còn pha A (collider điểm như trước). */
     private slideAlongBoundaries;
     /** API cho test: di chuyển người chơi tới (x,y) nếu ô đích hợp lệ (không phải chướng ngại). */
     moveTo(x: number, y: number): void;

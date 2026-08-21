@@ -45,6 +45,7 @@ function resolveMatchConfig(input = {}) {
             botTurnRate: input.rules?.botTurnRate ?? config_1.CONFIG.BOT.TURN_RATE,
             trailPointDist: input.rules?.trailPointDist ?? config_1.CONFIG.TRAIL_POINT_DIST,
             killRadius: input.rules?.killRadius ?? config_1.CONFIG.KILL_RADIUS,
+            bodyRadius: input.rules?.bodyRadius ?? config_1.CONFIG.BODY_RADIUS,
             selfTrailGrace: input.rules?.selfTrailGrace ?? config_1.CONFIG.SELF_TRAIL_GRACE,
             speed: {
                 min: input.rules?.speed?.min ?? config_1.CONFIG.SPEED.BY_KING_PCT.MIN,

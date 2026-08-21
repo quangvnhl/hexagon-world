@@ -77,6 +77,10 @@ export declare const CONFIG: {
     readonly WIN_HOLD_TIME: 180;
     /** Bán kính va chạm ĐẦU (world units): chủ đất hạ kẻ xâm nhập khi hai đầu sát nhau. */
     readonly KILL_RADIUS: 0.25;
+    /** Bán kính THÂN (world units) collider TRÒN của nhân vật với TƯỜNG sân + tường BIÊN vẽ: tâm bị
+     *  giữ cách tường ≥ bán kính này → MÉP thân dừng ở tường thay vì để tâm lún vào. ≈ nửa thân cube
+     *  (CUBE_SIZE 1.2 → 0.6). KHÔNG dính tới KILL_RADIUS (luật húc đầu). 0 = collider ĐIỂM (như cũ). */
+    readonly BODY_RADIUS: 0.6;
     /** Số ô ĐUÔI mới nhất (sát đầu) được MIỄN luật tự-cắt-đuôi. Cần ≥1 để đầu không "chết
      *  oan" khi làm tròn hex dao động lúc đi dọc đúng ranh giới cột hex / men theo tường
      *  (đầu bị bật qua-lại giữa 2 ô kề). Cắt vào đoạn đuôi CŨ hơn thì vẫn chết như thường. */

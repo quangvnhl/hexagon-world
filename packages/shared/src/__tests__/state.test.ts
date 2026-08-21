@@ -376,6 +376,26 @@ describe("GameState: tường BIÊN admin vẽ (doc 34 D)", () => {
     for (let i = 0; i < 300; i++) { g.update(1 / 60); if (e.pos.x >= 3) crossed = true; }
     expect(crossed).toBe(false); // dừng trước tường, không xuyên qua
   });
+
+  it("collider THÂN tròn: tâm dừng cách biên ≥ bodyRadius (mép thân chạm tường)", () => {
+    const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 }, rules: { bodyRadius: 0.6 }, map: { boundaries: [{ id: "w", points: [[3, -5], [3, 5]] }] } } });
+    skipPrep(g);
+    const e = g.players[0];
+    e.phase = "playing"; e.targetHeading = 0; e.heading = 0;
+    for (let i = 0; i < 300; i++) g.update(1 / 60);
+    expect(e.pos.x).toBeLessThanOrEqual(3 - 0.6 + 1e-3); // tâm cách tường ≥ bán kính thân
+    expect(e.pos.x).toBeGreaterThan(3 - 0.6 - 0.5);      // vẫn tiến tới sát (không kẹt xa)
+  });
+
+  it("bodyRadius=0 → collider ĐIỂM, tâm áp sát tường (bất biến /play)", () => {
+    const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 }, rules: { bodyRadius: 0 }, map: { boundaries: [{ id: "w", points: [[3, -5], [3, 5]] }] } } });
+    skipPrep(g);
+    const e = g.players[0];
+    e.phase = "playing"; e.targetHeading = 0; e.heading = 0;
+    for (let i = 0; i < 300; i++) g.update(1 / 60);
+    expect(e.pos.x).toBeGreaterThan(3 - 0.2); // tâm tới rất sát x=3 (không bị co bán kính)
+    expect(e.pos.x).toBeLessThan(3);
+  });
 });
 
 describe("GameState: Bot đồng đội — giết bot không chiếm đất (doc 34)", () => {

@@ -24,8 +24,9 @@ export declare class ArenaGeometry {
     constructor(radius?: number, wallScale?: number, hexSize?: number);
     /** Điểm (x,y) có nằm trong sân không (nới/thu biên bằng `slack`). */
     insideArena(x: number, y: number, slack?: number): boolean;
-    /** Kéo điểm trở về TRONG lục giác lồi (chiếu lên các nửa mặt phẳng bị vi phạm). */
-    clampInside(x: number, y: number): {
+    /** Kéo điểm trở về TRONG lục giác lồi (chiếu lên các nửa mặt phẳng bị vi phạm). `inset` co biên
+     *  va chạm vào trong (bán kính THÂN nhân vật) → tâm dừng cách tường ≥ inset. */
+    clampInside(x: number, y: number, inset?: number): {
         x: number;
         y: number;
     };
@@ -40,7 +41,7 @@ export declare class ArenaGeometry {
      * Đâm gần VUÔNG GÓC hoặc ép đúng GÓC lồi (trượt quá ít) thì giữ bước đã clamp (đứng/nhích
      * nhẹ) — tránh "văng" ngang. `blocked` = bước bị tường cắt bớt (đang áp biên).
      */
-    slideMove(x: number, y: number, heading: number, dist: number): {
+    slideMove(x: number, y: number, heading: number, dist: number, inset?: number): {
         x: number;
         y: number;
         blocked: boolean;

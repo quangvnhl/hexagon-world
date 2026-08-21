@@ -92,6 +92,8 @@ export interface MatchRules {
     botTurnRate: number;
     trailPointDist: number;
     killRadius: number;
+    /** Bán kính THÂN (collider tròn) với tường sân + tường biên vẽ (BODY_RADIUS). 0 = collider điểm. */
+    bodyRadius: number;
     selfTrailGrace: number;
     /** Đường cong tốc độ nền (SPEED.BY_KING_PCT). */
     speed: MatchSpeedRules;
