@@ -243,6 +243,7 @@ function GameLoop({
         colorIndex: game.human.colorIndex,
         won: game.won,
         lost: game.lost,
+        lostReason: game.lostReason,
         maxLives: game.config.rules.maxLives,
         objective: objectiveProgress(game),
         endless: game.config.win.kind === "none",

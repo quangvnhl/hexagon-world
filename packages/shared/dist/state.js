@@ -8,14 +8,6 @@ const match_config_1 = require("./match-config");
 const floodfill_1 = require("./floodfill");
 const spatialhash_1 = require("./spatialhash");
 const totems_1 = require("./totems");
-/** 6 mặt của ô lục (pointy-top) cho va chạm obstacle đa giác (doc 33): pháp tuyến `n` (đơn vị,
- *  hướng RA tới ô kề) + tiếp tuyến `t` (⟂ n, dọc cạnh). Cố định, không theo hexSize. */
-const HEX_FACES = hex_1.DIRECTIONS.map((d) => {
-    const p = (0, hex_1.axialToPixel)(d, 1);
-    const l = Math.hypot(p.x, p.y) || 1;
-    const nx = p.x / l, ny = p.y / l;
-    return { nx, ny, tx: -ny, ty: nx };
-});
 /** Hai đoạn (p1→p2) và (p3→p4) có CẮT nhau không (doc 34 D — va chạm biên). */
 function segmentsCross(p1x, p1y, p2x, p2y, p3x, p3y, p4x, p4y) {
     const d = (p2x - p1x) * (p4y - p3y) - (p2y - p1y) * (p4x - p3x);
@@ -25,6 +17,9 @@ function segmentsCross(p1x, p1y, p2x, p2y, p3x, p3y, p4x, p4y) {
     const u = ((p3x - p1x) * (p2y - p1y) - (p3y - p1y) * (p2x - p1x)) / d;
     return t >= 0 && t <= 1 && u >= 0 && u <= 1;
 }
+/** Id ĐỘI ẢO cho nhóm bot đồng minh (doc 34): GỘP thống kê diện tích + hiệu ứng totem + tốc độ
+ *  về MỘT đội chung. Âm & khác -1 (trung lập) để không đụng id thực thể thật. */
+const BOT_TEAM = -2;
 /** Một thực thể chơi (người hoặc bot): vị trí, đuôi, lãnh thổ, trạng thái. */
 class Entity {
     constructor(id, isBot, color) {
@@ -121,6 +116,9 @@ class GameState {
         this.lost = false;
         /** Id chủ thể đã thua (-1 nếu chưa). */
         this.lostId = -1;
+        /** LÝ DO thua (cho popup): "lives" = hết mạng (deaths ≥ maxLives); "no_space" = còn mạng nhưng bản
+         *  đồ không còn ô hồi sinh hợp lệ (đã bị chiếm hết). "" khi chưa thua. */
+        this.lostReason = "";
         /** Id KING đang được tính giờ giữ ngôi (đổi King → reset đồng hồ). */
         this.kingHolderId = -1;
         /** Người chơi đã chọn XEM (khán giả): không hồi sinh nữa tới khi hết ván. */
@@ -496,6 +494,12 @@ class GameState {
         const a = this.players[idA], b = this.players[idB];
         return !!a && !!b && this.config.rules.botsAllied && a.isBot && b.isBot;
     }
+    /** Id ĐỘI để GỘP thống kê/totem/tốc độ: bot đồng minh → một đội chung (BOT_TEAM); còn lại → chính
+     *  id (doc 34). Nhờ vậy diện tích + hiệu ứng totem tính THEO ĐỘI, không rời từng bot. */
+    teamIdOf(id) {
+        const e = this.players[id];
+        return e && e.isBot && this.config.rules.botsAllied ? BOT_TEAM : id;
+    }
     /** Ô `hk` thuộc ĐỘI của `e` (owner là e hoặc đồng đội). Bot đi trên ô ĐỘI = "về nhà" ⇒ không đuôi. */
     teamOwns(hk, e) {
         const owner = this.cellOwner.get(hk);
@@ -532,13 +536,16 @@ class GameState {
         const s = this.strongholds[e.strongholdIndex];
         return this.playable.has((0, hex_1.keyOf)({ q: s.q, r: s.r })) ? { q: s.q, r: s.r } : null;
     }
-    /** Đánh dấu cứ điểm BỊ CHIẾM khi người chơi (id 0) sở hữu ô cứ điểm (doc 34 B). */
+    /** Cập nhật cứ điểm theo CHỦ ô cứ điểm (doc 34 B): người chơi (id 0) sở hữu ô ⇒ ĐÁNH DẤU bị chiếm
+     *  (bot ngừng hồi sinh); đội bot CHIẾM LẠI ô (chủ khác 0) ⇒ BỎ đánh dấu → bot hồi sinh trở lại. */
     updateStrongholds() {
         if (this.strongholds.length === 0)
             return;
         for (const [k, idx] of this.strongholdCell) {
-            if (!this.capturedStrongholds.has(idx) && this.cellOwner.get(k) === 0)
+            if (this.cellOwner.get(k) === 0)
                 this.capturedStrongholds.add(idx);
+            else
+                this.capturedStrongholds.delete(idx);
         }
     }
     /** Id thực thể CÒN SỐNG có nhiều đất nhất (cho camera khán giả); -1 nếu không có. */
@@ -571,12 +578,35 @@ class GameState {
             return dir > 0 ? alive[0] : alive[alive.length - 1];
         return alive[(idx + dir + alive.length) % alive.length];
     }
-    /** % lãnh thổ của mọi thực thể (cho bảng xếp hạng). */
+    /** % lãnh thổ của mọi thực thể (cho bảng xếp hạng). Bot ĐỒNG ĐỘI (doc 34) → GỘP thành MỘT dòng
+     *  "Đội Bot": diện tích cộng dồn, còn sống nếu còn ≥1 bot sống. Người chơi giữ dòng riêng. */
     scores() {
+        const denom = this.playable.size;
+        if (this.config.rules.botsAllied) {
+            const rows = [];
+            let botCells = 0, botAlive = false, botColor = 1, botId = -1;
+            for (const e of this.players) {
+                if (e.isBot) {
+                    if (botId < 0) {
+                        botId = e.id;
+                        botColor = e.colorIndex;
+                    }
+                    botCells += this.ownedPlayable(e);
+                    if (e.alive)
+                        botAlive = true;
+                }
+                else {
+                    rows.push({ id: e.id, name: e.name || e.color.name, pct: (this.ownedPlayable(e) / denom) * 100, alive: e.alive, colorIndex: e.colorIndex });
+                }
+            }
+            if (botId >= 0)
+                rows.push({ id: botId, name: "Đội Bot", pct: (botCells / denom) * 100, alive: botAlive, colorIndex: botColor });
+            return rows;
+        }
         return this.players.map((e) => ({
             id: e.id,
             name: e.name || e.color.name,
-            pct: (this.ownedPlayable(e) / this.playable.size) * 100,
+            pct: (this.ownedPlayable(e) / denom) * 100,
             alive: e.alive,
             colorIndex: e.colorIndex,
         }));
@@ -604,11 +634,11 @@ class GameState {
     }
     speedTotemCountFor(entityId) {
         this.reconcileTotems();
-        return this.speedTotemsByOwner.get(entityId) ?? 0;
+        return this.speedTotemsByOwner.get(this.teamIdOf(entityId)) ?? 0;
     }
     radarActiveFor(entityId) {
         this.reconcileTotems();
-        return this.radarOwners.has(entityId);
+        return this.radarOwners.has(this.teamIdOf(entityId));
     }
     /** Cấu hình sinh Totem của ván (từ rules) — dùng cho createTotems trong constructor. */
     totemSpawnConfig() {
@@ -644,7 +674,8 @@ class GameState {
             return false;
         const radiusSq = this.config.rules.totems.slowRadius ** 2;
         return this.totemItems.some((totem) => {
-            if (totem.kind !== "slow" || totem.ownerId < 0 || totem.ownerId === entityId)
+            // Totem chậm của ĐỒNG ĐỘI (hoặc của chính mình) KHÔNG làm chậm mình (doc 34: bot đồng đội).
+            if (totem.kind !== "slow" || totem.ownerId < 0 || this.sameTeam(totem.ownerId, entityId))
                 return false;
             const p = (0, hex_1.axialToPixel)(totem, this.hexSize);
             return (entity.pos.x - p.x) ** 2 + (entity.pos.y - p.y) ** 2 <= radiusSq;
@@ -655,7 +686,7 @@ class GameState {
         const radarActive = this.radarActiveFor(entityId);
         const insideEnemySlowZone = this.insideEnemySlowZoneFor(entityId);
         return {
-            effectiveSpeed: (0, totems_1.effectiveSpeedWithTotems)(((this.playableOwnedByOwner.get(entityId) ?? 0) / this.playable.size) * 100, speedTotemCount, insideEnemySlowZone, this.effectiveSpeedConfig()),
+            effectiveSpeed: (0, totems_1.effectiveSpeedWithTotems)(((this.playableOwnedByOwner.get(this.teamIdOf(entityId)) ?? 0) / this.playable.size) * 100, speedTotemCount, insideEnemySlowZone, this.effectiveSpeedConfig()),
             speedTotemCount,
             radarActive,
             insideEnemySlowZone,
@@ -671,19 +702,23 @@ class GameState {
         this.speedTotemsByOwner.clear();
         this.radarOwners.clear();
         this.playableOwnedByOwner.clear();
+        // GỘP diện tích + hiệu ứng totem theo ĐỘI (teamIdOf): bot đồng minh dùng chung một khoá đội
+        // (doc 34) ⇒ totem một bot thu được áp cho cả đội, tốc độ tính theo diện tích ĐỘI.
         for (const [cell, ownerId] of this.cellOwner) {
             if (this.playable.has(cell)) {
-                this.playableOwnedByOwner.set(ownerId, (this.playableOwnedByOwner.get(ownerId) ?? 0) + 1);
+                const tid = this.teamIdOf(ownerId);
+                this.playableOwnedByOwner.set(tid, (this.playableOwnedByOwner.get(tid) ?? 0) + 1);
             }
         }
         let changed = false;
         this.totemItems = this.totemItems.map((totem) => {
             const ownerId = this.cellOwner.get((0, hex_1.keyOf)(totem)) ?? -1;
+            const teamId = ownerId >= 0 ? this.teamIdOf(ownerId) : ownerId;
             if (ownerId >= 0 && totem.kind === "speed") {
-                this.speedTotemsByOwner.set(ownerId, (this.speedTotemsByOwner.get(ownerId) ?? 0) + 1);
+                this.speedTotemsByOwner.set(teamId, (this.speedTotemsByOwner.get(teamId) ?? 0) + 1);
             }
             else if (ownerId >= 0 && totem.kind === "radar") {
-                this.radarOwners.add(ownerId);
+                this.radarOwners.add(teamId);
             }
             if (ownerId === totem.ownerId)
                 return totem;
@@ -920,6 +955,7 @@ class GameState {
         this.winnerId = -1;
         this.lost = false;
         this.lostId = -1;
+        this.lostReason = "";
         this.kingHolderId = -1;
         this.spectating = false;
         this.kingHoldRemaining = this.config.win.winHoldTime;
@@ -1037,14 +1073,17 @@ class GameState {
             if (loser && loser.deaths >= maxLives) {
                 this.lost = true;
                 this.lostId = lid;
+                this.lostReason = "lives";
                 return;
             }
         }
         // [Campaign] THUA khi HẾT CHỖ hồi sinh: người chơi đang chết, chưa chọn xem, nhưng bản đồ KHÔNG
         // còn ô trống hợp lệ để hồi sinh (đã bị chiếm hết) ⇒ thua ngay (doc: hết vùng đất hồi sinh = thua).
+        // Lý do RIÊNG "no_space" (không phải "hết mạng") để popup báo đúng.
         if (maxLives > 0 && !this.lost && this.human.phase === "dead" && !this.spectating && this.pickSpawnHex(this.human) === null) {
             this.lost = true;
             this.lostId = this.human.id;
+            this.lostReason = "no_space";
             return;
         }
         switch (this.config.win.kind) {
@@ -1123,8 +1162,10 @@ class GameState {
     }
     updateEntity(e, dt) {
         if (e.phase === "dead") {
-            // Phòng bị KING khoá → bot nằm chờ (không hồi sinh) cho tới khi mất ngôi.
-            if (e.isBot && !this.roomLocked() && this.botCanRespawn(e) && e.respawnTimer > 0) {
+            // Bot hồi sinh: mode CẤP ĐỘ (có cứ điểm) KHÔNG bị King khoá — chỉ ngừng khi cứ điểm bị người
+            // chơi chiếm (botCanRespawn=false, doc 34 B). Mode khác (online) giữ khoá King như cũ.
+            const kingBlocks = this.roomLocked() && this.strongholds.length === 0;
+            if (e.isBot && !kingBlocks && this.botCanRespawn(e) && e.respawnTimer > 0) {
                 e.respawnTimer -= dt;
                 if (e.respawnTimer <= 0)
                     this.spawn(e);
@@ -1153,14 +1194,8 @@ class GameState {
         // Va chạm tường: dịch theo hướng nhìn rồi TRƯỢT dọc biên ở TỐC ĐỘ ĐẦY ĐỦ (slideMove).
         // Không sinh vận tốc LÙI (tránh đầu bị đẩy ngược vào ô đuôi của chính mình → chết oan).
         let c = this.arena.slideMove(e.pos.x, e.pos.y, e.heading, dist);
-        // Chướng ngại (tường NỘI BỘ): TRƯỢT dọc mặt hex thay vì kẹt cứng — bỏ thành phần pháp tuyến
-        // (hướng đi VÀO obstacle), giữ tiếp tuyến. Đâm thẳng vào góc lõm không có hướng thoát → đứng.
-        if (this.obstacles.size > 0) {
-            const slid = this.slideAlongObstacles(e.pos.x, e.pos.y, c.x, c.y);
-            if (!slid)
-                return;
-            c = slid;
-        }
+        // Ô CHƯỚNG NGẠI KHÔNG còn collider riêng (doc 34): chỉ dùng làm barrier flood-fill + ô không chơi
+        // được. Muốn chặn di chuyển thì admin VẼ tường BIÊN quanh nó. Va chạm duy nhất = tường biên vẽ.
         // Tường BIÊN admin vẽ (doc 34 D) — trượt dọc, không băng qua.
         if (this.boundarySegs.length > 0)
             c = this.slideAlongBoundaries(e.pos.x, e.pos.y, c.x, c.y);
@@ -1175,82 +1210,6 @@ class GameState {
             // Xoay đầu theo hướng DI CHUYỂN THỰC (trượt dọc tường); xa tường thì trùng heading.
             e.heading = Math.atan2(mdy, mdx);
         }
-    }
-    /** Điểm `(x,y)` có nằm trong HỘP CHỮ NHẬT (AABB) của một ô obstacle nào không (doc 33). AABB
-     *  bao trọn ô lục thẳng đứng: nửa rộng = √3/2·size, nửa cao = size. Chỉ xét ô của điểm + 6 ô kề
-     *  (AABB không vươn xa hơn) → O(1). */
-    insideObstacleRect(x, y) {
-        const size = this.hexSize;
-        const halfW = (Math.sqrt(3) / 2) * size;
-        const halfH = size;
-        const base = (0, hex_1.pixelToAxial)(x, y, size);
-        for (const cand of [base, ...(0, hex_1.neighbors)(base)]) {
-            if (!this.obstacles.has((0, hex_1.keyOf)(cand)))
-                continue;
-            const c = (0, hex_1.axialToPixel)(cand, size);
-            if (Math.abs(x - c.x) <= halfW && Math.abs(y - c.y) <= halfH)
-                return true;
-        }
-        return false;
-    }
-    /**
-     * Va chạm chướng ngại — chọn theo `map.colliderShape` (doc 33):
-     * - `"hex"` (MẶC ĐỊNH): biên ĐA GIÁC theo mặt lục giác — góc lồi 120° (>90°) nên KHÔNG kẹt
-     *   như hộp chữ nhật. Trượt = bỏ thành phần pháp tuyến của mặt BIÊN gần nhất, lặp cho góc.
-     * - `"rect"`: AABB bao ô, giải theo từng trục (giữ như tuỳ chọn).
-     * Trả điểm đã giải (đã clamp về trong sân), hoặc `null` khi hoàn toàn không bước được.
-     */
-    slideAlongObstacles(px, py, cx, cy) {
-        if (this.config.map.colliderShape === "rect")
-            return this.slideRectObstacles(px, py, cx, cy);
-        return this.slidePolyObstacles(px, py, cx, cy);
-    }
-    /** RECT/AABB — giải theo từng trục (x rồi y). */
-    slideRectObstacles(px, py, cx, cy) {
-        if (!this.insideObstacleRect(cx, cy)) {
-            const i = this.arena.clampInside(cx, cy);
-            return { x: i.x, y: i.y };
-        }
-        const dx = cx - px, dy = cy - py;
-        const nx = this.insideObstacleRect(px + dx, py) ? px : px + dx;
-        const ny = this.insideObstacleRect(nx, py + dy) ? py : py + dy;
-        const inside = this.arena.clampInside(nx, ny);
-        return { x: inside.x, y: inside.y };
-    }
-    /**
-     * ĐA GIÁC hex (mặc định): trượt dọc mặt biên của ô obstacle. Bỏ thành phần vận tốc theo pháp
-     * tuyến mặt BIÊN gần điểm đích nhất (giữ tiếp tuyến ở tốc độ đầy đủ), lặp tối đa 3 lần cho góc
-     * lõm. Còn dính (residual/góc) → đẩy VUÔNG GÓC ra ngoài mặt gần nhất (giữ vị trí tiếp tuyến).
-     * Góc lồi của biên là 120° nên không tạo bẫy như góc vuông 90° của hộp chữ nhật.
-     */
-    slidePolyObstacles(px, py, cx, cy) {
-        const size = this.hexSize;
-        let vx = cx - px, vy = cy - py;
-        for (let iter = 0; iter < 3; iter++) {
-            const face = this.nearestObstacleFace(px + vx, py + vy);
-            if (!face)
-                break; // đích không còn trong obstacle (hoặc ô nội bộ)
-            const f = HEX_FACES[face.i];
-            const vn = vx * f.nx + vy * f.ny;
-            if (vn >= 0)
-                break; // đang đi RA khỏi mặt gần nhất → thôi
-            vx -= vn * f.nx;
-            vy -= vn * f.ny; // bỏ phần đi VÀO → trượt dọc mặt
-        }
-        let x = px + vx, y = py + vy;
-        if (this.obstacles.has((0, hex_1.keyOf)((0, hex_1.pixelToAxial)(x, y, size)))) {
-            const face = this.nearestObstacleFace(x, y);
-            if (!face)
-                return null; // ô nội bộ đặc → chặn
-            const f = HEX_FACES[face.i];
-            const pen = (x - face.mx) * f.nx + (y - face.my) * f.ny; // <0 = đang trong sân obstacle
-            x += (1e-3 - pen) * f.nx;
-            y += (1e-3 - pen) * f.ny; // đẩy vuông góc ra ngoài mặt
-            if (this.obstacles.has((0, hex_1.keyOf)((0, hex_1.pixelToAxial)(x, y, size))))
-                return null;
-        }
-        const inside = this.arena.clampInside(x, y);
-        return { x: inside.x, y: inside.y };
     }
     /** [doc 34 D] TRƯỢT dọc tường BIÊN admin vẽ: nếu bước `pos→c` cắt một đoạn biên, bỏ thành phần
      *  vận tốc đi XUYÊN đoạn (giữ tiếp tuyến) → trượt dọc tường, không băng qua. Lặp cho nhiều đoạn. */
@@ -1282,38 +1241,6 @@ class GameState {
                 break;
         }
         return { x: px + vx, y: py + vy };
-    }
-    /** Nếu `(x,y)` nằm TRONG một ô obstacle CÓ mặt biên: trả mặt biên (giáp ô mở) GẦN NHẤT + tâm
-     *  mặt `(mx,my)`. Không trong obstacle, hoặc ô nội bộ đặc (không mặt biên) → `null`. */
-    nearestObstacleFace(x, y) {
-        const size = this.hexSize;
-        const hex = (0, hex_1.pixelToAxial)(x, y, size);
-        if (!this.obstacles.has((0, hex_1.keyOf)(hex)))
-            return null;
-        const inr = (Math.sqrt(3) / 2) * size, half = size / 2;
-        const oc = (0, hex_1.axialToPixel)(hex, size);
-        let bi = -1, bd = Infinity, bmx = 0, bmy = 0;
-        for (let i = 0; i < 6; i++) {
-            const nb = { q: hex.q + hex_1.DIRECTIONS[i].q, r: hex.r + hex_1.DIRECTIONS[i].r };
-            if (this.obstacles.has((0, hex_1.keyOf)(nb)))
-                continue; // mặt nội bộ (giữa 2 obstacle)
-            const f = HEX_FACES[i];
-            const mx = oc.x + f.nx * inr, my = oc.y + f.ny * inr;
-            let t = (x - mx) * f.tx + (y - my) * f.ty;
-            if (t > half)
-                t = half;
-            else if (t < -half)
-                t = -half;
-            const qx = mx + f.tx * t, qy = my + f.ty * t;
-            const d2 = (x - qx) ** 2 + (y - qy) ** 2;
-            if (d2 < bd) {
-                bd = d2;
-                bi = i;
-                bmx = mx;
-                bmy = my;
-            }
-        }
-        return bi < 0 ? null : { i: bi, mx: bmx, my: bmy };
     }
     /** API cho test: di chuyển người chơi tới (x,y) nếu ô đích hợp lệ (không phải chướng ngại). */
     moveTo(x, y) {

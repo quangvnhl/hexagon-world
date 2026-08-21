@@ -26,8 +26,10 @@ export interface Stats {
   /** Màu chính của người chơi cục bộ (cho popup/minimap sau khi chết). */
   colorIndex: number;
   won: boolean;
-  /** [Campaign] Đã THUA (hết mạng) — hiện màn thua. */
+  /** [Campaign] Đã THUA — hiện màn thua. */
   lost?: boolean;
+  /** [Campaign] Lý do thua: "lives" = hết mạng; "no_space" = hết chỗ hồi sinh. */
+  lostReason?: "" | "lives" | "no_space";
   /** [Campaign] Số mạng của cấp (0 = vô hạn). Hiện "mạng còn lại" khi > 0. */
   maxLives?: number;
   /** [Campaign] Chuỗi tiến độ objective (vd "Chiếm 12.3% / 30%"); rỗng nếu không áp dụng. */
@@ -946,9 +948,13 @@ export function HUD({
               minWidth: 300,
             }}
           >
-            <div style={{ fontSize: 34, fontWeight: 900, letterSpacing: 1 }}>☠️ HẾT MẠNG</div>
+            <div style={{ fontSize: 34, fontWeight: 900, letterSpacing: 1 }}>
+              {stats.lostReason === "no_space" ? "☠️ ĐÃ THUA" : "☠️ HẾT MẠNG"}
+            </div>
             <div style={{ fontSize: 15, opacity: 0.75, marginTop: 10 }}>
-              Bạn đã dùng hết {stats.maxLives ?? 0} mạng của cấp này.
+              {stats.lostReason === "no_space"
+                ? "Không còn đủ diện tích để hồi sinh."
+                : `Bạn đã dùng hết ${stats.maxLives ?? 0} mạng của cấp này.`}
             </div>
             <button
               onClick={onReturnToLobby ?? onRestart}

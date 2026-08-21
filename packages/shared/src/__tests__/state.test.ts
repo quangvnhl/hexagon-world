@@ -317,64 +317,21 @@ describe("GameState: totem tác giả (map.totems — doc 32)", () => {
   });
 });
 
-describe("GameState: chướng ngại TRƯỢT dọc viền (doc 33)", () => {
-  it("đâm CHÉO vào obstacle → TRƯỢT dọc mặt (tiến ngang), KHÔNG lọt vào ô obstacle", () => {
-    // Obstacle bên phải spawn; người chơi lao CHÉO lên-phải để đâm vào MẶT TRÁI rồi trượt lên.
+describe("GameState: ô chướng ngại KHÔNG còn collider di chuyển (doc 34)", () => {
+  it("đâm thẳng vào obstacle → ĐI XUYÊN (chỉ còn barrier flood-fill, không chặn di chuyển)", () => {
+    // Obstacle ngay bên phải; người chơi lao thẳng sang phải. Không còn collider ô ⇒ đi qua được.
     const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 }, map: { obstacles: [key(3, 0)] } } });
     skipPrep(g);
     const e = g.players[0];
     e.phase = "playing";
-    e.targetHeading = -0.5; e.heading = -0.5; // lên-phải (âm y = lên theo hệ world)
-
-    const startY = e.pos.y;
+    e.targetHeading = 0; e.heading = 0; // sang phải, thẳng vào obstacle
     let everInside = false;
-    let contacted = false;
-    let movedAfterContact = 0;
-    let prev = { x: e.pos.x, y: e.pos.y };
     for (let i = 0; i < 200; i++) {
       g.update(1 / 60);
       const hex = pixelToAxial(e.pos.x, e.pos.y, CONFIG.HEX_SIZE);
       if (key(hex.q, hex.r) === key(3, 0)) everInside = true;
-      // "Chạm" = đã tới sát mặt trái obstacle (x vượt ~ mép giữa (2,0)-(3,0)).
-      if (e.pos.x > 4) contacted = true;
-      if (contacted) movedAfterContact += Math.hypot(e.pos.x - prev.x, e.pos.y - prev.y);
-      prev = { x: e.pos.x, y: e.pos.y };
     }
-    expect(everInside).toBe(false);            // không xuyên obstacle
-    expect(contacted).toBe(true);              // có đến sát mặt obstacle
-    expect(movedAfterContact).toBeGreaterThan(1); // vẫn di chuyển sau khi chạm ⇒ TRƯỢT, không kẹt
-    expect(Math.abs(e.pos.y - startY)).toBeGreaterThan(1); // đã trượt ngang (đổi y đáng kể)
-  });
-
-  it("colliderShape='rect': đâm thẳng dừng ở CẠNH TRÁI hộp, không xuyên", () => {
-    const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 }, map: { obstacles: [key(3, 0)], colliderShape: "rect" } } });
-    skipPrep(g);
-    const e = g.players[0];
-    e.phase = "playing";
-    e.targetHeading = 0; e.heading = 0;
-    for (let i = 0; i < 120; i++) g.update(1 / 60);
-    const oc = axialToPixel({ q: 3, r: 0 }, CONFIG.HEX_SIZE);
-    const leftEdge = oc.x - (Math.sqrt(3) / 2) * CONFIG.HEX_SIZE;
-    expect(e.pos.x).toBeLessThanOrEqual(leftEdge + 1e-6);
-  });
-
-  it("biên đa giác (mặc định): trượt dọc TƯỜNG obstacle nhiều ô, đi xa theo cạnh, không xuyên", () => {
-    // Cột obstacle dọc bên phải; người chơi lao chéo lên-phải, trượt DỌC tường lên trên.
-    const wall = [key(3, -2), key(3, -1), key(3, 0), key(3, 1), key(3, 2)];
-    const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 }, map: { obstacles: wall } } });
-    skipPrep(g);
-    const e = g.players[0];
-    e.phase = "playing";
-    e.targetHeading = -0.6; e.heading = -0.6; // lên-phải, ép vào tường
-    const startY = e.pos.y;
-    let everInside = false;
-    for (let i = 0; i < 300; i++) {
-      g.update(1 / 60);
-      const h = pixelToAxial(e.pos.x, e.pos.y, CONFIG.HEX_SIZE);
-      if (wall.includes(key(h.q, h.r))) everInside = true;
-    }
-    expect(everInside).toBe(false);                      // không xuyên tường
-    expect(startY - e.pos.y).toBeGreaterThan(3);         // trượt LÊN xa dọc tường (y giảm nhiều)
+    expect(everInside).toBe(true); // đi qua ô obstacle được (collider ô đã gỡ)
   });
 });
 
@@ -450,5 +407,56 @@ describe("GameState: Campaign THUA khi hết chỗ hồi sinh (doc)", () => {
     g.update(0);
     expect(g.lost).toBe(true);
     expect(g.lostId).toBe(0);
+    expect(g.lostReason).toBe("no_space"); // lý do RIÊNG (không phải "hết mạng")
+  });
+
+  it("hết mạng bình thường ⇒ lostReason = 'lives'", () => {
+    const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 }, rules: { maxLives: 1 }, win: { kind: "none" } } });
+    g.die();          // chết lần 1 = hết mạng (maxLives 1)
+    g.update(0);
+    expect(g.lost).toBe(true);
+    expect(g.lostReason).toBe("lives");
+  });
+});
+
+describe("GameState: doc 34 hoàn thiện (cứ điểm động + totem/thống kê theo đội)", () => {
+  it("cứ điểm bị chiếm rồi ĐỘI BOT chiếm lại ⇒ bỏ captured (bot hồi sinh trở lại)", () => {
+    const g = new GameState({ config: { bots: { count: 0 }, win: { kind: "none" }, map: { strongholds: [{ q: 6, r: 0, botCount: 1 }] } } });
+    g.applyTerritory([{ q: 6, r: 0, owner: 0, kind: 0 }]); // người chơi chiếm ô cứ điểm
+    g.update(0);
+    expect(g.capturedStrongholds.has(0)).toBe(true);
+    g.applyTerritory([{ q: 6, r: 0, owner: 1, kind: 0 }]); // đội bot (id 1) chiếm LẠI
+    g.update(0);
+    expect(g.capturedStrongholds.has(0)).toBe(false);
+  });
+
+  it("cấp độ có cứ điểm: bot VẪN hồi sinh dù phòng có KING (không bị khoá)", () => {
+    const g = new GameState({ config: { bots: { count: 0 }, rules: { kingEnabled: true }, win: { kind: "none", kingPct: 1 }, map: { radius: 8, strongholds: [{ q: 4, r: 0, botCount: 1 }] } } });
+    const bot = g.players[1];
+    expect(g.roomLocked()).toBe(true);   // người chơi/bot vượt kingPct=1 ⇒ có KING
+    expect(bot.strongholdIndex).toBe(0);
+    expect(g.playable.has("4,0")).toBe(true); // ô cứ điểm hợp lệ ⇒ strongholdSpawnHex trả về nó
+    g.kill(bot);
+    for (let i = 0; i < Math.ceil((CONFIG.BOT.RESPAWN_DELAY + 1) * 60); i++) g.update(1 / 60);
+    expect(bot.alive).toBe(true);        // hồi sinh dù roomLocked (vì có cứ điểm)
+  });
+
+  it("totem tốc độ của MỘT bot đồng đội áp cho CẢ ĐỘI (không cho người chơi)", () => {
+    const g = new GameState({ humanCount: 1, config: { bots: { count: 2 }, rules: { botsAllied: true }, win: { kind: "none" }, map: { totems: [{ kind: "speed", q: 0, r: 0 }] } } });
+    g.applyTerritory([{ q: 0, r: 0, owner: 1, kind: 0 }]); // bot id1 sở hữu ô totem
+    expect(g.speedTotemCountFor(1)).toBe(1);
+    expect(g.speedTotemCountFor(2)).toBe(1); // đồng đội cũng được cộng
+    expect(g.speedTotemCountFor(0)).toBe(0); // người chơi khác đội → không
+  });
+
+  it("scores GỘP bot đồng đội thành MỘT dòng, pct = tổng diện tích đội", () => {
+    const g = new GameState({ humanCount: 1, config: { bots: { count: 3 }, rules: { botsAllied: true }, win: { kind: "none" } } });
+    const s = g.scores();
+    expect(s.length).toBe(2); // 1 người chơi + 1 đội bot
+    const botRow = s.find((r) => r.name === "Đội Bot");
+    expect(botRow).toBeTruthy();
+    let sum = 0;
+    for (const e of g.players) if (e.isBot) sum += g.pctOf(e.id);
+    expect(botRow!.pct).toBeCloseTo(sum, 5);
   });
 });

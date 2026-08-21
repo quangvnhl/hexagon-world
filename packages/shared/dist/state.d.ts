@@ -151,6 +151,9 @@ export declare class GameState {
     lost: boolean;
     /** Id chủ thể đã thua (-1 nếu chưa). */
     lostId: number;
+    /** LÝ DO thua (cho popup): "lives" = hết mạng (deaths ≥ maxLives); "no_space" = còn mạng nhưng bản
+     *  đồ không còn ô hồi sinh hợp lệ (đã bị chiếm hết). "" khi chưa thua. */
+    lostReason: "" | "lives" | "no_space";
     /** Id KING đang được tính giờ giữ ngôi (đổi King → reset đồng hồ). */
     private kingHolderId;
     /** Người chơi đã chọn XEM (khán giả): không hồi sinh nữa tới khi hết ván. */
@@ -222,6 +225,9 @@ export declare class GameState {
     /** Hai id CÙNG ĐỘI: trùng id, hoặc `botsAllied` và cả hai là bot (doc 34: Bot đồng đội). Dùng cho
      *  render viền (không vẽ ngăn cách giữa ô đồng đội) + logic đất/đuôi CHUNG. */
     sameTeam(idA: number, idB: number): boolean;
+    /** Id ĐỘI để GỘP thống kê/totem/tốc độ: bot đồng minh → một đội chung (BOT_TEAM); còn lại → chính
+     *  id (doc 34). Nhờ vậy diện tích + hiệu ứng totem tính THEO ĐỘI, không rời từng bot. */
+    private teamIdOf;
     /** Ô `hk` thuộc ĐỘI của `e` (owner là e hoặc đồng đội). Bot đi trên ô ĐỘI = "về nhà" ⇒ không đuôi. */
     private teamOwns;
     /** Tường cho flood fill của `e`: obstacle + (khi Bot đồng đội) ô của ĐỒNG ĐỘI. Ô đồng đội chặn
@@ -231,7 +237,8 @@ export declare class GameState {
     private botCanRespawn;
     /** Ô spawn tại CỨ ĐIỂM của bot (nếu hợp lệ & chưa bị chiếm); null ⇒ dùng pickSpawnHex thường. */
     private strongholdSpawnHex;
-    /** Đánh dấu cứ điểm BỊ CHIẾM khi người chơi (id 0) sở hữu ô cứ điểm (doc 34 B). */
+    /** Cập nhật cứ điểm theo CHỦ ô cứ điểm (doc 34 B): người chơi (id 0) sở hữu ô ⇒ ĐÁNH DẤU bị chiếm
+     *  (bot ngừng hồi sinh); đội bot CHIẾM LẠI ô (chủ khác 0) ⇒ BỎ đánh dấu → bot hồi sinh trở lại. */
     private updateStrongholds;
     /** Id thực thể CÒN SỐNG có nhiều đất nhất (cho camera khán giả); -1 nếu không có. */
     leaderId(): number;
@@ -239,7 +246,8 @@ export declare class GameState {
      *  chuyển tay xem thủ công. `from` = id đang xem (nếu đã chết/không có trong danh sách thì
      *  nhảy vào đầu/cuối). Trả -1 nếu không còn ai sống. */
     spectateCycle(from: number, dir: 1 | -1): number;
-    /** % lãnh thổ của mọi thực thể (cho bảng xếp hạng). */
+    /** % lãnh thổ của mọi thực thể (cho bảng xếp hạng). Bot ĐỒNG ĐỘI (doc 34) → GỘP thành MỘT dòng
+     *  "Đội Bot": diện tích cộng dồn, còn sống nếu còn ≥1 bot sống. Người chơi giữ dòng riêng. */
     scores(): {
         id: number;
         name: string;
@@ -323,33 +331,9 @@ export declare class GameState {
     private winSubjectId;
     private checkWin;
     private updateEntity;
-    /** Điểm `(x,y)` có nằm trong HỘP CHỮ NHẬT (AABB) của một ô obstacle nào không (doc 33). AABB
-     *  bao trọn ô lục thẳng đứng: nửa rộng = √3/2·size, nửa cao = size. Chỉ xét ô của điểm + 6 ô kề
-     *  (AABB không vươn xa hơn) → O(1). */
-    private insideObstacleRect;
-    /**
-     * Va chạm chướng ngại — chọn theo `map.colliderShape` (doc 33):
-     * - `"hex"` (MẶC ĐỊNH): biên ĐA GIÁC theo mặt lục giác — góc lồi 120° (>90°) nên KHÔNG kẹt
-     *   như hộp chữ nhật. Trượt = bỏ thành phần pháp tuyến của mặt BIÊN gần nhất, lặp cho góc.
-     * - `"rect"`: AABB bao ô, giải theo từng trục (giữ như tuỳ chọn).
-     * Trả điểm đã giải (đã clamp về trong sân), hoặc `null` khi hoàn toàn không bước được.
-     */
-    private slideAlongObstacles;
-    /** RECT/AABB — giải theo từng trục (x rồi y). */
-    private slideRectObstacles;
-    /**
-     * ĐA GIÁC hex (mặc định): trượt dọc mặt biên của ô obstacle. Bỏ thành phần vận tốc theo pháp
-     * tuyến mặt BIÊN gần điểm đích nhất (giữ tiếp tuyến ở tốc độ đầy đủ), lặp tối đa 3 lần cho góc
-     * lõm. Còn dính (residual/góc) → đẩy VUÔNG GÓC ra ngoài mặt gần nhất (giữ vị trí tiếp tuyến).
-     * Góc lồi của biên là 120° nên không tạo bẫy như góc vuông 90° của hộp chữ nhật.
-     */
-    private slidePolyObstacles;
     /** [doc 34 D] TRƯỢT dọc tường BIÊN admin vẽ: nếu bước `pos→c` cắt một đoạn biên, bỏ thành phần
      *  vận tốc đi XUYÊN đoạn (giữ tiếp tuyến) → trượt dọc tường, không băng qua. Lặp cho nhiều đoạn. */
     private slideAlongBoundaries;
-    /** Nếu `(x,y)` nằm TRONG một ô obstacle CÓ mặt biên: trả mặt biên (giáp ô mở) GẦN NHẤT + tâm
-     *  mặt `(mx,my)`. Không trong obstacle, hoặc ô nội bộ đặc (không mặt biên) → `null`. */
-    private nearestObstacleFace;
     /** API cho test: di chuyển người chơi tới (x,y) nếu ô đích hợp lệ (không phải chướng ngại). */
     moveTo(x: number, y: number): void;
     private stepEntity;
