@@ -1,0 +1,524 @@
+# BACKLOG — đơn vị VIỆC máy đọc được (doc 36 R4)
+#
+# Phân vai:
+#   .implements/*.md  = nguồn sự thật về THIẾT KẾ (vì sao, làm thế nào)
+#   BACKLOG.yaml      = nguồn sự thật về VIỆC (làm gì, chạm file nào, xong là gì)
+#   AGENTS.md         = luật thi công (cấm gì, bắt buộc gì)
+#
+# Quy tắc bắt buộc (đầy đủ trong AGENTS.md):
+#   - Một lát = một phiên agent. Agent CHỈ được sửa các đường dẫn trong `files`.
+#   - Cần chạm file ngoài `files` ⇒ cập nhật lát này TRƯỚC (thành một diff nhìn thấy được).
+#   - `dod` là LỆNH CHẠY ĐƯỢC. Đỏ = chưa xong. Không có lệnh = lát chưa sẵn sàng giao.
+#   - Agent thực thi KHÔNG chạy lệnh git. Chỉ orchestrator commit/gộp.
+#   - Mặc định chạy TUẦN TỰ. Song song chỉ khi `files` rời nhau + mỗi agent một worktree.
+#
+# Trường của một lát:
+#   id              mã lát, cũng là tên nhánh `slice/<id>` (viết thường)
+#   doc             "<số doc>#<mục>" — đọc trước khi code
+#   title           mô tả ngắn
+#   files           đường dẫn được phép sửa (file chưa tồn tại = sẽ tạo mới)
+#   depends_on      danh sách id phải `done` trước
+#   dod             lệnh nghiệm thu, chạy hết phải xanh
+#   risk            low | medium | high  (high ⇒ người duyệt trước khi gộp)
+#   requires_human  true ⇒ có phần agent KHÔNG tự làm được (hạ tầng ngoài, pháp lý, giá cả,
+#                   cảm giác chơi). Ghi rõ phần đó ở `human_note`.
+#   status          todo | doing | done | blocked
+#   commit          sha khi gộp vào main (orchestrator điền)
+
+version: 1
+updated: "2026-09-03"
+
+# Mọi lát đều phải qua cổng chung này (doc 36 §1). `dod` riêng là phần THÊM.
+ci_gate: "pnpm -r typecheck && pnpm -r test && pnpm verify:logic && pnpm build"
+
+slices:
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # PHA 5.5 — đường ray (doc 36)
+  # ─────────────────────────────────────────────────────────────────────────
+
+  - id: r1-ci
+    doc: "36#R1"
+    title: "CI làm cổng chất lượng + sửa verify-logic hỏng từ refactor doc 25 P0"
+    files:
+      - .github/workflows/ci.yml
+      - packages/shared/scripts/verify-logic.ts
+    depends_on: []
+    dod:
+      - "pnpm verify:logic"
+      - "pnpm -r test"
+      - "pnpm build && pnpm build:admin"
+    risk: low
+    requires_human: true
+    human_note: "Bật GitHub Actions + branch protection cho main (yêu cầu job `verify` xanh)."
+    status: done
+    commit: 8a891ae
+
+  - id: r6-agents-rules
+    doc: "36#R6"
+    title: "Guardrail thi công cho agent trong AGENTS.md"
+    files:
+      - AGENTS.md
+    depends_on: []
+    dod:
+      - "pnpm -r typecheck"
+    risk: low
+    requires_human: false
+    status: done
+    commit: null
+
+  - id: r4-backlog
+    doc: "36#R4"
+    title: "BACKLOG.yaml — chẻ Pha 5.5 còn lại + Pha 6 thành lát máy đọc được"
+    files:
+      - .implements/BACKLOG.yaml
+    depends_on: []
+    dod:
+      - "node -e \"const fs=require('fs');fs.readFileSync('.implements/BACKLOG.yaml','utf8')\""
+    risk: low
+    requires_human: true
+    human_note: "Duyệt thứ tự ưu tiên các lát Pha 6."
+    status: done
+    commit: null
+
+  - id: r2.1-smoke-ui
+    doc: "36#R2"
+    title: "Playwright tầng 1 — smoke UI không cần database"
+    files:
+      - package.json
+      - playwright.config.ts
+      - tests/e2e/smoke.spec.ts
+      - .github/workflows/ci.yml
+    depends_on: [r1-ci]
+    dod:
+      - "pnpm test:e2e:smoke"
+    risk: low
+    requires_human: false
+    note: "Mở `/` và `/play`; assert canvas dựng được, HUD có mặt, console KHÔNG có lỗi, FPS > 0 sau 5s."
+    status: todo
+    commit: null
+
+  - id: r2.3-measure-not-look
+    doc: "36#R2"
+    title: "Đổi các mục verify-tay của doc 33/34 thành phép ĐO trong shared"
+    files:
+      - packages/shared/src/__tests__/obstacles.test.ts
+      - packages/shared/src/__tests__/boundaries.test.ts
+      - packages/shared/src/__tests__/win-condition.test.ts
+    depends_on: []
+    dod:
+      - "pnpm --filter @hexagon/shared test"
+    risk: medium
+    requires_human: false
+    note: >-
+      Trượt dọc obstacle (dịch chuyển theo tiếp tuyến, không nằm trong ô obstacle);
+      biên polyline không xuyên (khoảng cách tới đoạn >= 0 mỗi tick); minimap scale
+      theo arenaR 20 vs 130. KHÔNG tự động hoá cảm giác lái.
+    status: todo
+    commit: null
+
+  - id: r3.1-db-migrate
+    doc: "36#R3"
+    title: "scripts/db-migrate.mjs — áp migration bằng máy, idempotent"
+    files:
+      - scripts/db-migrate.mjs
+      - scripts/db-migrate.test.mjs
+      - package.json
+    depends_on: []
+    dod:
+      - "node --test scripts/db-migrate.test.mjs"
+    risk: high
+    requires_human: true
+    human_note: "Cấp SUPABASE_DB_URL của project STAGING. Agent không bao giờ chạy --target production."
+    note: >-
+      Bảng schema_migrations(version, checksum, applied_at). Chạy lại không áp lại.
+      Checksum lệch (migration đã áp bị sửa nội dung) ⇒ dừng, không tự sửa.
+      --target production mặc định TỪ CHỐI, cần biến xác nhận riêng chỉ người có.
+    status: todo
+    commit: null
+
+  - id: r3.2-db-seed
+    doc: "36#R3"
+    title: "scripts/db-seed.mjs — seed xác định cho E2E lặp lại được"
+    files:
+      - scripts/db-seed.mjs
+      - supabase/seed.sql
+      - package.json
+    depends_on: [r3.1-db-migrate]
+    dod:
+      - "node scripts/db-seed.mjs --target staging --dry-run"
+    risk: medium
+    requires_human: true
+    human_note: "Cần staging đã migrate."
+    note: "Players mẫu + catalog + giá + 5 cấp campaign đã publish. Idempotent theo khoá tự nhiên."
+    status: todo
+    commit: null
+
+  - id: r2.2-e2e-money
+    doc: "36#R2"
+    title: "E2E tầng 2 — luồng tiền xuyên HTTP thật"
+    files:
+      - tests/e2e/money-flow.spec.ts
+      - .github/workflows/e2e-staging.yml
+    depends_on: [r3.2-db-seed]
+    dod:
+      - "pnpm test:e2e:money"
+    risk: high
+    requires_human: true
+    human_note: "Cần staging + secret; job này chạy THỦ CÔNG, không nằm trong CI mỗi PR."
+    note: "dev-login → mua năng lượng bằng coin → campaign start/complete → assert ví + wallet_ledger + player_level_progress."
+    status: todo
+    commit: null
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # Nợ kỹ thuật phát hiện khi làm r1-ci — chặn A3.3
+  # ─────────────────────────────────────────────────────────────────────────
+
+  - id: t1-seeded-rng
+    doc: "35#A3"
+    title: "Nối config.seed vào GameState.rng (tất định thật sự)"
+    files:
+      - packages/shared/src/state.ts
+      - packages/shared/src/__tests__/state.test.ts
+      - packages/shared/scripts/verify-logic.ts
+    depends_on: []
+    dod:
+      - "pnpm --filter @hexagon/shared test"
+      - "pnpm verify:logic"
+    risk: high
+    requires_human: false
+    note: >-
+      GameState đang dùng thẳng Math.random cho spawn/bot; config.seed hiện CHỈ dùng rải totem,
+      nên state KHÔNG tất định dù tài liệu nói vậy. Đây là ĐIỀU KIỆN của A3.3 (server chạy lại
+      input để xác minh Campaign), không phải dọn dẹp test. Chạm code nóng mỗi-tick ⇒ phải chứng
+      minh cùng seed cho cùng kết quả, và seed mặc định giữ hành vi ngẫu nhiên như cũ.
+    status: todo
+    commit: null
+
+  # ─────────────────────────────────────────────────────────────────────────
+  # PHA 6 — "Đo được & không rò rỉ" (doc 35 §7)
+  # ─────────────────────────────────────────────────────────────────────────
+
+  - id: a3.1-server-scores-campaign
+    doc: "35#A3"
+    title: "Server tự tính sao/điểm cho campaign/complete (bỏ nhận stars từ client)"
+    files:
+      - packages/server/src/campaign/campaign.controller.ts
+      - packages/shared/src/campaign.ts
+      - packages/server/test/campaign.spec.ts
+    depends_on: []
+    dod:
+      - "pnpm --filter @hexagon/shared test"
+      - "pnpm --filter @hexagon/server test"
+      - "pnpm -r typecheck"
+    risk: high
+    requires_human: false
+    note: >-
+      LÁT MẪU nghiệm thu đường ray (doc 36 §1). Client chỉ gửi dữ kiện thô
+      (deaths, elapsedMs, territoryPct, objectiveKind); server đối chiếu campaign_levels.config
+      rồi tự đánh giá đạt/không và gọi campaignStars(). Evaluator dùng CHUNG trong shared cho
+      cả hai phía để không từ chối oan.
+    status: todo
+    commit: null
+
+  - id: a3.2-campaign-sanity
+    doc: "35#A3"
+    title: "Chặn phi lý cho campaign/complete (thời gian, trần/ngày, rate-limit)"
+    files:
+      - packages/server/src/campaign/campaign.controller.ts
+      - packages/server/src/net/rate-limit.ts
+      - packages/server/test/campaign.spec.ts
+      - supabase/migrations/202609010001_campaign_sanity.sql
+    depends_on: [a3.1-server-scores-campaign, r3.1-db-migrate]
+    dod:
+      - "pnpm --filter @hexagon/server test"
+    risk: high
+    requires_human: false
+    note: "elapsed >= minTime(level) suy từ bán kính + ngưỡng %; elapsed <= maxTime; trần lần hoàn thành/cấp/ngày."
+    status: todo
+    commit: null
+
+  - id: a3.3-replay-verify
+    doc: "35#A3"
+    title: "Xác minh sâu — server chạy lại inputTrace để đối chiếu kết quả"
+    files:
+      - packages/server/src/campaign/replay.service.ts
+      - packages/shared/src/replay.ts
+      - packages/server/test/replay.spec.ts
+    depends_on: [t1-seeded-rng, a3.2-campaign-sanity]
+    dod:
+      - "pnpm --filter @hexagon/server test"
+    risk: high
+    requires_human: false
+    note: "Chạy bất đồng bộ; lệch ⇒ đánh dấu nghi vấn, KHÔNG thu hồi tự động. P2 — làm sau khi Pha 6 đóng."
+    status: todo
+    commit: null
+
+  - id: a1.1-analytics-schema
+    doc: "35#A1"
+    title: "shared/analytics.ts — khoá danh sách tên sự kiện"
+    files:
+      - packages/shared/src/analytics.ts
+      - packages/shared/src/index.ts
+      - packages/shared/src/__tests__/analytics.test.ts
+    depends_on: []
+    dod:
+      - "pnpm --filter @hexagon/shared test"
+      - "pnpm -r typecheck"
+    risk: low
+    requires_human: false
+    note: >-
+      ANALYTICS_SCHEMA_VERSION + union AnalyticsEvent + makeEvent(). Đặt ở shared để client/server
+      dùng chung MỘT danh sách tên — thêm tên mới phải sửa union, typecheck bắt lỗi. Mọi sự kiện
+      mang build_id (doc 35 §A8). KHÔNG có trường PII.
+    status: todo
+    commit: null
+
+  - id: a1.2-client-batcher
+    doc: "35#A1"
+    title: "Client gom lô sự kiện + gửi khi rời trang"
+    files:
+      - packages/client/src/lib/analytics.ts
+      - packages/client/src/lib/__tests__/analytics.test.ts
+    depends_on: [a1.1-analytics-schema]
+    dod:
+      - "pnpm --filter @hexagon/client test"
+    risk: medium
+    requires_human: false
+    note: "Lô <= 20 sự kiện / 5s; sendBeacon khi visibilitychange/unload; đệm localStorage khi offline; session_id + anon_id."
+    status: todo
+    commit: null
+
+  - id: a1.3-events-endpoint
+    doc: "35#A1"
+    title: "POST /v1/events + bảng analytics_events + khử trùng theo event_id"
+    files:
+      - packages/server/src/analytics/analytics.controller.ts
+      - packages/server/src/app.module.ts
+      - packages/server/test/analytics.spec.ts
+      - supabase/migrations/202609010002_analytics_events.sql
+    depends_on: [a1.1-analytics-schema, r3.1-db-migrate]
+    dod:
+      - "pnpm --filter @hexagon/server test"
+    risk: medium
+    requires_human: false
+    note: "Session tuỳ chọn (guest gửi anon_id); rate-limit tái dùng net/rate-limit.ts; bảng partition theo ngày."
+    status: todo
+    commit: null
+
+  - id: a1.4-server-events
+    doc: "35#A1"
+    title: "Sự kiện phát từ server (nguồn tin cậy)"
+    files:
+      - packages/server/src/matches/match-result-reporter.service.ts
+      - packages/server/src/payments/telegram-payments.controller.ts
+      - packages/server/src/energy/energy.controller.ts
+      - packages/server/src/campaign/campaign.controller.ts
+    depends_on: [a1.3-events-endpoint]
+    dod:
+      - "pnpm --filter @hexagon/server test"
+    risk: medium
+    requires_human: false
+    note: "match_end, purchase_fulfilled, energy_spend/grant, campaign_complete — không phụ thuộc client."
+    status: todo
+    commit: null
+
+  - id: a1.5-rollup-queries
+    doc: "35#A1"
+    title: "Rollup analytics_daily + 3 truy vấn mẫu (retention, funnel FTUE, ARPDAU)"
+    files:
+      - supabase/migrations/202609010003_analytics_rollup.sql
+      - .implements/analytics-queries.md
+    depends_on: [a1.4-server-events]
+    dod:
+      - "node scripts/db-migrate.mjs --target staging"
+    risk: medium
+    requires_human: true
+    human_note: "Cần staging + dữ liệu; sinh tải bằng packages/server/test/load/ rồi đối chiếu số."
+    status: todo
+    commit: null
+
+  - id: a2.1-remote-config-api
+    doc: "35#A2"
+    title: "Bảng remote_config + GET /v1/config có ETag"
+    files:
+      - packages/server/src/config/remote-config.controller.ts
+      - packages/server/src/app.module.ts
+      - packages/server/test/remote-config.spec.ts
+      - supabase/migrations/202609010004_remote_config.sql
+    depends_on: [r3.1-db-migrate]
+    dod:
+      - "pnpm --filter @hexagon/server test"
+    risk: medium
+    requires_human: false
+    note: "audience jsonb cho phép bật theo % (hash player_id) ⇒ nền cho A/B. Mọi bảng mang nhãn platform ngay từ đầu (doc 35 §B8)."
+    status: todo
+    commit: null
+
+  - id: a2.2-client-config
+    doc: "35#A2"
+    title: "Client đọc remote config + fallback hằng trong shared"
+    files:
+      - packages/client/src/lib/remoteConfig.ts
+      - packages/client/src/lib/__tests__/remoteConfig.test.ts
+    depends_on: [a2.1-remote-config-api]
+    dod:
+      - "pnpm --filter @hexagon/client test"
+    risk: medium
+    requires_human: false
+    note: "Cache 5 phút; MẤT MẠNG vẫn chạy bằng fallback. Kill-switch tối thiểu: ads.enabled, stars.enabled, netplay.enabled, energy.*"
+    status: todo
+    commit: null
+
+  - id: a2.3-admin-config-ui
+    doc: "35#A2"
+    title: "Trang cấu hình trong app admin (sửa JSON có validate + lịch sử)"
+    files:
+      - packages/admin/src/RemoteConfig.tsx
+      - packages/admin/src/App.tsx
+      - packages/admin/src/api.ts
+    depends_on: [a2.1-remote-config-api, c2.1-ops-api-keys]
+    dod:
+      - "pnpm build:admin"
+    risk: low
+    requires_human: false
+    status: todo
+    commit: null
+
+  - id: c2.1-ops-api-keys
+    doc: "35#C2"
+    title: "Nền Ops API — key có scope, audit log, idempotency (thay x-admin-key dùng chung)"
+    files:
+      - packages/server/src/admin/ops-auth.guard.ts
+      - packages/server/src/admin/admin.controller.ts
+      - packages/server/test/ops-auth.spec.ts
+      - supabase/migrations/202609010005_ops_api_keys.sql
+    depends_on: [r3.1-db-migrate]
+    dod:
+      - "pnpm --filter @hexagon/server test"
+    risk: high
+    requires_human: false
+    note: >-
+      ops_api_keys(actor_kind human|agent, scopes[], daily_limits, expires_at, revoked_at) +
+      ops_audit_log ghi MỌI lời gọi ghi, không ngoại lệ. PHẢI xong trước khi mở bất kỳ endpoint
+      ghi nào cho agent.
+    status: todo
+    commit: null
+
+  - id: c2.2-openapi-dryrun
+    doc: "35#C2"
+    title: "OpenAPI 3.1 + ?dry_run=true + mã lỗi máy đọc được"
+    files:
+      - packages/server/src/admin/admin.controller.ts
+      - packages/server/src/admin/ops-errors.ts
+      - packages/server/src/main.ts
+      - packages/server/test/ops-openapi.spec.ts
+      - packages/server/package.json
+    depends_on: [c2.1-ops-api-keys]
+    dod:
+      - "pnpm --filter @hexagon/server test"
+    risk: high
+    requires_human: false
+    note: "Agent tự khám phá endpoint qua openapi.json; dry_run trả kết quả DỰ KIẾN, không đổi dữ liệu; lỗi có {code,message,hint,retryable}."
+    status: todo
+    commit: null
+
+  - id: a4.2-error-reporting
+    doc: "35#A4"
+    title: "Error reporting client + server, scrub PII"
+    files:
+      - packages/client/src/lib/errorReporting.ts
+      - packages/server/src/main.ts
+      - packages/client/package.json
+      - packages/server/package.json
+    depends_on: []
+    dod:
+      - "pnpm -r typecheck"
+      - "pnpm build"
+    risk: medium
+    requires_human: true
+    human_note: "Chọn Sentry hay GlitchTip self-host + cấp DSN."
+    note: "Scrub initData/token/email; gắn release = commit sha để quy lỗi theo bản."
+    status: todo
+    commit: null
+
+  - id: a4.3-structured-logs
+    doc: "35#A4"
+    title: "Log có cấu trúc (pino) + request_id"
+    files:
+      - packages/server/src/main.ts
+      - packages/server/src/logging.ts
+      - packages/server/package.json
+    depends_on: []
+    dod:
+      - "pnpm --filter @hexagon/server test"
+      - "pnpm build"
+    risk: low
+    requires_human: false
+    note: "Tách log control plane khỏi đường nóng gameplay (đường nóng chỉ ĐẾM, không log mỗi tick)."
+    status: todo
+    commit: null
+
+  - id: c4.1-legal-pages
+    doc: "35#C4"
+    title: "Trang /terms, /privacy, /paysupport (điều kiện của Telegram Stars)"
+    files:
+      - packages/client/app/terms/page.tsx
+      - packages/client/app/privacy/page.tsx
+      - packages/client/app/paysupport/page.tsx
+    depends_on: []
+    dod:
+      - "pnpm --filter @hexagon/client build"
+    risk: low
+    requires_human: true
+    human_note: "NỘI DUNG pháp lý phải do người chịu trách nhiệm duyệt — agent chỉ dựng khung trang."
+    status: todo
+    commit: null
+
+  - id: c4.2-self-serve-privacy
+    doc: "35#C4"
+    title: "Tự xoá tài khoản + xuất dữ liệu (DELETE /v1/me, GET /v1/me/export)"
+    files:
+      - packages/server/src/players/players.controller.ts
+      - packages/server/test/players.spec.ts
+      - packages/client/src/components/AccountPanel.tsx
+    depends_on: []
+    dod:
+      - "pnpm --filter @hexagon/server test"
+    risk: high
+    requires_human: false
+    note: "Hiện CHỈ admin xoá được. Xoá phải giữ ledger/kế toán theo quy định, ẩn danh phần định danh."
+    status: todo
+    commit: null
+
+  - id: d1.1-ftue
+    doc: "35#D1"
+    title: "FTUE 3 bước — 90 giây đầu, không bắt đăng nhập"
+    files:
+      - packages/client/src/components/Ftue.tsx
+      - packages/client/app/page.tsx
+      - packages/client/src/components/__tests__/ftue.test.ts
+    depends_on: []
+    dod:
+      - "pnpm --filter @hexagon/client test"
+    risk: medium
+    requires_human: true
+    human_note: "Nội dung 3 bước + ngưỡng 'đạt' của mỗi bước cần người chốt (cảm giác chơi)."
+    note: "Vào thẳng Practice có dẫn dắt: (1) di chuyển, (2) vẽ vòng chiếm đất, (3) hạ 1 bot / đạt mốc %."
+    status: todo
+    commit: null
+
+  - id: d1.2-ftue-funnel
+    doc: "35#D1"
+    title: "Đo ftue_step + truy vấn tỉ lệ hoàn thành"
+    files:
+      - packages/client/src/components/Ftue.tsx
+      - .implements/analytics-queries.md
+    depends_on: [d1.1-ftue, a1.5-rollup-queries]
+    dod:
+      - "pnpm --filter @hexagon/client test"
+    risk: low
+    requires_human: false
+    note: "Mục tiêu doc 35 §8: hoàn thành FTUE >= 70%."
+    status: todo
+    commit: null
