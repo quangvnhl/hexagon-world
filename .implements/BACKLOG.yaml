@@ -472,14 +472,27 @@ slices:
     title: "Client đọc remote config + fallback hằng trong shared"
     files:
       - packages/client/src/lib/remoteConfig.ts
+      - packages/client/src/lib/useRemoteConfig.ts
       - packages/client/src/lib/__tests__/remoteConfig.test.ts
+      - packages/client/src/components/StartPanel.tsx
+      - packages/client/src/components/LobbyRewardedAdButton.tsx
     depends_on: [a2.1-remote-config-api]
     dod:
       - "pnpm --filter @hexagon/client test"
     risk: medium
     requires_human: false
-    note: "Cache 5 phút; MẤT MẠNG vẫn chạy bằng fallback. Kill-switch tối thiểu: ads.enabled, stars.enabled, netplay.enabled, energy.*"
-    status: todo
+    note: >-
+      Cache 5 phút; MẤT MẠNG vẫn chạy bằng fallback (lần đầu ⇒ hằng trong shared, mở lại ⇒ bản đệm
+      localStorage). Bản đệm được chạy LẠI qua luật của shared vì nó có thể đến từ app cũ (thiếu
+      khoá mới, thừa khoá đã bỏ).
+      Hook `useConfigFlag` khởi tạo bằng HẰNG MẶC ĐỊNH chứ không phải bản đệm — nếu không thì server
+      render một đằng, client hydrate một nẻo.
+      Đã CẮM vào UI ngay (bài học a1.6, không để lại thư viện chết): ads.enabled tắt nút quảng cáo
+      thưởng, netplay.enabled / campaign.enabled ẩn thẻ chế độ và tự đưa lựa chọn về solo.
+      BẮT ĐƯỢC KHI ĐO: thiếu `cache: "no-cache"` thì bộ đệm HTTP của trình duyệt tự trả bản cũ theo
+      Cache-Control max-age=300 của server, request không bao giờ tới nơi, kill-switch trễ 5 phút.
+      Đo thật: ghi netplay.enabled=false ⇒ thẻ "Nhiều người" biến mất khỏi UI; xoá dòng ⇒ quay lại.
+    status: done
     commit: null
 
   - id: a2.3-admin-config-ui
