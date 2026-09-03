@@ -1,0 +1,64 @@
+# CI — cổng chất lượng cho mọi PR và mọi lần đẩy lên main (doc 36 R1).
+#
+# Đây là ĐỊNH NGHĨA "XONG" của mọi lát việc trong .implements/BACKLOG.yaml: agent không được
+# tuyên bố hoàn thành khi job này đỏ.
+#
+# Chuỗi lệnh dưới đây đã được chạy thật trên máy dev trước khi commit (xanh toàn bộ), và
+# KHÔNG cần bất kỳ secret nào: test server chạy với cấu hình mặc định/dummy, còn `next build`
+# đã được kiểm chứng là build được khi KHÔNG có packages/client/.env.
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+# PR đẩy liên tiếp: huỷ lần chạy cũ, chỉ giữ lần mới nhất.
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      # Đọc trường "packageManager" trong package.json (pnpm@11.20.0) — không ghim lại số ở đây
+      # để phiên bản chỉ có MỘT nguồn sự thật.
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '24'
+          cache: pnpm
+
+      - name: Cài đặt phụ thuộc
+        run: pnpm install --frozen-lockfile
+
+      # `shared` là gói nền: client/server/admin đều import từ dist của nó.
+      - name: Build shared
+        run: pnpm build:shared
+
+      - name: Typecheck (4 gói)
+        run: pnpm -r typecheck
+
+      - name: Unit test (shared + client + server)
+        run: pnpm -r test
+
+      # Kiểm chứng logic thuần: hex math, flood fill, va chạm, luật chết/thắng.
+      # Script này ghim RNG nên kết quả TẤT ĐỊNH — chạy lại luôn ra cùng số.
+      - name: Verify logic
+        run: pnpm verify:logic
+
+      # Tự-test của release gate (không gọi mạng, không cần file env deploy).
+      # `pnpm release:check` cần file env thật nên KHÔNG chạy ở đây — nó thuộc pipeline deploy.
+      - name: Release gate self-test
+        run: pnpm test:release-gate
+
+      - name: Build (shared + server + client)
+        run: pnpm build
+
+      - name: Build admin
+        run: pnpm build:admin
