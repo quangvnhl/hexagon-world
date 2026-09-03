@@ -337,10 +337,15 @@ slices:
 
   - id: a1.6-client-instrument
     doc: "35#A1"
-    title: "Gắn sự kiện vào client — gọi startBrowserAnalytics + các điểm phát sự kiện"
+    title: "Gắn sự kiện vào client — cắm ống + phát app_open/session_end/mode_select/match_start"
     files:
-      - packages/client/src/app/layout.tsx
+      - packages/client/app/layout.tsx
+      - packages/client/app/page.tsx
+      - packages/client/src/components/AnalyticsBoot.tsx
+      - packages/client/src/components/StartPanel.tsx
       - packages/client/src/lib/analytics.ts
+      - packages/client/src/lib/__tests__/analytics.test.ts
+      - .claude/launch.json
     depends_on: [a1.3-events-endpoint]
     dod:
       - "pnpm --filter @hexagon/client test"
@@ -348,9 +353,34 @@ slices:
     requires_human: false
     note: >-
       Phát hiện khi làm a1.3: `startBrowserAnalytics()` viết ở a1.2 nhưng KHÔNG nơi nào gọi, và
-      không call site nào gọi `track()`. Ống dẫn xong hai đầu mà chưa cắm — chạy 1 ngày thật vẫn
-      ra bảng rỗng. Tối thiểu: app_open, session_end, mode_select, match_start, match_end,
-      campaign_level_start/_complete/_fail, energy_empty, shop_open.
+      không call site nào gọi `track()`. Ống dẫn xong hai đầu mà chưa cắm.
+      Đã làm: track() TỰ khởi động (gọi trước lúc boot không còn mất sự kiện im lặng);
+      session_end phát TRƯỚC khi xả lúc pagehide (listener đăng ký sau sẽ chạy sau flushOnExit
+      nên sự kiện mất trắng) và chỉ một lần mỗi phiên; app_open ở layout (không ở trang chủ —
+      deep link Telegram vào thẳng /campaign sẽ rơi khỏi mẫu số); mode_select phát NGAY khi bấm
+      chứ không đợi vào được trận; match_start; shop_open; login_success/_failed.
+      ĐO THẬT trên trình duyệt + database dev: 4 hàng đúng thứ tự app_open → mode_select
+      (mode=solo) → match_start (bot_count=24) → session_end (duration_sec=55).
+    status: done
+    commit: null
+
+  - id: a1.7-client-instrument-game
+    doc: "35#A1"
+    title: "Sự kiện client trong trận: match_end, campaign_level_*, energy_empty"
+    files:
+      - packages/client/src/components/GameScene.tsx
+      - packages/client/src/components/CampaignScene.tsx
+      - packages/client/src/lib/backend.ts
+    depends_on: [a1.6-client-instrument, a3.1-server-scores-campaign]
+    dod:
+      - "pnpm --filter @hexagon/client test"
+    risk: low
+    requires_human: false
+    note: >-
+      Tách khỏi a1.6 CÓ CHỦ Ý: ba file này đang bị PR #2 (lát a3.1) sửa và PR đó chờ người duyệt.
+      Gắn sự kiện vào đó lúc này chỉ tạo xung đột trên một PR risk:high. Làm sau khi a3.1 gộp.
+      Lưu ý: match_end/campaign_complete còn có bản SERVER ở a1.4 — bản server là nguồn tin cậy,
+      bản client chỉ để đo phễu (người chơi thoát giữa chừng thì server không thấy).
     status: todo
     commit: null
 

@@ -207,6 +207,7 @@ export function startBrowserAnalytics(intervalMs: number = DEFAULT_FLUSH_INTERVA
   if (typeof window === "undefined") return null;
   if (singleton) return singleton;
 
+  const startedAt = Date.now();
   let storage: StorageLike | null = null;
   try { storage = window.localStorage; } catch { storage = null; }
 
@@ -218,19 +219,37 @@ export function startBrowserAnalytics(intervalMs: number = DEFAULT_FLUSH_INTERVA
         : null,
   });
 
+  // `session_end` phải được ĐẨY VÀO HÀNG ĐỢI TRƯỚC khi xả, nếu không nó sẽ nằm lại tới lần xả
+  // sau — mà thường không có lần sau. Đó là lý do nó nằm ở đây chứ không ở một listener riêng:
+  // listener đăng ký sau sẽ chạy sau `flushOnExit()` và sự kiện mất trắng.
+  let ended = false;
+  const endSession = () => {
+    if (!ended) {
+      ended = true;
+      client.track("session_end", { duration_sec: Math.round((Date.now() - startedAt) / 1000) });
+    }
+    client.flushOnExit();
+  };
+
   window.setInterval(() => void client.flush(), intervalMs);
-  window.addEventListener("pagehide", () => client.flushOnExit());
+  window.addEventListener("pagehide", endSession);
   document.addEventListener("visibilitychange", () => {
-    if (document.visibilityState === "hidden") client.flushOnExit();
+    if (document.visibilityState === "hidden") endSession();
   });
 
   singleton = client;
   return client;
 }
 
-/** Ghi nhận sự kiện qua client dùng chung. Chưa khởi động (SSR) ⇒ bỏ qua im lặng. */
+/**
+ * Ghi nhận sự kiện qua client dùng chung.
+ *
+ * TỰ khởi động nếu chưa: nếu không, mọi `track()` gọi trước `startBrowserAnalytics()` sẽ biến mất
+ * im lặng — đúng loại lỗi không ai phát hiện ra cho tới lúc mở bảng số liệu và thấy trống. Ở SSR
+ * (`window` không tồn tại) vẫn là no-op như cũ.
+ */
 export function track(name: AnalyticsEventName, props?: Record<string, unknown>): void {
-  singleton?.track(name, props);
+  (singleton ?? startBrowserAnalytics())?.track(name, props);
 }
 
 /** Chỉ dùng cho test: xoá singleton. */
