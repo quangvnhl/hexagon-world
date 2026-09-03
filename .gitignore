@@ -11,3 +11,9 @@ client_secret_*.apps.googleusercontent.com.json
 # App admin (Vite) build output — deploy tĩnh, không commit.
 packages/admin/dist/
 packages/admin/*.tsbuildinfo
+
+# File env cho deploy/staging (doc 37 Việc 3). Pattern `.env*` ở trên chỉ khớp TÊN file bắt
+# đầu bằng ".env", nên KHÔNG bao che được `deploy/staging.env` — thiếu dòng này là secret có
+# thể bị commit khi chạy `git add .`.
+deploy/*.env
+deploy/**/*.env
