@@ -280,13 +280,16 @@ slices:
     files:
       - packages/client/src/lib/analytics.ts
       - packages/client/src/lib/__tests__/analytics.test.ts
+      # Mở rộng: vitest.net.config.mts chỉ include net/__tests__ + components/__tests__ nên test
+      # đặt ở lib/__tests__ sẽ KHÔNG chạy. Thêm include cho lib (thuần logic, hợp môi trường node).
+      - packages/client/vitest.net.config.mts
     depends_on: [a1.1-analytics-schema]
     dod:
       - "pnpm --filter @hexagon/client test"
     risk: medium
     requires_human: false
     note: "Lô <= 20 sự kiện / 5s; sendBeacon khi visibilitychange/unload; đệm localStorage khi offline; session_id + anon_id."
-    status: todo
+    status: done
     commit: null
 
   - id: a1.3-events-endpoint
