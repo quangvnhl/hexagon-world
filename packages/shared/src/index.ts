@@ -7,6 +7,7 @@ export * from "./config";
 export * from "./match-config";
 export * from "./campaign";
 export * from "./energy";
+export * from "./analytics";
 export * from "./arena";
 export * from "./state";
 export * from "./protocol";
