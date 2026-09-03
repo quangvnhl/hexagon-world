@@ -195,6 +195,25 @@ slices:
     status: todo
     commit: null
 
+  - id: t2-flaky-bot-interval
+    doc: "36#R1"
+    title: "Sửa test tích hợp chập chờn: tick trước khi phòng kịp bắt đầu"
+    files:
+      - packages/server/test/integration.spec.ts
+    depends_on: []
+    dod:
+      - "pnpm --filter @hexagon/server test"
+    risk: low
+    requires_human: false
+    note: >-
+      Phát hiện khi CI đỏ ở lát a1.2 dù thay đổi không liên quan (chạy lại thì xanh).
+      `waitWelcome()` chỉ đảm bảo client NHẬN welcome; `lobby_ready` (autoReady) lúc đó mới vừa
+      GỬI đi nên server chưa xử lý ⇒ phòng chưa `started` ⇒ `tickOnce()` bỏ qua ⇒ activeBotCount
+      đứng ở 0. Sửa bằng cách chờ tín hiệu `lobby.started` (cách các test khác trong file đã dùng).
+      Một cổng CI đỏ ngẫu nhiên còn tệ hơn không có cổng — xem doc 36 §10 rủi ro #2.
+    status: done
+    commit: null
+
   # ─────────────────────────────────────────────────────────────────────────
   # PHA 6 — "Đo được & không rò rỉ" (doc 35 §7)
   # ─────────────────────────────────────────────────────────────────────────

@@ -478,6 +478,13 @@ describe("NetServer integration (real ws, deterministic ticks)", () => {
     const client = new TestClient(`ws://127.0.0.1:${server.port}`);
     clients = [client];
     await client.open(); client.join("A"); await client.waitWelcome();
+    // CHẬP CHỜN nếu thiếu dòng dưới: `waitWelcome()` chỉ đảm bảo client ĐÃ NHẬN welcome, còn
+    // `lobby_ready` (autoReady) lúc đó mới vừa được GỬI ĐI — server chưa xử lý nên phòng chưa
+    // `started`, mà `tickOnce()` BỎ QUA phòng chưa bắt đầu ⇒ không bot nào được kích hoạt và
+    // `activeBotCount` đứng ở 0. Các test khác trong file không lộ lỗi này vì có `delay()` xen
+    // vào; test này tick một số lần CHÍNH XÁC nên nhạy. Chờ đúng tín hiệu `lobby.started` —
+    // cùng cách test lobby ở cuối file đang dùng.
+    await waitFor(() => client.lobby?.started === true, 3000, "phòng bắt đầu sau ready");
     server.tickOnce(); server.tickOnce();
     expect(server.activeRoom!.activeBotCount).toBe(0);
     server.tickOnce();
