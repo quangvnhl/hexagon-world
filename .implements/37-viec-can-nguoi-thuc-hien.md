@@ -25,7 +25,7 @@ grep -E "^  - id:|^    status:" .implements/BACKLOG.yaml
 
 ---
 
-## Việc 1 — Bật GitHub Actions ⛔ ĐANG CHẶN MỌI LÁT
+## Việc 1 — Bật GitHub Actions ✅ XONG (2026-09-03)
 
 Không có Actions thì không có cổng "xong", agent không được phép gộp gì.
 
@@ -39,13 +39,16 @@ Kiểm tra đạt:
 gh workflow list
 ```
 
-Phải in ra dòng có tên `CI`. (Hiện đang rỗng.)
+Phải in ra dòng có tên `CI`. Đã kiểm: `CI  active  349121877`.
 
 ---
 
-## Việc 2 — Branch protection cho `main`
+## Việc 2 — Branch protection cho `main` ⏸️ BỎ QUA (chốt 2026-09-03: phương án A)
 
-**Làm SAU khi CI đã chạy ít nhất một lần**, vì tên status check chỉ xuất hiện sau lần chạy đầu.
+GitHub **không cho** đặt branch protection trên repo *private* ở gói Free (API trả 403
+"Upgrade to GitHub Pro or make this repository public"). Anh đã chọn **A: không bảo vệ nhánh,
+dựa vào CI + kỷ luật** — agent vẫn luôn đi qua PR và chỉ gộp khi CI xanh, chỉ là GitHub không
+cưỡng chế hộ. Khi nào lên Pro hoặc mở public thì làm theo các bước dưới.
 
 1. Mở https://github.com/quangvnhl/hexagon-world/settings/branches
 2. **Add branch protection rule** → Branch name pattern: `main`
@@ -57,49 +60,54 @@ Từ đây mọi thay đổi vào `main` đều phải qua PR có CI xanh — k�
 
 ---
 
-## Việc 3 — Supabase STAGING ⛔ đang chặn 8 lát
+## Việc 3 — Database Supabase ✅ XONG (2026-09-03) — còn 1 việc nhỏ
 
-Chặn: `r3.1-db-migrate`, `r3.2-db-seed`, `r2.2-e2e-money`, `a3.2`, `a1.3`, `a1.5`, `a2.1`, `c2.1`.
+Chốt 2026-09-03: **mọi thứ đang là dev**, kể cả Supabase đã deploy. Nên KHÔNG tạo project staging
+riêng, KHÔNG cần `deploy/staging.env` — dùng thẳng `SUPABASE_URL` / `SUPABASE_SECRET_KEY` /
+`SUPABASE_DB_URL` đã có trong `.env` ở gốc repo.
 
-### 3.1 Tạo project
+### 3.1 Đã làm xong
 
-1. Vào https://supabase.com/dashboard → **New project**
-2. Name: `hexagon-world-staging` · Region: **Southeast Asia (Singapore)** · Database Password: bấm
-   **Generate** rồi **lưu vào trình quản lý mật khẩu** (sẽ cần ở bước 3.2).
-3. Đợi project khởi tạo xong (~2 phút).
+- `scripts/db-migrate.mjs` chạy được trên database dev (project `elxlvtftobmqkmrczqrx`).
+- Database đó đã được dựng tay từ trước (28 bảng, 20 hàm, 5 người chơi) nhưng chưa có sổ
+  migration. Đã chạy **baseline** — đánh dấu cả 9 migration là *đã áp* mà **không chạy lại SQL**
+  (migration dùng `create table` nên chạy lại chắc chắn vỡ):
 
-### 3.2 Lấy 3 giá trị
+  ```bash
+  node scripts/db-migrate.mjs --baseline 202608180006_campaign_totems_authored --yes
+  ```
 
-| Giá trị | Lấy ở đâu |
-|---|---|
-| `SUPABASE_URL` | Settings → **API** → *Project URL* (dạng `https://xxxx.supabase.co`) |
-| `SUPABASE_SECRET_KEY` | Settings → **API** → *Project API keys* → **service_role** (bấm Reveal) |
-| `SUPABASE_DB_URL` | Settings → **Database** → *Connection string* → tab **URI**; thay `[YOUR-PASSWORD]` bằng mật khẩu ở bước 3.1 |
+- Đã đối chiếu bằng chứng thật trước khi baseline, không tin cảm tính: migration cuối (doc 32) chỉ
+  sửa dữ liệu — kiểm tra thấy `c3` có đúng 4 totem và mọi cấp đều `totemsEnabled=false`.
+- Từ giờ `node scripts/db-migrate.mjs --dry-run` in ra `Đã áp: 9/9`.
 
-### 3.3 Ghi vào file env cục bộ
+### 3.2 Việc còn lại của anh (1 phút) — sửa `SUPABASE_DB_URL` trong `.env`
 
-Chạy trong thư mục repo (thay giá trị thật vào giữa hai dấu nháy):
+Chuỗi hiện tại trong `.env` dùng host **Direct connection** `db.<ref>.supabase.co`. Host này chỉ có
+bản ghi **IPv6**. Mạng nhà mạng IPv4 gọi REST API vẫn được (nên app chạy bình thường) nhưng nối
+Postgres thì `ENOTFOUND` — agent phải tự ghép lại chuỗi pooler mỗi lần chạy, rất dễ sai.
 
-```bash
-mkdir -p deploy && printf 'SUPABASE_URL=%s\nSUPABASE_SECRET_KEY=%s\nSUPABASE_DB_URL=%s\n' 'DÁN_URL' 'DÁN_SERVICE_KEY' 'DÁN_DB_URL' > deploy/staging.env
+Sửa một lần cho xong: mở Dashboard → **Connect** → tab **Session pooler** → copy chuỗi, thay
+`[YOUR-PASSWORD]` bằng mật khẩu database, rồi thay giá trị `SUPABASE_DB_URL` trong `.env`. Dạng đúng:
+
+```
+postgresql://postgres.elxlvtftobmqkmrczqrx:<mật khẩu>@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres
 ```
 
-Rồi chặn Git đụng tới nó:
+> Chọn **Session pooler** (cổng `5432`) — KHÔNG chọn *Transaction pooler* (cổng `6543`): pooler giao
+> dịch không chạy được DDL, migration sẽ vỡ.
+
+Kiểm tra đạt (không in mật khẩu — script tự che):
 
 ```bash
-grep -qxF 'deploy/*.env' .gitignore || echo 'deploy/*.env' >> .gitignore
+node scripts/db-migrate.mjs --dry-run
 ```
 
-Kiểm tra đạt (chỉ in tên biến, KHÔNG in giá trị):
+Phải thấy `Đã áp      : 9/9` và `Không có migration nào cần áp.`
 
-```bash
-grep -oE '^[A-Z_]+=' deploy/staging.env
-```
-
-Phải ra đúng 3 dòng. Sau đó nhắn cho agent: **"staging sẵn sàng"**.
-
-> ⚠️ Tuyệt đối không đưa key **production** vào file này. Script `db-migrate` mặc định từ chối
-> `--target production`; agent chỉ được phép chạy `--target staging`.
+> ⚠️ Khi nào có database **production** thật: tuyệt đối không đặt chuỗi của nó vào `.env` này.
+> `db-migrate` mặc định từ chối `--target production` (cần biến `ALLOW_PRODUCTION_MIGRATE=yes-i-know`
+> mà agent không bao giờ có), nhưng lớp bảo vệ tốt nhất vẫn là không để key production ở đây.
 
 ---
 
@@ -182,15 +190,16 @@ Lý do chúng là `high`: chạm tiền, tài khoản người chơi, schema dat
 ## Thứ tự khuyến nghị
 
 ```
-Việc 1 (Actions)  →  đợi CI chạy 1 lần  →  Việc 2 (branch protection)
-                                              ↓
-                                        Việc 3 (Supabase staging)   ← mở khoá 8 lát
-                                              ↓
-                              Việc 6 (nội dung pháp lý)  →  Việc 4, 5 khi tới Pha 7
+Việc 1 (Actions) ✅  →  Việc 2 (branch protection) ⏸️ bỏ qua  →  Việc 3 (database) ✅
+                                                                      ↓
+                                     Việc 7 (duyệt PR #2)  ← ĐANG CHẶN lát a3.2, a3.3
+                                                                      ↓
+                                Việc 6 (nội dung pháp lý)  →  Việc 4, 5 khi tới Pha 7
 ```
 
-**Chỉ Việc 1 là đang chặn ngay lúc này.** Việc 3 sẽ chặn khi agent làm tới các lát cần database —
-làm sớm được thì agent chạy liên tục không phải dừng.
+**Đang chặn ngay lúc này: Việc 7** — PR #2 (`risk: high`, sửa lỗ hổng kinh tế ở `campaign/complete`)
+và PR của lát `r3.1` đang chờ anh duyệt. Ngoài ra chỉ còn 1 phút sửa `SUPABASE_DB_URL` ở §3.2 để
+agent khỏi phải ghép chuỗi pooler thủ công mỗi lần.
 
 ---
 

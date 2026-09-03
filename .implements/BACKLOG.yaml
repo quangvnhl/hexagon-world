@@ -124,17 +124,26 @@ slices:
       - scripts/db-migrate.mjs
       - scripts/db-migrate.test.mjs
       - package.json
+      - .github/workflows/ci.yml
     depends_on: []
     dod:
-      - "node --test scripts/db-migrate.test.mjs"
+      - "pnpm test:db-migrate"
     risk: high
     requires_human: true
-    human_note: "Cấp SUPABASE_DB_URL của project STAGING. Agent không bao giờ chạy --target production."
+    human_note: >-
+      ĐÃ XONG trên database dev (project elxlvtftobmqkmrczqrx): dùng luôn SUPABASE_DB_URL ở .env gốc,
+      KHÔNG cần deploy/staging.env. Database đã dựng tay từ trước nên đã chạy
+      `--baseline 202608180006_campaign_totems_authored --yes` (chỉ ghi sổ, không chạy lại SQL).
+      Việc còn lại của người: sửa SUPABASE_DB_URL trong .env sang chuỗi Session pooler
+      (postgresql://postgres.<ref>:<mật khẩu>@aws-0-ap-northeast-1.pooler.supabase.com:5432/postgres)
+      vì host db.<ref>.supabase.co chỉ có IPv6, mạng IPv4 không nối được.
+      Agent không bao giờ chạy --target production.
     note: >-
       Bảng schema_migrations(version, checksum, applied_at). Chạy lại không áp lại.
       Checksum lệch (migration đã áp bị sửa nội dung) ⇒ dừng, không tự sửa.
       --target production mặc định TỪ CHỐI, cần biến xác nhận riêng chỉ người có.
-    status: todo
+      --dry-run tuyệt đối không ghi — kể cả DDL tạo sổ.
+    status: done
     commit: null
 
   - id: r3.2-db-seed
@@ -173,6 +182,22 @@ slices:
   # ─────────────────────────────────────────────────────────────────────────
   # Nợ kỹ thuật phát hiện khi làm r1-ci — chặn A3.3
   # ─────────────────────────────────────────────────────────────────────────
+
+  - id: t3-gitignore-env
+    doc: "36#R5"
+    title: "Bịt lỗ .gitignore: deploy/*.env không bị bỏ qua"
+    files:
+      - .gitignore
+    depends_on: []
+    dod:
+      - "git check-ignore -q deploy/staging.env"
+    risk: low
+    requires_human: false
+    note: >-
+      Mẫu `.env*` KHÔNG khớp `deploy/staging.env` (chỉ khớp tên file bắt đầu bằng .env).
+      Phát hiện TRƯỚC khi hướng dẫn người tạo file đó, nên chưa kịp lộ bí mật nào.
+    status: done
+    commit: null
 
   - id: t1-seeded-rng
     doc: "35#A3"
