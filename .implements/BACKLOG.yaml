@@ -195,6 +195,26 @@ slices:
     status: todo
     commit: null
 
+  - id: t5-flaky-interest-snapshot
+    doc: "36#R1"
+    title: "Sửa test tích hợp chập chờn thứ hai: delay(10) cố định thay vì chờ snapshot"
+    files:
+      - packages/server/test/integration.spec.ts
+    depends_on: []
+    dod:
+      - "pnpm --filter @hexagon/server test"
+    risk: low
+    requires_human: false
+    note: >-
+      CI đỏ ở lát a2.1 dù thay đổi không liên quan: "control interest đổi spectator target" đổ ở
+      `snapshots.at(-1)!` với TypeError vì chưa có snapshot nào. Cùng họ với t2 — khẳng định sau
+      một `delay(10)` cố định thay vì chờ ĐIỀU KIỆN. Thêm `tickAndWaitSnapshot` (chờ client thật
+      sự nhận snapshot mới) và `tickUntil` (khung điều khiển interest/revive đi qua socket thật nên
+      có thể tới SAU tick kế tiếp; tick một lần rồi khẳng định là cá cược vào thứ tự gói tin).
+      Chạy lại 3 lần: 70/70 ổn định.
+    status: done
+    commit: null
+
   - id: t2-flaky-bot-interval
     doc: "36#R1"
     title: "Sửa test tích hợp chập chờn: tick trước khi phòng kịp bắt đầu"

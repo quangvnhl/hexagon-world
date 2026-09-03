@@ -156,6 +156,39 @@ async function waitFor(
   }
 }
 
+/**
+ * Chạy MỘT tick rồi chờ tới khi client thật sự NHẬN được snapshot mới.
+ *
+ * Thay cho `server.tickOnce(); await delay(10);`. Chỗ đó là nguồn chập chờn: snapshot đi qua
+ * WebSocket thật nên 10ms chỉ là phỏng đoán — trên máy CI đang tải nặng nó không đủ, và test đổ
+ * ở dòng `snapshots.at(-1)!` với lỗi "Cannot read properties of undefined". Chờ ĐIỀU KIỆN thì
+ * không có ngưỡng nào để đoán sai.
+ */
+async function tickAndWaitSnapshot(server: NetServer, client: TestClient, what: string): Promise<void> {
+  const before = client.snapshots.length;
+  server.tickOnce();
+  await waitFor(() => client.snapshots.length > before, 3000, what);
+}
+
+/**
+ * Lặp tick tới khi `cond` đúng. Cần cho các khung ĐIỀU KHIỂN (interest/revive): chúng đi qua socket
+ * thật nên có thể tới server SAU tick kế tiếp; tick một lần rồi khẳng định là đang cá cược vào thứ
+ * tự đến của gói tin.
+ */
+async function tickUntil(
+  server: NetServer,
+  client: TestClient,
+  cond: () => boolean,
+  what: string,
+  maxTicks = 40,
+): Promise<void> {
+  for (let i = 0; i < maxTicks; i++) {
+    await tickAndWaitSnapshot(server, client, `snapshot khi chờ ${what}`);
+    if (cond()) return;
+  }
+  throw new Error(`Hết lượt chờ: ${what}`);
+}
+
 describe("NetServer integration (real ws, deterministic ticks)", () => {
   let server: NetServer | null = null;
   let clients: TestClient[] = [];
@@ -365,24 +398,29 @@ describe("NetServer integration (real ws, deterministic ticks)", () => {
     room.gameState.players[idC].pos = { x: -60, y: 0 };
     room.gameState.players[idA].phase = "dead";
 
-    server.tickOnce();
-    await delay(10);
-    expect(a.snapshots.at(-1)!.entities.map((e) => e.id)).toEqual([idA, idB]);
+    const idsSeenBy = (client: TestClient): number[] => client.snapshots.at(-1)?.entities.map((e) => e.id) ?? [];
+
+    await tickAndWaitSnapshot(server, a, "snapshot đầu tiên cho A");
+    expect(idsSeenBy(a)).toEqual([idA, idB]);
 
     a.interest(idC);
-    await delay(10);
-    server.tickOnce();
-    await delay(10);
-    expect(a.snapshots.at(-1)!.entities.map((e) => e.id)).toEqual([idA, idC]);
+    await tickUntil(server, a, () => idsSeenBy(a).includes(idC), "spectator target đổi sang C");
+    expect(idsSeenBy(a)).toEqual([idA, idC]);
 
     a.revive();
-    await delay(10);
-    room.gameState.players[idA].pos = { x: 0, y: 0 };
-    room.gameState.players[idC].pos = { x: -60, y: 0 };
-    server.tickOnce();
-    await delay(10);
-    expect(a.snapshots.at(-1)!.entities.some((e) => e.id === idA)).toBe(true);
-    expect(a.snapshots.at(-1)!.entities.some((e) => e.id === idC)).toBe(false);
+    await tickUntil(
+      server,
+      a,
+      () => {
+        // Đặt lại vị trí mỗi vòng: revive có thể tự dời A, và các tick chờ vẫn làm thực thể di chuyển.
+        room.gameState.players[idA].pos = { x: 0, y: 0 };
+        room.gameState.players[idC].pos = { x: -60, y: 0 };
+        return !idsSeenBy(a).includes(idC);
+      },
+      "A sống lại và không còn thấy target cũ",
+    );
+    expect(idsSeenBy(a)).toContain(idA);
+    expect(idsSeenBy(a)).not.toContain(idC);
   });
 
   it("trả lý do no_spawn khi server không tìm được vị trí hồi sinh", async () => {
