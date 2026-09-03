@@ -33,6 +33,15 @@ test("checksumOf: đổi một ký tự là đổi checksum", () => {
   assert.equal(checksumOf("x"), checksumOf("x"));
 });
 
+test("checksumOf: CRLF và LF cho CÙNG checksum (đổi máy Windows/Linux không phải là drift)", () => {
+  // Repo chạy với core.autocrlf=true: cùng một file có CRLF trên Windows, LF trên CI.
+  assert.equal(checksumOf("begin;\r\ncreate table a();\r\ncommit;"), checksumOf("begin;\ncreate table a();\ncommit;"));
+});
+
+test("checksumOf: bỏ BOM — file mở bằng trình soạn thảo Windows hay bị thêm", () => {
+  assert.equal(checksumOf("﻿begin;\ncommit;"), checksumOf("begin;\ncommit;"));
+});
+
 test("versionOf: bỏ đuôi .sql", () => {
   assert.equal(versionOf("202608120001_player_backend.sql"), "202608120001_player_backend");
 });
@@ -81,11 +90,12 @@ test("parseArgs: mặc định an toàn (staging, không ghi)", () => {
   assert.equal(a.dryRun, false);
   assert.equal(a.yes, false, "KHÔNG được mặc định ghi — phải có --yes");
   assert.equal(a.baseline, null);
+  assert.equal(a.repairChecksums, false, "sửa sổ phải do người gõ tay, không bao giờ mặc định");
 });
 
 test("parseArgs: đọc đủ cờ", () => {
   const a = parseArgs(["--target", "production", "--env-file", "deploy/x.env", "--dry-run", "--yes", "--baseline", "001_x"]);
-  assert.deepEqual(a, { target: "production", envFile: "deploy/x.env", dryRun: true, yes: true, baseline: "001_x" });
+  assert.deepEqual(a, { target: "production", envFile: "deploy/x.env", dryRun: true, yes: true, baseline: "001_x", repairChecksums: false });
 });
 
 test("targetGuard: staging luôn cho, production TỪ CHỐI khi thiếu biến xác nhận", () => {

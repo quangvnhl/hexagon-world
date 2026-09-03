@@ -19,6 +19,7 @@
 //   node scripts/db-migrate.mjs --yes                  # áp thật
 //   node scripts/db-migrate.mjs --baseline <version> --yes   # đánh dấu đã áp tới version này
 //   node scripts/db-migrate.mjs --env-file deploy/staging.env --yes
+//   node scripts/db-migrate.mjs --repair-checksums --yes  # ghi lai checksum da chuan hoa
 
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
@@ -44,9 +45,17 @@ export function parseEnvFile(text) {
   return out;
 }
 
-/** Checksum nội dung migration — dùng để phát hiện file đã áp bị sửa. */
+/**
+ * Checksum NỘI DUNG migration — dùng để phát hiện file đã áp bị sửa.
+ *
+ * Chuẩn hoá xuống dòng và bỏ BOM trước khi băm. Lý do rất cụ thể: repo này chạy trên Windows với
+ * `core.autocrlf=true`, nên cùng một file có CRLF trên đĩa Windows và LF trên Linux (CI, máy khác).
+ * Băm thẳng byte thô sẽ báo "migration đã áp bị sửa" mỗi lần đổi máy — một báo động giả, và báo
+ * động giả lặp lại là cách chắc chắn nhất để người ta ngừng tin cả cơ chế cảnh báo.
+ */
 export function checksumOf(sql) {
-  return createHash("sha256").update(sql, "utf8").digest("hex").slice(0, 16);
+  const normalized = sql.replace(/^﻿/, "").replace(/\r\n/g, "\n");
+  return createHash("sha256").update(normalized, "utf8").digest("hex").slice(0, 16);
 }
 
 /** Version = tên file bỏ đuôi `.sql`. Thứ tự áp = thứ tự tên file (tiền tố ngày giờ). */
@@ -86,11 +95,12 @@ export function projectRefOf(supabaseUrl) {
 
 /** Phân tích tham số dòng lệnh. */
 export function parseArgs(argv) {
-  const args = { target: "staging", envFile: ".env", dryRun: false, yes: false, baseline: null };
+  const args = { target: "staging", envFile: ".env", dryRun: false, yes: false, baseline: null, repairChecksums: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
     if (a === "--dry-run") args.dryRun = true;
     else if (a === "--yes") args.yes = true;
+    else if (a === "--repair-checksums") args.repairChecksums = true;
     else if (a === "--target") args.target = argv[++i];
     else if (a === "--env-file") args.envFile = argv[++i];
     else if (a === "--baseline") args.baseline = argv[++i];
@@ -200,10 +210,29 @@ async function main() {
 
     const { pending, drifted } = planMigrations(files, applied);
 
+    // Sửa SỔ, không sửa migration: ghi lại checksum đã chuẩn hoá cho những migration đã áp.
+    // Dùng đúng một lần khi nâng cấp từ bản checksum cũ (băm byte thô, phụ thuộc CRLF/LF).
+    // KHÔNG chạy SQL nào của migration nên không thể làm hỏng dữ liệu; cái xấu nhất có thể xảy ra
+    // là ghi đè một cảnh báo drift THẬT, vì vậy nó phải do người gõ tay chứ không bao giờ tự động.
+    if (args.repairChecksums) {
+      const fix = files.filter((f) => applied.has(f.version) && applied.get(f.version) !== f.checksum);
+      console.log(`\nSỬA SỔ — cập nhật checksum cho ${fix.length} migration đã áp (KHÔNG chạy SQL):`);
+      for (const f of fix) console.log(`  ${f.version}: ${applied.get(f.version)} → ${f.checksum}`);
+      if (args.dryRun) { console.log("\n(--dry-run: không ghi gì)"); return; }
+      if (!args.yes) { console.log("\nThêm --yes để ghi."); return; }
+      for (const f of fix) {
+        await client.query(`update ${TABLE} set checksum = $2 where version = $1`, [f.version, f.checksum]);
+      }
+      console.log("Xong.");
+      return;
+    }
+
     if (drifted.length > 0) {
       console.error("\nDỪNG — migration ĐÃ ÁP bị sửa nội dung (checksum lệch):");
       for (const d of drifted) console.error(`  ${d.version}: đã áp ${d.expected} ≠ file hiện tại ${d.actual}`);
       console.error("Không tự sửa. Hoặc khôi phục nội dung file, hoặc thêm migration mới bù thay đổi.");
+      console.error("Nếu chắc chắn nội dung KHÔNG đổi (chỉ khác kiểu xuống dòng do đổi máy):");
+      console.error("  node scripts/db-migrate.mjs --repair-checksums --dry-run   # xem trước");
       process.exit(1);
     }
 

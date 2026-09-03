@@ -1,0 +1,3 @@
+# Migration SQL luôn dùng LF: checksum trong `schema_migrations` băm nội dung file, nên để
+# Windows tự đổi sang CRLF sẽ sinh báo động drift giả mỗi lần đổi máy (xem scripts/db-migrate.mjs).
+*.sql text eol=lf
