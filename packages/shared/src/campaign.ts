@@ -166,6 +166,111 @@ export function campaignStars(deaths: number): number {
   return 1;
 }
 
+// ---- Kết luận một lượt Campaign (doc 35 §A3 lớp 1) -----------------------------------------
+//
+// TRƯỚC: client tự khai `objectiveMet`/`stars`/`score`, server nhận thẳng rồi phát thưởng ⇒ sửa
+// client là farm được coin/XP/năng lượng vô hạn.
+// NAY: client chỉ gửi DỮ KIỆN THÔ; server tự kết luận bằng hàm dưới đây, đối chiếu cấu hình cấp
+// lấy từ database. Hàm THUẦN nên client dùng lại được để hiện kết quả — cùng một chuẩn hai phía,
+// không từ chối oan.
+
+/** Dữ kiện thô của một lượt chơi. Cố ý KHÔNG có "đã thắng chưa" và "mấy sao". */
+export interface CampaignOutcomeFacts {
+  /** Số lần chết trong lượt. */
+  deaths: number;
+  /** % lãnh thổ đạt được, thang 0..100. */
+  territoryPct: number;
+  /** Số totem đã thu. */
+  totemsCaptured: number;
+  /** Số giây đã giữ ngôi King (chỉ dùng cho objective `king_hold`). */
+  kingHeldSec: number;
+}
+
+export interface CampaignOutcome {
+  objectiveMet: boolean;
+  /** 0 khi không đạt. */
+  stars: number;
+  /** 0 khi không đạt. */
+  score: number;
+  /** Mã lý do khi không đạt (để log/khiếu nại). Rỗng khi đạt. */
+  reason: string;
+}
+
+/** Kẹp dữ kiện thô về khoảng hợp lệ. Không phải số hữu hạn ⇒ 0 (không ném lỗi: dữ liệu bẩn
+ *  chỉ nên làm KHÔNG ĐẠT, chứ không nên làm sập request). */
+function clampFact(value: unknown, min: number, max: number): number {
+  const n = typeof value === "number" && Number.isFinite(value) ? value : 0;
+  return Math.min(max, Math.max(min, n));
+}
+
+/** Trần số totem một cấp có thể thu được — dùng để chặn khai khống `totemsCaptured`. */
+function totemCapOf(config: MatchConfigInput): number {
+  const resolved = resolveMatchConfig(config);
+  const authored = resolved.map.totems;
+  if (authored && authored.length > 0) return authored.length;
+  if (!resolved.rules.totemsEnabled) return 0;
+  const t = resolved.rules.totems;
+  return t.speedCount + t.slowCount + t.radarCount;
+}
+
+/**
+ * Kết luận một lượt Campaign từ dữ kiện thô + cấu hình cấp.
+ *
+ * `elapsedSec` phải do **server** đo (từ `campaign_plays.created_at`), KHÔNG nhận của client —
+ * đó là dữ kiện duy nhất server tự biết chắc, và là thứ chặn objective `survive`.
+ *
+ * Mọi dữ kiện còn lại đều bị KẸP theo cấu hình cấp trước khi xét: `totemsCaptured` không vượt số
+ * totem cấp đó thực sự có, `kingHeldSec` không vượt thời gian đã chơi, `territoryPct` trong 0..100.
+ */
+export function evaluateCampaignOutcome(
+  config: MatchConfigInput,
+  facts: Partial<CampaignOutcomeFacts>,
+  elapsedSec: number,
+): CampaignOutcome {
+  const resolved = resolveMatchConfig(config);
+  const win = resolved.win;
+  const elapsed = clampFact(elapsedSec, 0, Number.MAX_SAFE_INTEGER);
+
+  const deaths = Math.floor(clampFact(facts.deaths, 0, 9999));
+  const territoryPct = clampFact(facts.territoryPct, 0, 100);
+  const totemsCaptured = Math.floor(clampFact(facts.totemsCaptured, 0, totemCapOf(config)));
+  const kingHeldSec = clampFact(facts.kingHeldSec, 0, elapsed);
+
+  const fail = (reason: string): CampaignOutcome => ({ objectiveMet: false, stars: 0, score: 0, reason });
+
+  // Hết mạng thì THUA, bất kể objective — chặn việc vừa chết sạch vừa khai đã qua màn.
+  const maxLives = resolved.rules.maxLives;
+  if (maxLives > 0 && deaths >= maxLives) return fail("out_of_lives");
+
+  let met = false;
+  switch (win.kind) {
+    case "territory_pct":
+      // `targetPct` là PHÂN SỐ 0..1 (trình vẽ/catalog), `territoryPct` là thang 0..100 — doc 33 §4c.
+      met = territoryPct >= (win.targetPct ?? Number.POSITIVE_INFINITY) * 100;
+      break;
+    case "survive":
+      met = elapsed >= (win.durationSec ?? Number.POSITIVE_INFINITY);
+      break;
+    case "capture_totems":
+      met = totemsCaptured >= (win.totemGoal ?? Number.POSITIVE_INFINITY);
+      break;
+    case "king_hold":
+      met = kingHeldSec >= win.winHoldTime;
+      break;
+    case "none":
+      // Luyện tập endless — không có gì để "qua màn", không cấp thưởng.
+      return fail("objective_none");
+  }
+  if (!met) return fail("objective_not_met");
+
+  return {
+    objectiveMet: true,
+    stars: campaignStars(deaths),
+    score: Math.round(territoryPct * 10),
+    reason: "",
+  };
+}
+
 /** Tra cấp theo id. */
 export function levelById(id: string): CampaignLevel | undefined {
   return CAMPAIGN_LEVELS.find((l) => l.id === id);

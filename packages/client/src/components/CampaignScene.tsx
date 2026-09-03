@@ -10,7 +10,7 @@ import {
   applyPowerups,
   isUnlockedIn,
   computeEnergy,
-  campaignStars,
+  type CampaignOutcomeFacts,
   validateCampaignCatalog,
   type CampaignLevel,
   type PowerupKind,
@@ -145,11 +145,13 @@ export default function CampaignScene({ playerName, appearance, onExit, showMenu
     }
   }, [picks]);
 
-  const onOutcome = useCallback(async (won: boolean, playId: string, result: { deaths: number; score: number }) => {
+  // [doc 35 §A3] Chỉ NỘP dữ kiện thô; sao/điểm/đạt-hay-không do server chấm. `won` chỉ để quyết
+  // định có nộp hay không (thua thì khỏi nộp) — server vẫn chấm lại độc lập.
+  const onOutcome = useCallback(async (won: boolean, playId: string, facts: CampaignOutcomeFacts) => {
     if (!won || submitting.current) return;
     submitting.current = true;
     try {
-      await completeCampaignLevel(playId, true, campaignStars(result.deaths), result.score);
+      await completeCampaignLevel(playId, facts);
       await refresh();
     } catch { /* giữ nguyên; người chơi vẫn thấy màn thắng */ }
     finally { submitting.current = false; }

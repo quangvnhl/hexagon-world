@@ -205,20 +205,28 @@ slices:
     files:
       - packages/server/src/campaign/campaign.controller.ts
       - packages/shared/src/campaign.ts
+      - packages/shared/src/__tests__/campaign.test.ts
       - packages/server/test/campaign.spec.ts
+      - packages/client/src/lib/backend.ts
+      - packages/client/src/components/CampaignScene.tsx
+      - packages/client/src/components/GameScene.tsx
     depends_on: []
     dod:
       - "pnpm --filter @hexagon/shared test"
       - "pnpm --filter @hexagon/server test"
+      - "pnpm --filter @hexagon/client test"
       - "pnpm -r typecheck"
     risk: high
     requires_human: false
     note: >-
       LÁT MẪU nghiệm thu đường ray (doc 36 §1). Client chỉ gửi dữ kiện thô
-      (deaths, elapsedMs, territoryPct, objectiveKind); server đối chiếu campaign_levels.config
-      rồi tự đánh giá đạt/không và gọi campaignStars(). Evaluator dùng CHUNG trong shared cho
-      cả hai phía để không từ chối oan.
-    status: todo
+      (deaths, territoryPct, totemsCaptured, kingHeldSec); server tự ĐO thời gian từ
+      campaign_plays.created_at (không nhận elapsed của client), đối chiếu campaign_levels.config
+      rồi tự kết luận đạt/không, tự gọi campaignStars() và tự tính điểm.
+      Evaluator dùng CHUNG trong shared cho cả hai phía để không từ chối oan.
+      Files mở rộng so với bản khai ban đầu: phải sửa cả 3 file client vì ĐỔI HỢP ĐỒNG payload
+      (client cũ gửi objectiveMet/stars/score sẽ bị từ chối — client và server phải deploy cùng nhau).
+    status: done
     commit: null
 
   - id: a3.2-campaign-sanity
