@@ -195,6 +195,25 @@ slices:
     status: todo
     commit: null
 
+  - id: t2-flaky-bot-interval
+    doc: "36#R1"
+    title: "Sửa test tích hợp chập chờn: tick trước khi phòng kịp bắt đầu"
+    files:
+      - packages/server/test/integration.spec.ts
+    depends_on: []
+    dod:
+      - "pnpm --filter @hexagon/server test"
+    risk: low
+    requires_human: false
+    note: >-
+      Phát hiện khi CI đỏ ở lát a1.2 dù thay đổi không liên quan (chạy lại thì xanh).
+      `waitWelcome()` chỉ đảm bảo client NHẬN welcome; `lobby_ready` (autoReady) lúc đó mới vừa
+      GỬI đi nên server chưa xử lý ⇒ phòng chưa `started` ⇒ `tickOnce()` bỏ qua ⇒ activeBotCount
+      đứng ở 0. Sửa bằng cách chờ tín hiệu `lobby.started` (cách các test khác trong file đã dùng).
+      Một cổng CI đỏ ngẫu nhiên còn tệ hơn không có cổng — xem doc 36 §10 rủi ro #2.
+    status: done
+    commit: null
+
   # ─────────────────────────────────────────────────────────────────────────
   # PHA 6 — "Đo được & không rò rỉ" (doc 35 §7)
   # ─────────────────────────────────────────────────────────────────────────
@@ -279,7 +298,7 @@ slices:
       ANALYTICS_SCHEMA_VERSION + union AnalyticsEvent + makeEvent(). Đặt ở shared để client/server
       dùng chung MỘT danh sách tên — thêm tên mới phải sửa union, typecheck bắt lỗi. Mọi sự kiện
       mang build_id (doc 35 §A8). KHÔNG có trường PII.
-    status: todo
+    status: done
     commit: null
 
   - id: a1.2-client-batcher
@@ -288,13 +307,16 @@ slices:
     files:
       - packages/client/src/lib/analytics.ts
       - packages/client/src/lib/__tests__/analytics.test.ts
+      # Mở rộng: vitest.net.config.mts chỉ include net/__tests__ + components/__tests__ nên test
+      # đặt ở lib/__tests__ sẽ KHÔNG chạy. Thêm include cho lib (thuần logic, hợp môi trường node).
+      - packages/client/vitest.net.config.mts
     depends_on: [a1.1-analytics-schema]
     dod:
       - "pnpm --filter @hexagon/client test"
     risk: medium
     requires_human: false
     note: "Lô <= 20 sự kiện / 5s; sendBeacon khi visibilitychange/unload; đệm localStorage khi offline; session_id + anon_id."
-    status: todo
+    status: done
     commit: null
 
   - id: a1.3-events-endpoint
