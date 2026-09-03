@@ -19,6 +19,7 @@ import { PlayerPreview3D } from "./PlayerPreview3D";
 import { getTelegramUserName } from "@/lib/telegram";
 import { ensureTelegramSession, getMe, startGoogleLogin, devLogin, isLocalhost, type BackendMe } from "@/lib/backend";
 import { ShopPanel } from "./ShopPanel";
+import { track } from "@/lib/analytics";
 import { LobbyRewardedAdButton } from "./LobbyRewardedAdButton";
 import { measureServerPing } from "./serverPing";
 import { trailVectorAsset } from "./trailVectorAssets";
@@ -159,7 +160,16 @@ export function StartPanel({
     void (async () => {
       let me = await getMe();
       if (!me && getTelegramUserName()) {
-        try { await ensureTelegramSession(); me = await getMe(); } catch { /* vẫn cho chơi guest */ }
+        // doc 35 §A1 — chỉ đo lần ĐĂNG NHẬP thật (đổi từ chưa có phiên sang có), không đo mỗi lần
+        // mở lại app với phiên còn hạn; nếu không, `login_success` sẽ chỉ là bản sao của `app_open`.
+        try {
+          await ensureTelegramSession();
+          me = await getMe();
+          track(me ? "login_success" : "login_failed", { method: "telegram" });
+        } catch {
+          track("login_failed", { method: "telegram" });
+          /* vẫn cho chơi guest */
+        }
       }
       if (!active) return;
       setAccount(me);
@@ -352,7 +362,7 @@ export function StartPanel({
               )}
             </span>
           )}
-          {account && <button type="button" onClick={() => setShowShop(true)} style={{ border: "1px solid rgba(255,210,63,.35)", borderRadius: 9, padding: "6px 10px", color: "#ffe27a", background: "rgba(255,210,63,.08)", cursor: "pointer", whiteSpace: "nowrap" }}>Shop</button>}
+          {account && <button type="button" onClick={() => { track("shop_open"); setShowShop(true); }} style={{ border: "1px solid rgba(255,210,63,.35)", borderRadius: 9, padding: "6px 10px", color: "#ffe27a", background: "rgba(255,210,63,.08)", cursor: "pointer", whiteSpace: "nowrap" }}>Shop</button>}
         </div>
 
         {/* Tên */}

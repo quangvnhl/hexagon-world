@@ -184,3 +184,79 @@ describe("Không bao giờ làm hỏng game", () => {
     expect(ev.props).toEqual({ provider: "telegram" });
   });
 });
+
+// ---- Lát a1.6: cắm ống vào vòng đời trình duyệt -------------------------------------------------
+
+/** `window`/`document`/`navigator` tối thiểu để chạy `startBrowserAnalytics` trong môi trường node. */
+function fakeBrowser() {
+  const listeners: Record<string, (() => void)[]> = {};
+  const beacons: (Blob | string)[] = [];
+  const add = (target: Record<string, unknown>) => {
+    target.addEventListener = (type: string, fn: () => void) => {
+      (listeners[type] ??= []).push(fn);
+    };
+  };
+  const win: Record<string, unknown> = {
+    localStorage: memStorage(),
+    setInterval: () => 0,
+  };
+  add(win);
+  const doc: Record<string, unknown> = { visibilityState: "visible" };
+  add(doc);
+  const nav = {
+    sendBeacon: (_url: string, body: Blob | string) => {
+      beacons.push(body);
+      return true;
+    },
+  };
+  /** Đọc mọi sự kiện đã gửi qua sendBeacon. Thân là Blob nên phải await — không đọc đồng bộ được. */
+  async function sentEvents(): Promise<{ name: string }[]> {
+    const bodies = await Promise.all(beacons.map((b) => (typeof b === "string" ? b : b.text())));
+    return bodies.flatMap((body) => (JSON.parse(body) as { events: { name: string }[] }).events);
+  }
+  return { win, doc, nav, listeners, beacons, sentEvents, fire: (t: string) => (listeners[t] ?? []).forEach((f) => f()) };
+}
+
+describe("Cắm vào vòng đời trình duyệt (a1.6)", () => {
+  it("track() TỰ khởi động — gọi trước startBrowserAnalytics vẫn không mất sự kiện", async () => {
+    const b = fakeBrowser();
+    vi.stubGlobal("window", b.win);
+    vi.stubGlobal("document", b.doc);
+    vi.stubGlobal("navigator", b.nav);
+    const { track, resetBrowserAnalyticsForTest, startBrowserAnalytics } = await import("../analytics");
+    resetBrowserAnalyticsForTest();
+    try {
+      track("app_open");
+      // Không gọi startBrowserAnalytics trước: nếu track() không tự khởi động thì client này rỗng.
+      const client = startBrowserAnalytics();
+      expect(client?.pending()).toBe(1);
+    } finally {
+      resetBrowserAnalyticsForTest();
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("rời trang ⇒ phát session_end TRƯỚC khi xả, và chỉ phát MỘT lần", async () => {
+    const b = fakeBrowser();
+    vi.stubGlobal("window", b.win);
+    vi.stubGlobal("document", b.doc);
+    vi.stubGlobal("navigator", b.nav);
+    const { startBrowserAnalytics, track, resetBrowserAnalyticsForTest } = await import("../analytics");
+    resetBrowserAnalyticsForTest();
+    try {
+      startBrowserAnalytics();
+      track("app_open");
+
+      b.fire("pagehide");
+      expect((await b.sentEvents()).map((e) => e.name)).toEqual(["app_open", "session_end"]);
+
+      // Ẩn trang sau đó KHÔNG được phát thêm session_end nữa (một phiên chỉ kết thúc một lần).
+      b.doc.visibilityState = "hidden";
+      b.fire("visibilitychange");
+      expect((await b.sentEvents()).filter((e) => e.name === "session_end")).toHaveLength(1);
+    } finally {
+      resetBrowserAnalyticsForTest();
+      vi.unstubAllGlobals();
+    }
+  });
+});

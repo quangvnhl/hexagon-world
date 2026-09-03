@@ -2,16 +2,34 @@
   "version": "0.0.1",
   "configurations": [
     {
+      "name": "hexagon-server",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "@hexagon/server",
+        "start:dev"
+      ],
+      "port": 8910
+    },
+    {
       "name": "hexagon-client",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@hexagon/client", "dev"],
+      "runtimeArgs": [
+        "--filter",
+        "@hexagon/client",
+        "dev"
+      ],
       "port": 3890,
       "autoPort": true
     },
     {
       "name": "hexagon-admin",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@hexagon/admin", "dev"],
+      "runtimeArgs": [
+        "--filter",
+        "@hexagon/admin",
+        "dev"
+      ],
       "port": 3899,
       "autoPort": true
     }
