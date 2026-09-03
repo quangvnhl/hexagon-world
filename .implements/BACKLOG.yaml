@@ -573,6 +573,8 @@ slices:
     files:
       - packages/server/src/main.ts
       - packages/server/src/logging.ts
+      - packages/server/src/game/game.module.ts
+      - packages/server/test/logging.spec.ts
       - packages/server/package.json
     depends_on: []
     dod:
@@ -580,8 +582,17 @@ slices:
       - "pnpm build"
     risk: low
     requires_human: false
-    note: "Tách log control plane khỏi đường nóng gameplay (đường nóng chỉ ĐẾM, không log mỗi tick)."
-    status: todo
+    note: >-
+      Tách log control plane khỏi đường nóng gameplay: vòng lặp 24 Hz chỉ ĐẾM (net/telemetry.ts),
+      không log mỗi tick — log mỗi tick sẽ tạo bão I/O đúng lúc server bận nhất, tức là công cụ
+      chẩn đoán góp phần gây ra chính sự cố nó phải chẩn đoán.
+      Bí mật bị che ở TẦNG CODE (redactFields, so khớp chuỗi con không phân biệt hoa thường) chứ
+      không dặn miệng — cùng tinh thần FORBIDDEN_PROP_KEYS của analytics.
+      request_id nhận từ header nếu "lành" (chỉ [A-Za-z0-9._-], tránh chuỗi ngoài phá vỡ định dạng
+      log), không thì tự sinh, và LUÔN trả lại trong response để báo lỗi của người chơi nối được
+      với dòng log. NestPinoLogger nối Logger sẵn có của Nest vào pino nên không phải sửa từng chỗ.
+      Đo trên server đang chạy: header x-request-id tự sinh, và id gửi từ ngoài vào được giữ nguyên.
+    status: done
     commit: null
 
   - id: c4.1-legal-pages

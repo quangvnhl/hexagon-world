@@ -1,6 +1,7 @@
 import {
   Module,
   Injectable,
+  Logger,
   type OnApplicationShutdown,
 } from "@nestjs/common";
 import { HttpAdapterHost } from "@nestjs/core";
@@ -19,6 +20,7 @@ import { MatchResultReporter } from "../matches/match-result-reporter.service";
  */
 @Injectable()
 export class GatewayService implements OnApplicationShutdown {
+  private readonly logger = new Logger(GatewayService.name);
   private net: NetServer | null = null;
 
   constructor(private readonly adapter: HttpAdapterHost, private readonly tickets: TicketService, private readonly results: MatchResultReporter) {}
@@ -49,12 +51,11 @@ export class GatewayService implements OnApplicationShutdown {
       onMatchResult: (result) => this.results.report(result),
     });
     await this.net.start();
-    // eslint-disable-next-line no-console
-    console.log(
-      `[Hexagon] Server AUTHORITATIVE region=${cfg.region} chuẩn bị trên cổng ${port}, ` +
-        `${TICK_RATE} Hz. Phòng tạo khi có người vào ` +
-        `(tối đa ${MAX_HUMAN_PLAYERS} ghế người + ${ONLINE_BOT_CAPACITY_MIN}..${ONLINE_BOT_CAPACITY_MAX} bot online/room), ` +
-        `đóng khi hết người hoặc hết ván.`,
+    // Log MỘT dòng lúc khởi động. Đường nóng (vòng lặp 24 Hz) tuyệt đối không log — nó chỉ ĐẾM
+    // qua `net/telemetry.ts`; log mỗi tick sẽ tạo bão I/O đúng lúc server bận nhất.
+    this.logger.log(
+      `gameplay sẵn sàng region=${cfg.region} port=${port} tick=${TICK_RATE}Hz ` +
+        `seats=${MAX_HUMAN_PLAYERS} bots=${ONLINE_BOT_CAPACITY_MIN}..${ONLINE_BOT_CAPACITY_MAX}`,
     );
   }
 
