@@ -271,7 +271,7 @@ slices:
       ANALYTICS_SCHEMA_VERSION + union AnalyticsEvent + makeEvent(). Đặt ở shared để client/server
       dùng chung MỘT danh sách tên — thêm tên mới phải sửa union, typecheck bắt lỗi. Mọi sự kiện
       mang build_id (doc 35 §A8). KHÔNG có trường PII.
-    status: todo
+    status: done
     commit: null
 
   - id: a1.2-client-batcher
