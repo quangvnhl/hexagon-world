@@ -178,8 +178,16 @@ Quy tắc:
 | R2 tầng 2 (luồng tiền) | ✅ (code) | Cung cấp Supabase **staging** |
 | R3 db-migrate/seed/env | ✅ (code) | Tạo project staging, cấp `SUPABASE_DB_URL` |
 | R4 BACKLOG | ✅ | Duyệt thứ tự ưu tiên |
-| R5 chính sách git | ✅ (viết) | Chốt tuần tự hay song song; ai duyệt/gộp PR |
+| R5 chính sách git | ✅ (viết) | — (đã chốt, xem dưới) |
 | R6 AGENTS.md | ✅ | Đọc và xác nhận danh sách cấm |
+
+### Đã chốt (2026-09-03)
+
+- **Gộp PR:** orchestrator **tự gộp khi CI xanh**, **TRỪ** lát `risk: high` — những lát này chờ người
+  duyệt. (Mọi lát chạm tiền, tài khoản người chơi, migration, hoặc quyền Ops API đều đã gắn
+  `risk: high` sẵn trong `BACKLOG.yaml` — hiện 9/28 lát.)
+- **Song song:** **KHÔNG.** Chạy **tuần tự, một agent một lúc**. Khối lượng Pha 6 không đủ lớn để
+  đánh đổi lấy rủi ro đua git đã từng xảy ra.
 
 ---
 
