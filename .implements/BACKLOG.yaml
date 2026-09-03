@@ -440,17 +440,31 @@ slices:
     doc: "35#A2"
     title: "Bảng remote_config + GET /v1/config có ETag"
     files:
-      - packages/server/src/config/remote-config.controller.ts
-      - packages/server/src/app.module.ts
+      - packages/shared/src/remote-config.ts
+      - packages/shared/src/__tests__/remote-config.test.ts
+      - packages/server/src/config-api/remote-config.controller.ts
+      - packages/server/src/control/control.module.ts
       - packages/server/test/remote-config.spec.ts
-      - supabase/migrations/202609010004_remote_config.sql
+      - supabase/migrations/202609030002_remote_config.sql
     depends_on: [r3.1-db-migrate]
     dod:
       - "pnpm --filter @hexagon/server test"
+      - "pnpm --filter @hexagon/shared test"
     risk: medium
     requires_human: false
-    note: "audience jsonb cho phép bật theo % (hash player_id) ⇒ nền cho A/B. Mọi bảng mang nhãn platform ngay từ đầu (doc 35 §B8)."
-    status: todo
+    note: >-
+      Luật giải quyết cấu hình nằm ở SHARED (không ở SQL) để client và server dùng chung một luật;
+      nhét vào SQL thì client sẽ có luật thứ hai và hai bên sẽ trôi khỏi nhau.
+      Bốn tính chất bắt buộc: luôn có fallback trong code (endpoint KHÔNG BAO GIỜ trả lỗi — client
+      gọi nó lúc khởi động); giá trị sai kiểu thì bỏ chứ không tự đổi kiểu; rollout % tất định bằng
+      FNV-1a trên (khoá + id) nên client/server tính độc lập vẫn khớp và hai khoá chia nhóm độc lập;
+      mọi khoá mang nhãn platform từ đầu.
+      Bảng remote_config để TRỐNG có chủ ý — seed sẵn sẽ tạo hai nguồn sự thật cho cùng một con số.
+      Kèm remote_config_audit + trigger ghi giá trị trước/sau (kill-switch bị bấm lúc đang hoảng,
+      hôm sau không ai nhớ ai bấm gì).
+      ĐO THẬT trên database dev: ghi ads.enabled=false ⇒ endpoint đổi trong 30s, ETag đổi theo,
+      If-None-Match ⇒ 304, audit ghi lại thay đổi. Không deploy gì.
+    status: done
     commit: null
 
   - id: a2.2-client-config
