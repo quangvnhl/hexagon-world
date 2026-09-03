@@ -28,11 +28,17 @@ describe("GameState obstacles — dựng map", () => {
   });
 });
 
-describe("GameState obstacles — chặn di chuyển", () => {
-  it("moveTo vào ô chướng ngại bị chặn (đầu đứng nguyên)", () => {
+describe("GameState obstacles — di chuyển", () => {
+  // ⚠️ Test cũ ở đây tên là "moveTo vào ô chướng ngại bị chặn (đầu đứng nguyên)" và LUÔN xanh —
+  // nhưng không phải vì obstacle chặn, mà vì `GameState` mới tạo còn ở pha CHUẨN BỊ (đứng yên 3s),
+  // nên bất kỳ `moveTo` nào cũng "không dịch chuyển". Nó cho cảm giác an toàn sai: doc 34 D đã BỎ
+  // collider riêng của ô chướng ngại (xem `updateEntity` trong state.ts). Hành vi thật được đo ở
+  // `boundaries.test.ts`.
+  it("trong pha CHUẨN BỊ thì không ai dịch chuyển (dù có obstacle hay không)", () => {
     const g = new GameState({ config: { bots: { count: 0 }, map: { obstacles: [key(3, 0)] } } });
     const p = axialToPixel({ q: 3, r: 0 }, CONFIG.HEX_SIZE);
     const before = { x: g.human.pos.x, y: g.human.pos.y };
+    expect(g.human.phase).toBe("prep");
     g.moveTo(p.x, p.y);
     expect(g.human.pos.x).toBe(before.x);
     expect(g.human.pos.y).toBe(before.y);

@@ -114,7 +114,7 @@ slices:
       Trượt dọc obstacle (dịch chuyển theo tiếp tuyến, không nằm trong ô obstacle);
       biên polyline không xuyên (khoảng cách tới đoạn >= 0 mỗi tick); minimap scale
       theo arenaR 20 vs 130. KHÔNG tự động hoá cảm giác lái.
-    status: todo
+    status: done
     commit: null
 
   - id: r3.1-db-migrate
