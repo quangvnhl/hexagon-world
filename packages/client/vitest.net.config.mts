@@ -9,6 +9,9 @@ export default defineConfig({
     include: [
       "src/net/__tests__/**/*.test.ts",
       "src/components/__tests__/**/*.test.ts",
+      // `src/lib` là logic thuần (analytics, cổng nền tảng, adsgram…) — chạy được ở môi trường
+      // node như hai thư mục trên. Thiếu dòng này thì test đặt ở lib/__tests__ im lặng KHÔNG chạy.
+      "src/lib/__tests__/**/*.test.ts",
     ],
   },
 });
