@@ -52,7 +52,7 @@ slices:
     requires_human: true
     human_note: "Bật GitHub Actions + branch protection cho main (yêu cầu job `verify` xanh)."
     status: done
-    commit: d61052c
+    commit: 8a891ae
 
   - id: r6-agents-rules
     doc: "36#R6"
