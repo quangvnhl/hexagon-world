@@ -8,6 +8,7 @@ import { GameState } from "@hexagon/shared";
 import { CONFIG } from "@hexagon/shared";
 import type { PlayerAppearance, MatchConfigInput, CampaignOutcomeFacts } from "@hexagon/shared";
 import { axialToPixel, parseKey } from "@hexagon/shared";
+import { track } from "@/lib/analytics";
 import { HexGridView } from "./HexGridView";
 import { PlayerCube } from "./PlayerCube";
 import { Effects } from "./Effects";
@@ -344,6 +345,8 @@ export default function GameScene({
   );
   // [Campaign] Bắn onOutcome đúng một lần khi won/lost lần đầu bật.
   const outcomeFired = useRef(false);
+  // Tách khỏi `outcomeFired`: sự kiện đo và việc NỘP kết quả là hai chuyện, và chỉ campaign mới nộp.
+  const outcomeSubmitted = useRef(false);
   // Gán tên người chơi vào ghế 0 (hiển thị ở xếp hạng / KING / thắng).
   useMemo(() => {
     if (playerName) game.setName(0, playerName);
@@ -384,9 +387,23 @@ export default function GameScene({
   const onStats = useCallback(
     (s: Stats) => {
       setStats(s);
-      if (onOutcome && !outcomeFired.current && (s.won || s.lost)) {
+      if (!outcomeFired.current && (s.won || s.lost)) {
         outcomeFired.current = true;
         // won với chủ thể là người chơi (winnerId 0) = thắng; lost = thua.
+        const won = s.won && (s.winnerId === 0 || s.winnerId === -1);
+        // doc 35 §A1 — `match_end` phát cho mọi ván CÓ phân định, không chỉ ván có nộp kết quả:
+        // nếu chỉ đo chế độ nộp kết quả thì mọi so sánh giữa các chế độ đều lệch.
+        // Lưu ý: Luyện tập dùng `win.kind = "none"` (endless) nên không bao giờ phân định ⇒ không
+        // phát sự kiện này. Thời lượng phiên Luyện tập đọc qua `session_end` (lát a1.6).
+        track("match_end", {
+          mode: endMode === "campaign" ? "campaign" : "solo",
+          won,
+          deaths: s.deaths,
+          territory_pct: Math.round(s.pct),
+        });
+      }
+      if (onOutcome && !outcomeSubmitted.current && (s.won || s.lost)) {
+        outcomeSubmitted.current = true;
         const won = s.won && (s.winnerId === 0 || s.winnerId === -1);
         // [doc 35 §A3] Chỉ gửi DỮ KIỆN THÔ. Không tự tính sao/điểm và không tự khai "đã thắng" —
         // server chấm lại bằng `evaluateCampaignOutcome` với cấu hình cấp lấy từ database.
@@ -400,10 +417,16 @@ export default function GameScene({
         });
       }
     },
-    [onOutcome]
+    [onOutcome, endMode]
   );
   const onRevive = useCallback(() => game.revive(), [game]);
-  const onRestart = useCallback(() => game.restart(), [game]);
+  const onRestart = useCallback(() => {
+    // Mở lại cửa đo: `game.restart()` chơi ván mới mà KHÔNG remount GameScene, nên không mở lại
+    // hai cờ này thì mọi ván sau lần đầu đều biến mất khỏi số liệu (và campaign không nộp được).
+    outcomeFired.current = false;
+    outcomeSubmitted.current = false;
+    game.restart();
+  }, [game]);
   const onSpectate = useCallback(() => game.spectate(), [game]);
   const onSpectatePrev = useCallback(
     () => (spectateTargetRef.current = game.spectateCycle(spectateTargetRef.current, -1)),
