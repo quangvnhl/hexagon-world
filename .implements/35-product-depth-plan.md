@@ -1,8 +1,9 @@
 # 35 — Kế hoạch tính năng chuyên sâu: Kỹ thuật · Kinh doanh · Vận hành · Vòng đời
 
 > **Phạm vi cửa sổ làm việc này:** CHỈ `packages/client`, `packages/server`, `packages/shared`,
-> `packages/admin` (+ `supabase/`, `scripts/`). Bản Unity (`packages/BeeKing_Unity`, `.implements_unity/`)
-> nằm NGOÀI phạm vi — nhưng có một quyết định kiến trúc liên quan, ghi ở §A8.
+> `packages/admin` (+ `supabase/`, `scripts/`). Bản Unity **đã được dời hẳn ra khỏi repo này**
+> (2026-09-04) sang `D:\dev\BeeKing_Unity` + `D:\dev\.implements_unity`, đúng theo quyết định #2
+> ở §1 ("khi cần bản mobile sẽ tách dự án riêng"). Quyết định kiến trúc liên quan vẫn ghi ở §A8.
 >
 > **Loại tài liệu:** KẾ HOẠCH (chưa sửa code). Nền: [05-roadmap.md](05-roadmap.md) (Pha 0–5),
 > [10](10-player-backend-supabase.md) (backend người chơi), [26](26-phase-5-plan.md) (vận hành + SLO),
