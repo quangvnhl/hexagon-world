@@ -10,6 +10,8 @@
     "test": "pnpm -r test",
     "release:check": "node scripts/release-gate.mjs",
     "test:release-gate": "node --test scripts/release-gate.test.mjs",
+    "test:db-migrate": "node --test scripts/db-migrate.test.mjs",
+    "db:migrate": "node scripts/db-migrate.mjs",
     "test:review-guard": "node --test scripts/review-guard.test.mjs",
     "review:guard": "node scripts/review-guard.mjs",
     "verify:logic": "pnpm --filter @hexagon/shared verify:logic",
@@ -20,6 +22,7 @@
     "test:integration": "pnpm --filter @hexagon/server test:integration"
   },
   "devDependencies": {
+    "pg": "^8.23.0",
     "typescript": "^5.7.0"
   }
 }
