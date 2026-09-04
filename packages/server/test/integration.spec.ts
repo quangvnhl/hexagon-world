@@ -388,6 +388,14 @@ describe("NetServer integration (real ws, deterministic ticks)", () => {
     await Promise.all([a.open(), b.open(), c.open()]);
     a.join("A"); b.join("B"); c.join("C");
     await Promise.all([a.waitWelcome(), b.waitWelcome(), c.waitWelcome()]);
+    // `waitWelcome()` chỉ đảm bảo client NHẬN welcome; `lobby_ready` (autoReady) lúc đó mới vừa
+    // được GỬI. Phòng chưa `started` thì `tickOnce()` bỏ qua nó hoàn toàn ⇒ không có snapshot nào
+    // và mọi phép chờ phía dưới đều hết giờ. Đây đúng là gốc rễ đã sửa ở lát t2, còn sót ở test này.
+    await Promise.all([
+      waitFor(() => a.lobby?.started === true, 3000, "phòng bắt đầu (A)"),
+      waitFor(() => b.lobby?.started === true, 3000, "phòng bắt đầu (B)"),
+      waitFor(() => c.lobby?.started === true, 3000, "phòng bắt đầu (C)"),
+    ]);
 
     const idA = a.welcome!.playerId;
     const idB = b.welcome!.playerId;
