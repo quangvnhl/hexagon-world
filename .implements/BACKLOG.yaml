@@ -569,17 +569,28 @@ slices:
     doc: "35#A1"
     title: "Sự kiện phát từ server (nguồn tin cậy)"
     files:
-      - packages/server/src/matches/match-result-reporter.service.ts
+      # ĐỔI so với kế hoạch: `match_end` phát ở MatchesController (control plane) chứ không ở
+      # match-result-reporter (node game). Node game có thể chạy tách khỏi control plane
+      # (`role=game`) và KHÔNG có kết nối database; nó chỉ POST kết quả sang control plane. Thêm
+      # nữa `record_match_result` đã trả cờ `inserted` — dùng lại chính cờ đó thì "đúng một lần"
+      # là thuộc tính có sẵn thay vì thứ phải tự dựng.
+      - packages/server/src/analytics/server-analytics.service.ts
+      - packages/server/src/analytics/analytics.controller.ts
+      - packages/server/src/matches/matches.controller.ts
       - packages/server/src/payments/telegram-payments.controller.ts
       - packages/server/src/energy/energy.controller.ts
       - packages/server/src/campaign/campaign.controller.ts
+      - packages/server/src/control/control.module.ts
+      - packages/server/test/server-analytics.spec.ts
+      - packages/shared/src/analytics.ts
+      - supabase/migrations/202609040001_analytics_source.sql
     depends_on: [a1.3-events-endpoint]
     dod:
       - "pnpm --filter @hexagon/server test"
     risk: medium
     requires_human: false
     note: "match_end, purchase_fulfilled, energy_spend/grant, campaign_complete — không phụ thuộc client."
-    status: todo
+    status: done
     commit: null
 
   - id: a1.5-rollup-queries

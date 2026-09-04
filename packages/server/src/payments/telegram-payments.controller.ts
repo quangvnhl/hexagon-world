@@ -13,6 +13,7 @@ import {
 import { createHash, randomUUID } from "node:crypto";
 import type { Request } from "express";
 import { SessionService } from "../auth/session.service";
+import { ServerAnalyticsService } from "../analytics/server-analytics.service";
 import { SupabaseService } from "../database/supabase.service";
 import { runtimeConfig } from "../runtime-config";
 
@@ -56,7 +57,57 @@ const COIN_INVOICE_TTL_MS = 15 * 60 * 1000;
 
 @Controller("v1")
 export class TelegramPaymentsController {
-  constructor(private readonly sessions: SessionService, private readonly db: SupabaseService) {}
+  constructor(
+    private readonly sessions: SessionService,
+    private readonly db: SupabaseService,
+    private readonly analytics: ServerAnalyticsService,
+  ) {}
+
+  /**
+   * Phát `purchase_fulfilled` sau khi RPC đã cộng hàng/coin. Tách khỏi webhook để luồng thanh toán
+   * không dài thêm, và để **không bao giờ** một lỗi đo đạc làm webhook trả lỗi — Telegram sẽ gửi
+   * lại webhook khi nhận lỗi, tức là một lỗi analytics sẽ biến thành một vòng lặp gửi lại.
+   *
+   * Đọc lại `purchase_orders` vì hai lý do: lấy `player_id` (câu select ở webhook không có, và
+   * không nên thêm vào đó — đường xác thực nên đọc đúng thứ nó cần để quyết định), và lấy
+   * `updated_at` mà RPC vừa đặt lúc chuyển sang `fulfilled`, làm `occurred_at` tất định.
+   */
+  private async emitPurchaseFulfilled(
+    order: PaymentOrder,
+    payment: { total_amount: number; currency: string; telegram_payment_charge_id: string },
+    kind: string,
+  ): Promise<void> {
+    let playerId: string | null = null;
+    let coinAmount = 0;
+    let updatedAt: string | null = null;
+    try {
+      const { data } = await this.db.from("purchase_orders")
+        .select("player_id,coin_amount,updated_at").eq("id", order.id).maybeSingle();
+      const row = data as { player_id?: string; coin_amount?: number | null; updated_at?: string } | null;
+      playerId = row?.player_id ?? null;
+      coinAmount = Number(row?.coin_amount ?? 0);
+      updatedAt = row?.updated_at ?? null;
+    } catch {
+      // Đọc lại hỏng thì vẫn phát: mất `player_id` còn hơn mất cả bản ghi doanh thu.
+    }
+    await this.analytics.emit({
+      name: "purchase_fulfilled",
+      // Một lần trừ tiền thật có đúng một `telegram_payment_charge_id`.
+      dedupe: [payment.telegram_payment_charge_id],
+      playerId,
+      occurredAt: updatedAt,
+      platform: "telegram",
+      props: {
+        order_id: order.id,
+        product_kind: kind,
+        provider: "telegram_stars",
+        // Số Stars người chơi thật sự trả. `currency` luôn là XTR ở nhánh này (đã kiểm phía trên).
+        amount: Number(payment.total_amount),
+        currency: payment.currency,
+        coin_amount: coinAmount,
+      },
+    });
+  }
 
   private async botApi(method: string, payload: Record<string, unknown>): Promise<unknown> {
     const response = await fetch(`https://api.telegram.org/bot${runtimeConfig().telegram.botToken}/${method}`, {
@@ -342,13 +393,24 @@ export class TelegramPaymentsController {
         p_amount: payment.total_amount,
         p_raw_event_hash: createHash("sha256").update(JSON.stringify(update)).digest("hex"),
       };
-      if (order.product_kind === "coin_package") {
+      const kind = order.product_kind === "coin_package" ? "coin_package" : (order.product_kind ?? "shop_item");
+      if (kind === "coin_package") {
         await this.db.rpc("fulfill_telegram_stars_coin_order", params);
-      } else if ((order.product_kind ?? "shop_item") === "shop_item") {
+      } else if (kind === "shop_item") {
         await this.db.rpc("fulfill_telegram_stars_order", params);
       } else {
         throw new BadRequestException("unsupported_payment_product_kind");
       }
+
+      // doc 35 §A1.4 — DOANH THU. Đây là sự kiện quan trọng nhất trong cả lát: nó là con số duy
+      // nhất trong hệ thống mà không ai ngoài Telegram và server này được quyền khai.
+      //
+      // Webhook Telegram là at-least-once (chính khối `if` phía trên đã phải nhận cả đơn đã
+      // `fulfilled` vì lý do đó). Nên `dedupe` dùng `charge_id` của Telegram — một lần trừ tiền
+      // thật có đúng một charge id — và `occurred_at` đọc `purchase_orders.updated_at` mà RPC vừa
+      // đặt, chứ không dùng đồng hồ. Hai thứ đó cùng lặp lại ⇒ database khử trùng thật sự, và báo
+      // cáo doanh thu không nhân đôi vì Telegram gửi lại webhook.
+      void this.emitPurchaseFulfilled(order, payment, kind);
     }
     return { ok: true };
   }

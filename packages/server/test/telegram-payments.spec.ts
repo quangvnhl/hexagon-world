@@ -2,6 +2,18 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { BadRequestException } from "@nestjs/common";
 import { TelegramPaymentsController } from "../src/payments/telegram-payments.controller";
 import { resetRuntimeConfigForTests } from "../src/runtime-config";
+import type { ServerAnalyticsService } from "../src/analytics/server-analytics.service";
+
+/** Đo đạc giả (lát a1.4). Ghi lại sự kiện để test khẳng định được, và không bao giờ ném — đúng
+ *  hợp đồng của `ServerAnalyticsService`: một phép đo hỏng không được làm hỏng nghiệp vụ. */
+function analyticsStub() {
+  const events: { name: string; props?: Record<string, unknown> }[] = [];
+  const service = {
+    emit: async (e: { name: string; props?: Record<string, unknown> }) => { events.push(e); return true; },
+    emitMany: async (list: { name: string; props?: Record<string, unknown> }[]) => { events.push(...list); return true; },
+  } as unknown as ServerAnalyticsService;
+  return { service, events };
+}
 
 const ENV_KEYS = [
   "SERVER_ROLE", "PORT", "SUPABASE_URL", "SUPABASE_SECRET_KEY", "PLAYER_SESSION_SECRET",
@@ -76,7 +88,7 @@ afterEach(() => {
 describe("Telegram Stars coin payments", () => {
   it("does not query packages or Telegram for a non-Telegram server session", async () => {
     const db = createDb({});
-    const controller = new TelegramPaymentsController(telegramSession("web") as never, db as never);
+    const controller = new TelegramPaymentsController(telegramSession("web") as never, db as never, analyticsStub().service);
 
     await expect(controller.coinInvoice({} as never, {
       packageId: "package-1",
@@ -93,7 +105,7 @@ describe("Telegram Stars coin payments", () => {
     const existingQuery = query({ data: null });
     const insertQuery = query({ error: null });
     const db = createDb({ coin_packages: [packageQuery], purchase_orders: [existingQuery, insertQuery] });
-    const controller = new TelegramPaymentsController(telegramSession() as never, db as never);
+    const controller = new TelegramPaymentsController(telegramSession() as never, db as never, analyticsStub().service);
 
     const result = await controller.coinInvoice({} as never, {
       packageId: "package-1",
@@ -130,7 +142,7 @@ describe("Telegram Stars coin payments", () => {
         coin_amount: 100, amount: 25, currency_code: "XTR", expires_at: "2099-01-01T00:00:00.000Z",
       } })],
     });
-    const controller = new TelegramPaymentsController(telegramSession() as never, db as never);
+    const controller = new TelegramPaymentsController(telegramSession() as never, db as never, analyticsStub().service);
 
     await expect(controller.coinInvoice({} as never, {
       packageId: "package-1",
@@ -154,7 +166,7 @@ describe("Telegram Stars coin payments", () => {
         coin_amount: 100, amount: 25, currency_code: "XTR", expires_at: "2020-01-01T00:00:00.000Z",
       } })],
     });
-    const controller = new TelegramPaymentsController(telegramSession() as never, db as never);
+    const controller = new TelegramPaymentsController(telegramSession() as never, db as never, analyticsStub().service);
 
     await expect(controller.coinInvoice({} as never, {
       packageId: "package-1",
@@ -176,7 +188,7 @@ describe("Telegram Stars coin payments", () => {
       players: { player_identities: [{ provider: "telegram", provider_user_id: "42" }] },
     } });
     const db = createDb({ purchase_orders: [orderQuery] });
-    const controller = new TelegramPaymentsController(telegramSession() as never, db as never);
+    const controller = new TelegramPaymentsController(telegramSession() as never, db as never, analyticsStub().service);
 
     await controller.webhook("webhook-secret", {
       pre_checkout_query: {
@@ -204,7 +216,7 @@ describe("Telegram Stars coin payments", () => {
       expires_at: "2099-01-01T00:00:00.000Z",
       players: { player_identities: [{ provider: "telegram", provider_user_id: "42" }] },
     } })] });
-    const controller = new TelegramPaymentsController(telegramSession() as never, db as never);
+    const controller = new TelegramPaymentsController(telegramSession() as never, db as never, analyticsStub().service);
 
     await controller.webhook("webhook-secret", {
       message: {
@@ -242,7 +254,7 @@ describe("Telegram Stars coin payments", () => {
       expires_at: expiresAt,
       players: { player_identities: [{ provider: "telegram", provider_user_id: "42" }] },
     } })] });
-    const controller = new TelegramPaymentsController(telegramSession() as never, db as never);
+    const controller = new TelegramPaymentsController(telegramSession() as never, db as never, analyticsStub().service);
 
     await controller.webhook("webhook-secret", {
       message: {
@@ -271,7 +283,7 @@ describe("Telegram Stars coin payments", () => {
       expires_at: "2099-01-01T00:00:00.000Z",
       players: { player_identities: [{ provider: "telegram", provider_user_id: "42" }] },
     } })] });
-    const controller = new TelegramPaymentsController(telegramSession() as never, db as never);
+    const controller = new TelegramPaymentsController(telegramSession() as never, db as never, analyticsStub().service);
 
     await expect(controller.webhook("webhook-secret", {
       message: {

@@ -1,6 +1,6 @@
 import { BadRequestException, Body, Controller, Post, Req } from "@nestjs/common";
 import type { Request } from "express";
-import { sanitizeProps, validateEvent, type AnalyticsEvent } from "@hexagon/shared";
+import { SERVER_ONLY_EVENTS, sanitizeProps, validateEvent, type AnalyticsEvent } from "@hexagon/shared";
 import { SlidingWindowCounter } from "../net/rate-limit";
 import { SessionService } from "../auth/session.service";
 import { SupabaseService } from "../database/supabase.service";
@@ -121,6 +121,11 @@ export class AnalyticsController {
       if (validateEvent(raw).length > 0) { rejected++; continue; }
       const event = raw as AnalyticsEvent;
       if (event.ts > now + MAX_CLOCK_SKEW_MS) { rejected++; continue; }
+      // doc 35 §A1.4 — ba sự kiện tiền/tài nguyên chỉ server được phát. Không chặn ở đây thì bất
+      // kỳ ai cũng ghi được `purchase_fulfilled` vào bảng. Cột `source` khiến chúng vô hại với
+      // báo cáo doanh thu (truy vấn lọc `source='server'`), nhưng vẫn làm bẩn bảng và đủ để một
+      // người đọc nhanh kết luận sai. Bỏ RIÊNG sự kiện đó, không giết cả lô — nguyên tắc 1.
+      if (SERVER_ONLY_EVENTS.includes(event.name)) { rejected++; continue; }
       rows.push(toRow(event, playerId));
     }
 

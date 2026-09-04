@@ -9,6 +9,7 @@ import {
 } from "@hexagon/shared";
 import { SessionService } from "../auth/session.service";
 import { SupabaseService } from "../database/supabase.service";
+import { ServerAnalyticsService } from "../analytics/server-analytics.service";
 
 interface ProgressRow { level_id: string; status: string; stars: number; best_score: number; completed_at: string }
 interface LevelRow { id: string; sort_order: number; name: string; config: unknown; powerups: string[]; unlock_requires: string | null; rewards: { coin: number; xp: number; energy: number } }
@@ -26,7 +27,11 @@ function toLevel(r: LevelRow): CampaignLevel {
 
 @Controller("v1")
 export class CampaignController {
-  constructor(private readonly sessions: SessionService, private readonly db: SupabaseService) {}
+  constructor(
+    private readonly sessions: SessionService,
+    private readonly db: SupabaseService,
+    private readonly analytics: ServerAnalyticsService,
+  ) {}
 
   /** Danh sách cấp ĐÃ PUBLISH (nguồn Supabase — doc 29 L2). Public, không cần session. */
   @Get("campaign/levels") async levels(): Promise<{ levels: CampaignLevel[] }> {
@@ -53,9 +58,24 @@ export class CampaignController {
     const cleared = await this.clearedSet(player.id);
     if (!isUnlockedIn(levels, body.levelId, cleared)) throw new ForbiddenException("level_locked");
 
-    return this.db.rpc("start_campaign_level", {
+    const started = await this.db.rpc("start_campaign_level", {
       p_player_id: player.id, p_level_id: body.levelId, p_idempotency_key: body.idempotencyKey,
     });
+
+    // doc 35 §A1.4 — năng lượng bị TRỪ ở đây (RPC trừ 1 điểm). Đây là nguồn duy nhất đáng tin để
+    // biết người chơi tiêu năng lượng vào đâu; client chỉ biết mình đã bấm nút.
+    //
+    // `dedupe` dùng khoá idempotency của chính RPC: gọi lại cùng khoá thì RPC không trừ thêm lần
+    // nào, và ở đây cũng ra đúng một `event_id`. Nhưng RPC không trả về mốc thời gian, nên
+    // `occurred_at` là giờ request ⇒ gọi lại CÓ THỂ sinh hàng thứ hai. Mọi truy vấn tổng hợp phải
+    // `count(distinct event_id)` — xem `202609040001_analytics_source.sql`.
+    void this.analytics.emit({
+      name: "energy_spend",
+      dedupe: [player.id, body.idempotencyKey],
+      playerId: player.id,
+      props: { reason: "campaign_start", level_id: body.levelId, amount: 1 },
+    });
+    return started;
   }
 
   /**
@@ -103,13 +123,67 @@ export class CampaignController {
     const outcome = evaluateCampaignOutcome(lvl.config ?? {}, body.facts, elapsedSec);
     if (!outcome.objectiveMet) throw new BadRequestException(outcome.reason);
 
-    return this.db.rpc("complete_campaign_level", {
+    const progress = await this.db.rpc("complete_campaign_level", {
       p_play_id: body.playId,
       p_player_id: player.id,
       p_stars: outcome.stars,
       p_score: outcome.score,
       p_rewards: lvl.rewards,
     });
+
+    // doc 35 §A1.4 — bản TIN CẬY của `campaign_level_complete`. Client cũng phát một sự kiện cùng
+    // tên, nhưng cột `source` tách hai nguồn: funnel đọc `client`, còn liêm chính và kinh tế đọc
+    // `server` — vì sao/số sao ở đây là do `evaluateCampaignOutcome` chấm, không phải client khai.
+    //
+    // `occurred_at` đọc lại `campaign_plays.completed_at` sau RPC thay vì dùng `Date.now()`: RPC
+    // idempotent nên gọi lại trả đúng mốc cũ ⇒ `(event_id, occurred_at)` lặp y hệt ⇒ database khử
+    // trùng thật sự. Một truy vấn thêm trên khoá chính, và không nằm ở đường nóng.
+    void this.emitCampaignComplete(player.id, body.playId, row.level_id, outcome, lvl.rewards);
+    return progress;
+  }
+
+  /** Tách khỏi `complete` để phần đo không làm dài thêm luồng nghiệp vụ. Không bao giờ ném. */
+  private async emitCampaignComplete(
+    playerId: string,
+    playId: string,
+    levelId: string,
+    outcome: { stars: number; score: number },
+    rewards: unknown,
+  ): Promise<void> {
+    let completedAt: string | null = null;
+    try {
+      const { data } = await this.db.from("campaign_plays").select("completed_at").eq("id", playId).single();
+      completedAt = (data as { completed_at: string | null } | null)?.completed_at ?? null;
+    } catch {
+      // Đọc lại hỏng thì vẫn phát, chỉ là mốc thời gian dùng giờ hiện tại.
+    }
+    const r = (rewards ?? {}) as { coin?: number; xp?: number; energy?: number };
+    await this.analytics.emit({
+      name: "campaign_level_complete",
+      dedupe: [playId],
+      playerId,
+      occurredAt: completedAt,
+      props: {
+        level_id: levelId,
+        stars: outcome.stars,
+        score: outcome.score,
+        reward_coin: Number(r.coin ?? 0),
+        reward_xp: Number(r.xp ?? 0),
+        reward_energy: Number(r.energy ?? 0),
+      },
+    });
+    // Năng lượng ĐI VÀO ví người chơi. Tách khỏi sự kiện trên để một truy vấn duy nhất trả lời
+    // được "năng lượng vào/ra từ đâu" mà không phải đọc props của bốn loại sự kiện khác nhau.
+    const energy = Number(r.energy ?? 0);
+    if (energy > 0) {
+      await this.analytics.emit({
+        name: "energy_grant",
+        dedupe: [playId, "reward"],
+        playerId,
+        occurredAt: completedAt,
+        props: { reason: "campaign_reward", level_id: levelId, amount: energy },
+      });
+    }
   }
 
   private async publishedLevels(): Promise<CampaignLevel[]> {
