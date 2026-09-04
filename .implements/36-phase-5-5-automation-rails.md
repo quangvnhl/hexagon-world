@@ -94,8 +94,10 @@ vào đó phải gắn cờ `requires_human: true` trong backlog thay vì giả 
    - Phát hiện checksum lệch (migration đã áp bị sửa nội dung) ⇒ dừng, không tự sửa.
 2. **`scripts/db-seed.mjs`** — seed **xác định** (players mẫu, catalog + giá, 5 cấp campaign publish) để E2E
    tầng 2 lặp lại cho cùng kết quả. Idempotent theo khoá tự nhiên.
-3. **Đồng bộ `.env.example`** — bổ sung 4 biến còn thiếu + `deploy/*.env.example` mẫu (thư mục `deploy/`
-   hiện chưa tồn tại nhưng runbook 11 đã tham chiếu tới).
+3. **Đồng bộ `.env.example`** — bổ sung 4 biến còn thiếu.
+   *(Cập nhật 2026-09-04: phần `deploy/*.env.example` **bỏ** — chốt "tất cả đang là dev, Supabase có
+   deploy vẫn là dev" nên dùng thẳng `.env` ở gốc, không tạo project staging riêng. `.gitignore` đã
+   bịt sẵn `deploy/*.env` ở lát t3 phòng khi sau này cần.)*
 
 **Ràng buộc tuyệt đối:** agent **không bao giờ** chạy migrate/seed lên production; không đọc, không in, không
 commit giá trị secret.
@@ -169,6 +171,33 @@ Quy tắc:
 
 ---
 
+## 7b. R7 — Review tự động ba tầng *(thêm 2026-09-04)*
+
+R1 trả lời "code có chạy không". Nhưng luật ở R6 chỉ có tác dụng khi ai đó **nhớ ra nó đúng lúc** —
+mà những luật quan trọng nhất (không commit `.env`, không sửa migration đã áp, không tắt test đang
+đỏ) đều là loại vi phạm một lần là hỏng thật, và đều nhận ra được bằng máy.
+
+| Tầng | Chạy khi nào | Trả lời câu hỏi | Cần gì |
+|---|---|---|---|
+| `CI` → `verify` | mọi PR | *Code có chạy không?* | — |
+| `Review` → `guard` (`scripts/review-guard.mjs`) | mọi PR | *Có phạm luật R6 không?* | — |
+| `Claude Review` → `claude` | mọi PR không phải nháp | *Thiết kế đúng chưa, bỏ sót gì?* | `ANTHROPIC_API_KEY` |
+| Subagent `review-pr` (`.claude/agents/`) | khi người gõ `/review-pr` | như trên, nhưng hỏi lại và **đo** được | gói Claude Code |
+
+Cổng `guard` là **tất định** có chủ ý: không secret, không tốn tiền, cùng câu trả lời mỗi lần —
+một cổng chặn thỉnh thoảng đổi ý là một cổng chặn không ai tin. Nó kiểm 8 luật, 5 chặn 3 cảnh báo.
+Có lối thoát hiểm `review-guard: bỏ qua <luật> — <lý do>` **bắt buộc kèm lý do**: một cổng chặn
+không có lối thoát hợp lệ sẽ bị vô hiệu hoá cả cụm vào ngày nó cản nhầm.
+
+Cả tầng 3 và subagent đọc cùng một gói do `scripts/review-collect.mjs` dựng (mô tả PR · khối YAML
+của lát · mục thiết kế phải đọc · file thay đổi · kết quả cổng tất định · diff).
+
+**DoD:** cổng bắt được vi phạm thật trên một PR thật. *(Đã đạt: bắt 1 chặn ở PR #7 và 1 cảnh báo ở
+PR #2 ngay lần chạy đầu; tầng có suy xét tìm ra lỗi `targetPct ?? Infinity` ở PR #2 — client tuyên
+bố thắng còn server từ chối mọi lần nộp.)*
+
+---
+
 ## 8. Ai làm gì
 
 | Hạng mục | Agent tự làm | Cần người |
@@ -181,11 +210,13 @@ Quy tắc:
 | R5 chính sách git | ✅ (viết) | — (đã chốt, xem dưới) |
 | R6 AGENTS.md | ✅ | Đọc và xác nhận danh sách cấm |
 
-### Đã chốt (2026-09-03)
+### Đã chốt (2026-09-03, cập nhật 2026-09-04)
 
-- **Gộp PR:** orchestrator **tự gộp khi CI xanh**, **TRỪ** lát `risk: high` — những lát này chờ người
-  duyệt. (Mọi lát chạm tiền, tài khoản người chơi, migration, hoặc quyền Ops API đều đã gắn
-  `risk: high` sẵn trong `BACKLOG.yaml` — hiện 9/28 lát.)
+- **Gộp PR** *(sửa 2026-09-04 — luật cũ: `risk: high` chờ người duyệt)*: orchestrator tự gộp khi
+  **cả ba cổng review đều xanh** (`verify` · `guard` · `claude` — xem R7). Lát `risk: high` phải có
+  thêm **một lượt review có suy xét được ghi lại thành nhận xét trên PR** trước khi gộp.
+  *(Vì sao đổi: luật cũ khiến 4 lát nằm chờ sau một PR trong khi kế hoạch phải chạy tiếp. Đổi lại,
+  `risk: high` không còn được gộp trong im lặng.)* Nguồn sự thật: `AGENTS.md` §4.
 - **Song song:** **KHÔNG.** Chạy **tuần tự, một agent một lúc**. Khối lượng Pha 6 không đủ lớn để
   đánh đổi lấy rủi ro đua git đã từng xảy ra.
 
