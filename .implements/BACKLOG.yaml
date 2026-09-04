@@ -597,15 +597,24 @@ slices:
     doc: "35#A1"
     title: "Rollup analytics_daily + 3 truy vấn mẫu (retention, funnel FTUE, ARPDAU)"
     files:
-      - supabase/migrations/202609010003_analytics_rollup.sql
+      # ĐỔI tên file so với kế hoạch: 202609010003 nằm TRƯỚC các migration đã áp
+      # (202609030001, 202609040001) nên sẽ phá thứ tự áp. Dùng mốc sau chúng.
+      - supabase/migrations/202609040002_analytics_rollup.sql
       - .implements/analytics-queries.md
+      - .implements/37-viec-can-nguoi-thuc-hien.md
     depends_on: [a1.4-server-events]
     dod:
       - "node scripts/db-migrate.mjs --target staging"
     risk: medium
-    requires_human: true
-    human_note: "Cần staging + dữ liệu; sinh tải bằng packages/server/test/load/ rồi đối chiếu số."
-    status: todo
+    requires_human: false
+    note: >
+      Cờ requires_human GỠ ngày 2026-09-04. Lý do cũ ("cần staging + dữ liệu") đã hết hiệu lực:
+      chốt của chủ dự án là Supabase đang deploy CHÍNH LÀ dev, `--target staging` trỏ vào đó, và
+      bảng đã có dữ liệu thật (53 hàng sự kiện từ đợt kiểm thử FTUE). Cả 4 truy vấn trong
+      analytics-queries.md đã chạy thật trên DB đó và có số kèm theo trong tài liệu.
+      CÒN LẠI cho người: bật pg_cron để rollup tự tươi — doc 37 Việc 3c. Không bật thì chỉ
+      ARPDAU bị cũ; retention và funnel đọc sự kiện thô nên luôn đúng.
+    status: done
     commit: null
 
   - id: a2.1-remote-config-api
