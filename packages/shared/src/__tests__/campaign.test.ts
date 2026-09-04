@@ -5,6 +5,7 @@ import {
   isUnlocked,
   validateCampaignCatalog,
   campaignStars,
+  evaluateCampaignOutcome,
   isUnlockedIn,
   validateLevelDraft,
   type CampaignLevelDraft,
@@ -142,5 +143,100 @@ describe("validateLevelDraft (admin)", () => {
     expect(errs.some((e) => e.includes("kind lạ"))).toBe(true);
     expect(errs.some((e) => e.includes("nguyên"))).toBe(true);
     expect(errs.some((e) => e.includes("trùng ô"))).toBe(true);
+  });
+});
+
+// ---- evaluateCampaignOutcome (doc 35 §A3 lớp 1) ---------------------------------------------
+// Trọng tâm: server KHÔNG nhận "đã thắng"/"mấy sao" từ client, và dữ kiện thô bị KẸP theo cấu
+// hình cấp trước khi chấm.
+describe("evaluateCampaignOutcome", () => {
+  const facts0 = { deaths: 0, territoryPct: 0, totemsCaptured: 0, kingHeldSec: 0 };
+
+  it("territory_pct: targetPct là PHÂN SỐ, territoryPct là thang 0..100", () => {
+    const cfg = { rules: { maxLives: 0 }, win: { kind: "territory_pct" as const, targetPct: 0.3 } };
+    expect(evaluateCampaignOutcome(cfg, { ...facts0, territoryPct: 29.9 }, 60).objectiveMet).toBe(false);
+    const met = evaluateCampaignOutcome(cfg, { ...facts0, territoryPct: 30 }, 60);
+    expect(met.objectiveMet).toBe(true);
+    expect(met.stars).toBe(3); // 0 lần chết
+    expect(met.score).toBe(300); // % × 10
+  });
+
+  it("survive: chấm bằng thời gian SERVER đo, không phải dữ kiện client", () => {
+    const cfg = { rules: { maxLives: 0 }, win: { kind: "survive" as const, durationSec: 60 } };
+    expect(evaluateCampaignOutcome(cfg, facts0, 59).objectiveMet).toBe(false);
+    expect(evaluateCampaignOutcome(cfg, facts0, 60).objectiveMet).toBe(true);
+  });
+
+  it("capture_totems: khai khống bị KẸP theo số totem cấp đó thực sự có", () => {
+    // Cấp chỉ đặt 2 totem nhưng mục tiêu cần 5 ⇒ khai 999 vẫn KHÔNG đạt.
+    const cfg = {
+      map: { totems: [{ kind: "speed" as const, q: 1, r: 0 }, { kind: "slow" as const, q: 2, r: 0 }] },
+      rules: { maxLives: 0 },
+      win: { kind: "capture_totems" as const, totemGoal: 5 },
+    };
+    expect(evaluateCampaignOutcome(cfg, { ...facts0, totemsCaptured: 999 }, 60).objectiveMet).toBe(false);
+    // Mục tiêu 2 thì thu đủ 2 là đạt.
+    const cfg2 = { ...cfg, win: { kind: "capture_totems" as const, totemGoal: 2 } };
+    expect(evaluateCampaignOutcome(cfg2, { ...facts0, totemsCaptured: 999 }, 60).objectiveMet).toBe(true);
+  });
+
+  it("king_hold: kingHeldSec bị kẹp theo thời gian đã chơi", () => {
+    const cfg = { rules: { maxLives: 0 }, win: { kind: "king_hold" as const, winHoldTime: 180 } };
+    // Khai giữ ngôi 999s nhưng ván mới chạy 10s ⇒ kẹp về 10 ⇒ không đạt.
+    expect(evaluateCampaignOutcome(cfg, { ...facts0, kingHeldSec: 999 }, 10).objectiveMet).toBe(false);
+    expect(evaluateCampaignOutcome(cfg, { ...facts0, kingHeldSec: 999 }, 200).objectiveMet).toBe(true);
+  });
+
+  it("hết mạng ⇒ KHÔNG đạt dù mục tiêu có vẻ xong", () => {
+    const cfg = { rules: { maxLives: 3 }, win: { kind: "territory_pct" as const, targetPct: 0.1 } };
+    const r = evaluateCampaignOutcome(cfg, { ...facts0, territoryPct: 100, deaths: 3 }, 60);
+    expect(r.objectiveMet).toBe(false);
+    expect(r.reason).toBe("out_of_lives");
+  });
+
+  it("objective `none` (Luyện tập endless) không bao giờ qua màn", () => {
+    const cfg = { rules: { maxLives: 0 }, win: { kind: "none" as const } };
+    expect(evaluateCampaignOutcome(cfg, { ...facts0, territoryPct: 100 }, 9999).reason).toBe("objective_none");
+  });
+
+  it("dữ kiện bẩn (NaN/âm/thiếu) chỉ làm KHÔNG ĐẠT, không ném lỗi", () => {
+    const cfg = { rules: { maxLives: 0 }, win: { kind: "territory_pct" as const, targetPct: 0.3 } };
+    expect(evaluateCampaignOutcome(cfg, {}, 60).objectiveMet).toBe(false);
+    expect(evaluateCampaignOutcome(cfg, { territoryPct: Number.NaN }, 60).objectiveMet).toBe(false);
+    expect(evaluateCampaignOutcome(cfg, { territoryPct: -5 }, 60).objectiveMet).toBe(false);
+    // Vượt trần cũng bị kẹp: 1e9% ⇒ 100% ⇒ điểm tối đa 1000, không phải số khổng lồ.
+    expect(evaluateCampaignOutcome(cfg, { ...facts0, territoryPct: 1e9 }, 60).score).toBe(1000);
+  });
+
+  it("số SAO do server suy từ số lần chết, không nhận từ client", () => {
+    const cfg = { rules: { maxLives: 0 }, win: { kind: "territory_pct" as const, targetPct: 0.1 } };
+    const at = (deaths: number) => evaluateCampaignOutcome(cfg, { ...facts0, territoryPct: 50, deaths }, 60).stars;
+    expect(at(0)).toBe(3);
+    expect(at(1)).toBe(2);
+    expect(at(5)).toBe(1);
+  });
+});
+
+// ---- Hồi quy từ review PR #2 -------------------------------------------------------------------
+
+describe("evaluateCampaignOutcome: thiếu targetPct phải giống hệt engine", () => {
+  it("cấp territory_pct KHÔNG khai targetPct ⇒ lùi về kingPct, KHÔNG phải vô cực", () => {
+    // Engine (state.ts, nhánh territory_pct) lùi về `kingPct` khi thiếu `targetPct`.
+    // Nếu bên này lùi về vô cực thì client tuyên bố thắng còn server từ chối MỌI lần nộp:
+    // người chơi mất năng lượng mỗi lượt và không bao giờ mở khoá được cấp kế.
+    const config = { win: { kind: "territory_pct" } } as const;
+    const kingPct = resolveMatchConfig(config).win.kingPct;
+
+    const dat = evaluateCampaignOutcome(config, { deaths: 0, territoryPct: kingPct, totemsCaptured: 0, kingHeldSec: 0 }, 60);
+    expect(dat.objectiveMet).toBe(true);
+
+    const chuaDat = evaluateCampaignOutcome(config, { deaths: 0, territoryPct: kingPct - 1, totemsCaptured: 0, kingHeldSec: 0 }, 60);
+    expect(chuaDat.objectiveMet).toBe(false);
+  });
+
+  it("có targetPct thì vẫn quy về thang 0..100 như cũ", () => {
+    const config = { win: { kind: "territory_pct", targetPct: 0.5 } } as const;
+    expect(evaluateCampaignOutcome(config, { deaths: 0, territoryPct: 50, totemsCaptured: 0, kingHeldSec: 0 }, 60).objectiveMet).toBe(true);
+    expect(evaluateCampaignOutcome(config, { deaths: 0, territoryPct: 49, totemsCaptured: 0, kingHeldSec: 0 }, 60).objectiveMet).toBe(false);
   });
 });

@@ -6,7 +6,7 @@ import { OrthographicCamera, PerspectiveCamera } from "@react-three/drei";
 import * as THREE from "three";
 import { GameState } from "@hexagon/shared";
 import { CONFIG } from "@hexagon/shared";
-import type { PlayerAppearance, MatchConfigInput } from "@hexagon/shared";
+import type { PlayerAppearance, MatchConfigInput, CampaignOutcomeFacts } from "@hexagon/shared";
 import { axialToPixel, parseKey } from "@hexagon/shared";
 import { HexGridView } from "./HexGridView";
 import { PlayerCube } from "./PlayerCube";
@@ -324,8 +324,9 @@ export default function GameScene({
   /** [Campaign] Cấu hình ván đầy đủ (map/objective/power-up đã áp). Ưu tiên hơn `botCount`. */
   config?: MatchConfigInput;
   /** [Campaign] Gọi ĐÚNG MỘT LẦN khi phân định thắng/thua (để nộp kết quả lên server).
-   *  `result` cho biết số lần chết + điểm (% lãnh thổ ×10) tại thời điểm kết. */
-  onOutcome?: (won: boolean, result: { deaths: number; score: number }) => void;
+   *  `facts` là DỮ KIỆN THÔ đo được tại thời điểm kết — KHÔNG chứa "đã thắng chưa"/"mấy sao";
+   *  server tự chấm lại (doc 35 §A3). `won` chỉ dùng cho hiển thị phía client. */
+  onOutcome?: (won: boolean, facts: CampaignOutcomeFacts) => void;
   /** Kiểu hành động màn kết (mặc định "single" = Chơi lại; "campaign" = về danh sách cấp). */
   endMode?: EndScreenMode;
   onExit?: () => void;
@@ -387,7 +388,16 @@ export default function GameScene({
         outcomeFired.current = true;
         // won với chủ thể là người chơi (winnerId 0) = thắng; lost = thua.
         const won = s.won && (s.winnerId === 0 || s.winnerId === -1);
-        onOutcome(won, { deaths: s.deaths, score: Math.round(s.pct * 10) });
+        // [doc 35 §A3] Chỉ gửi DỮ KIỆN THÔ. Không tự tính sao/điểm và không tự khai "đã thắng" —
+        // server chấm lại bằng `evaluateCampaignOutcome` với cấu hình cấp lấy từ database.
+        // `kingHold` là thời gian CÒN LẠI phải giữ ngôi ⇒ đã giữ = winHoldTime − còn lại.
+        const winHoldTime = game.config.win.winHoldTime;
+        onOutcome(won, {
+          deaths: s.deaths,
+          territoryPct: s.pct,
+          totemsCaptured: game.players[0]?.totemsCaptured ?? 0,
+          kingHeldSec: Math.max(0, winHoldTime - s.kingHold),
+        });
       }
     },
     [onOutcome]

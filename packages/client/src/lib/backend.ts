@@ -1,4 +1,4 @@
-import type { PlayerAppearance, CampaignLevel } from "@hexagon/shared";
+import type { PlayerAppearance, CampaignLevel, CampaignOutcomeFacts } from "@hexagon/shared";
 import { getTelegramWebApp } from "./telegram";
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8910";
@@ -119,11 +119,12 @@ export async function startCampaignLevel(levelId: string): Promise<StartPlayResu
   });
 }
 
-/** Nộp kết quả cấp: server verify play + phát thưởng/mở khóa (thưởng lấy từ catalog). */
-export async function completeCampaignLevel(playId: string, objectiveMet: boolean, stars: number, score: number): Promise<LevelProgress> {
+/** Nộp kết quả cấp: gửi DỮ KIỆN THÔ, server tự chấm đạt/sao/điểm rồi phát thưởng + mở khóa.
+ *  Client KHÔNG gửi `objectiveMet`/`stars`/`score` nữa (doc 35 §A3 — chống farm thưởng). */
+export async function completeCampaignLevel(playId: string, facts: CampaignOutcomeFacts): Promise<LevelProgress> {
   return json<LevelProgress>("/v1/campaign/complete", {
     method: "POST",
-    body: JSON.stringify({ playId, objectiveMet, stars, score }),
+    body: JSON.stringify({ playId, facts }),
   });
 }
 

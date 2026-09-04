@@ -1,6 +1,12 @@
 import { BadRequestException, Body, Controller, ForbiddenException, Get, Post, Req } from "@nestjs/common";
 import type { Request } from "express";
-import { isUnlockedIn, type CampaignLevel } from "@hexagon/shared";
+import {
+  isUnlockedIn,
+  evaluateCampaignOutcome,
+  type CampaignLevel,
+  type CampaignOutcomeFacts,
+  type MatchConfigInput,
+} from "@hexagon/shared";
 import { SessionService } from "../auth/session.service";
 import { SupabaseService } from "../database/supabase.service";
 
@@ -52,26 +58,57 @@ export class CampaignController {
     });
   }
 
-  /** Hoàn tất cấp: xác minh play thuộc người chơi + đạt objective → mở khóa + thưởng (từ DB cấp). */
-  @Post("campaign/complete") async complete(@Req() req: Request, @Body() body: { playId?: string; objectiveMet?: boolean; stars?: number; score?: number }) {
+  /**
+   * Hoàn tất cấp: xác minh play thuộc người chơi, **server tự kết luận** đạt/không rồi mở khóa +
+   * thưởng (thưởng lấy từ DB).
+   *
+   * doc 35 §A3 lớp 1 — trước đây endpoint này nhận thẳng `objectiveMet`/`stars`/`score` do client
+   * khai, nên sửa client là farm được coin/XP/năng lượng vô hạn. Nay client chỉ gửi DỮ KIỆN THÔ
+   * (`facts`); server đo thời gian bằng `campaign_plays.created_at` của CHÍNH NÓ và chấm bằng
+   * `evaluateCampaignOutcome` với cấu hình cấp đọc từ database.
+   *
+   * ⚠️ ĐỔI HỢP ĐỒNG: client cũ (gửi `objectiveMet`) sẽ bị từ chối — client và server phải deploy
+   * cùng nhau.
+   */
+  // review-guard: bỏ qua write-endpoint-idempotency — chống lặp nằm ở khoá tự nhiên
+  // `campaign_plays.completed_at`: RPC complete_campaign_level khoá hàng rồi trả progress cũ
+  // nếu play đã tiêu, nên gọi lại không thưởng thêm lần nào.
+  @Post("campaign/complete") async complete(@Req() req: Request, @Body() body: { playId?: string; facts?: Partial<CampaignOutcomeFacts> }) {
     const player = await this.sessions.resolve(req);
     if (!body.playId) throw new BadRequestException("missing_play_id");
-    if (body.objectiveMet !== true) throw new BadRequestException("objective_not_met");
+    if (!body.facts || typeof body.facts !== "object") {
+      // Client CŨ gửi `objectiveMet`/`stars`/`score`. Trả mã riêng thay vì gộp chung vào
+      // `missing_outcome_facts`: doc 35 §A8 — Telegram Mini App không ép cập nhật được, nên khi
+      // deploy sẽ có người còn ở bản cũ, và trong log phải phân biệt được "client lỗi thời" với
+      // "payload hỏng". Vẫn TỪ CHỐI: nhận payload cũ chính là để nguyên lỗ hổng mà lát này vá.
+      const legacy = body as { objectiveMet?: unknown };
+      throw new BadRequestException(legacy.objectiveMet !== undefined ? "client_outdated" : "missing_outcome_facts");
+    }
 
     const { data: play, error } = await this.db.from("campaign_plays")
-      .select("id,level_id,completed_at").eq("id", body.playId).eq("player_id", player.id).single();
+      .select("id,level_id,created_at,completed_at").eq("id", body.playId).eq("player_id", player.id).single();
     if (error || !play) throw new BadRequestException("play_not_found");
+    const row = play as { level_id: string; created_at: string; completed_at: string | null };
 
     const { data: level } = await this.db.from("campaign_levels")
-      .select("rewards").eq("id", (play as { level_id: string }).level_id).single();
+      .select("config,rewards").eq("id", row.level_id).single();
     if (!level) throw new BadRequestException("unknown_level");
+    const lvl = level as { config: MatchConfigInput | null; rewards: unknown };
+
+    // Thời gian đã chơi do SERVER đo — không nhận của client. Đây là dữ kiện duy nhất server tự
+    // biết chắc, và là thứ chấm objective `survive`.
+    const startedMs = Date.parse(row.created_at);
+    const elapsedSec = Number.isFinite(startedMs) ? Math.max(0, (Date.now() - startedMs) / 1000) : 0;
+
+    const outcome = evaluateCampaignOutcome(lvl.config ?? {}, body.facts, elapsedSec);
+    if (!outcome.objectiveMet) throw new BadRequestException(outcome.reason);
 
     return this.db.rpc("complete_campaign_level", {
       p_play_id: body.playId,
       p_player_id: player.id,
-      p_stars: Math.max(0, Math.min(3, Math.floor(body.stars ?? 1))),
-      p_score: Math.max(0, Math.floor(body.score ?? 0)),
-      p_rewards: (level as { rewards: unknown }).rewards,
+      p_stars: outcome.stars,
+      p_score: outcome.score,
+      p_rewards: lvl.rewards,
     });
   }
 

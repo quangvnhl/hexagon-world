@@ -5,10 +5,21 @@
 
 ## Quyết định đã CHỐT (đã cập nhật theo phản hồi)
 - **Hai công cụ SONG SONG (không thay thế):**
-  - **Chướng ngại (ô):** GIỮ — là chức năng CHÍNH tạo ô lục giác chướng ngại; collider theo Ô như hiện
-    tại (doc 33, biên hex đa giác). Flood-fill vẫn chặn theo ô như cũ.
+  - **Chướng ngại (ô):** GIỮ — là chức năng CHÍNH tạo ô lục giác chướng ngại; ~~collider theo Ô như hiện
+    tại (doc 33, biên hex đa giác)~~. Flood-fill vẫn chặn theo ô như cũ.
+    > **ĐÍNH CHÍNH (2026-09-03) — chốt với chủ dự án:** ô chướng ngại **KHÔNG chặn di chuyển**.
+    > Nó chỉ là **barrier flood-fill + ô không chơi được**; nhân vật và bot **đi xuyên qua được**.
+    > Muốn chặn di chuyển thì admin **vẽ tường BIÊN** quanh nó (mục D). Đây là hành vi ĐÚNG như
+    > mong muốn, không phải lỗi.
+    >
+    > Vì sao có đính chính: câu gạch bỏ ở trên mâu thuẫn với "Tiêu chí đóng — D" ở cuối chính tài
+    > liệu này ("collider chỉ còn biên admin vẽ"). Code đi theo vế thứ hai (xem chú thích trong
+    > `state.ts.updateEntity`). Mâu thuẫn nằm im vì phần nghiệm thu là "nhìn bằng mắt"; nó chỉ lộ
+    > ra khi lát `r2.3` (doc 36 R2 tầng 3) quy việc nghiệm thu về phép ĐO.
+    > Hành vi này giờ đã được **ghim bằng test** ở `packages/shared/src/__tests__/boundaries.test.ts`
+    > — đổi lại thành "obstacle chặn" thì CI sẽ báo đỏ.
   - **Biên (line):** CHỈ để vẽ **đường biên** (polyline) làm **tường va chạm bổ sung**; KHÔNG tô ô.
-    Biên = collision-only, không chặn flood-fill. (Bỏ ý "chỉ còn 1 loại collider".)
+    Biên = collision-only, không chặn flood-fill. **Đây là collider DUY NHẤT do tác giả cấp đặt.**
 - **Cứ điểm bot:** **thực thể riêng** (`map.strongholds`), MỖI cứ điểm có **số bot** riêng
   (`botCount`). Bot của cứ điểm hồi sinh tại đó sau 3s; chiếm cứ điểm ⇒ số bot đó ngừng hồi sinh.
 - **Bot Campaign là ĐỒNG MINH:** mọi bot **cùng màu**, **đâm nhau KHÔNG chết** (chỉ đối đầu người chơi).
