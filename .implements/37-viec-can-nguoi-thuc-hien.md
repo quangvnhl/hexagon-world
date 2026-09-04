@@ -240,14 +240,23 @@ Lý do chúng là `high`: chạm tiền, tài khoản người chơi, schema dat
 ```
 Việc 1 (Actions) ✅  →  Việc 2 (branch protection) ⏸️ bỏ qua  →  Việc 3 (database) ✅
                                                                       ↓
-                                     Việc 7 (duyệt PR #2)  ← ĐANG CHẶN lát a3.2, a3.3
+                            Việc 3c (pg_cron, 2 phút)   ·   Việc 6 (pháp lý)
                                                                       ↓
-                                Việc 6 (nội dung pháp lý)  →  Việc 4, 5 khi tới Pha 7
+                                Việc 7 (duyệt PR risk:high)  ←  sẽ cần cho a3.2, c2.1
+                                                                      ↓
+                                                        Việc 4, 5 khi tới Pha 7
 ```
 
-**Đang chặn ngay lúc này: Việc 7** — PR #2 (`risk: high`, sửa lỗ hổng kinh tế ở `campaign/complete`)
-và PR của lát `r3.1` đang chờ anh duyệt. Ngoài ra chỉ còn 1 phút sửa `SUPABASE_DB_URL` ở §3.2 để
-agent khỏi phải ghép chuỗi pooler thủ công mỗi lần.
+**Không có việc nào của anh đang CHẶN agent** (cập nhật 2026-09-04). Các việc còn lại nâng chất
+lượng chứ không mở khoá lát nào:
+
+- **Việc 3c** — chưa bật `pg_cron` thì ARPDAU đọc số của lần refresh gần nhất. Retention và funnel
+  đọc sự kiện thô nên luôn tươi.
+- **Việc 6** — chưa điền thì trang pháp lý tự khai mình là bản nháp.
+- **§3.2** — 1 phút sửa `SUPABASE_DB_URL` sang chuỗi Session pooler, để agent khỏi ghép chuỗi thủ
+  công mỗi lần chạy migration.
+
+Sắp tới sẽ cần **Việc 7**: `a3.2-campaign-sanity` và `c2.1-ops-api-keys` đều là `risk: high`.
 
 ---
 
