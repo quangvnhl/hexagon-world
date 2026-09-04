@@ -289,6 +289,35 @@ slices:
     status: done
     commit: null
 
+  - id: r9-review-agent
+    doc: "36#R7"
+    title: "Agent review chạy tại máy — subagent + /review-pr + bộ gom gói review"
+    files:
+      - .claude/agents/review-pr.md
+      - .claude/skills/review-pr/SKILL.md
+      - scripts/review-collect.mjs
+      - scripts/review-collect.test.mjs
+      - .github/workflows/ci.yml
+      - AGENTS.md
+      - package.json
+    depends_on: [r7-auto-review]
+    dod:
+      - "pnpm test:review-collect"
+      - "pnpm review:collect"
+    risk: low
+    requires_human: false
+    note: >-
+      Bổ sung cho workflow Claude Review chứ không thay thế: workflow chạy tự động mọi PR nhưng cần
+      ANTHROPIC_API_KEY và tính tiền theo lượt; subagent chạy khi người gõ /review-pr, dùng gói
+      Claude Code đang có, hỏi lại được và đo được bằng database dev.
+      Cả hai đọc CÙNG một gói dữ liệu do review-collect dựng (mô tả PR, khối YAML của lát, mục
+      thiết kế phải đọc, file thay đổi, kết quả cổng tất định, diff) — không có nó thì agent tốn
+      5–10 lượt gọi công cụ chỉ để bắt đầu, và mỗi lần lại tìm theo một cách khác.
+      sliceIdFromBranch trả null khi nhánh không theo quy ước thay vì đoán: đoán bừa nguy hiểm hơn
+      nói không biết, vì agent sẽ review theo mô tả của một lát khác.
+    status: done
+    commit: null
+
   - id: t5-flaky-interest-snapshot
     doc: "36#R1"
     title: "Sửa test tích hợp chập chờn thứ hai: delay(10) cố định thay vì chờ snapshot"

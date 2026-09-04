@@ -14,6 +14,8 @@
     "db:migrate": "node scripts/db-migrate.mjs",
     "test:review-guard": "node --test scripts/review-guard.test.mjs",
     "review:guard": "node scripts/review-guard.mjs",
+    "review:collect": "node scripts/review-collect.mjs",
+    "test:review-collect": "node --test scripts/review-collect.test.mjs",
     "verify:logic": "pnpm --filter @hexagon/shared verify:logic",
     "dev:client": "pnpm --filter @hexagon/client dev",
     "dev:server": "pnpm --filter @hexagon/server start:dev",

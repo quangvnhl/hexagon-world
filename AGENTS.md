@@ -96,6 +96,23 @@ Trước khi mở PR, chạy tại máy để khỏi phải chờ CI:
 pnpm review:guard
 ```
 
+**Tầng 3 chạy được ở hai nơi** — khác nhau ở chỗ *ai chạy* và *trả tiền bằng gì*:
+
+| Cách | Chạy khi nào | Trả tiền bằng | Dùng khi |
+|---|---|---|---|
+| Subagent `review-pr` (`.claude/agents/review-pr.md`) | khi người gõ `/review-pr <số>` | gói Claude Code đang dùng | soát kỹ trước khi gộp, hỏi lại được, đo được bằng database dev |
+| `Claude Review` workflow | tự động mọi PR | `ANTHROPIC_API_KEY` theo lượt | không cần ai ngồi canh |
+
+Cả hai đọc cùng một gói dữ liệu:
+
+```bash
+pnpm review:collect -- --pr 12 --out review.md
+```
+
+Gói gồm: mô tả PR · khối YAML của lát · mục thiết kế phải đọc · file thay đổi · kết quả cổng tất
+định · diff. Có nó thì phần suy xét bắt đầu ngay từ lượt đầu, và hai lần review khác nhau nhìn vào
+cùng một bộ dữ liệu.
+
 Cổng `guard` biến các luật ở §1–§2 thành phép kiểm máy: bí mật lọt vào commit, sửa migration đã áp,
 tắt test đang đỏ, log trong đường nóng gameplay, server đọc thẳng giá trị có giá từ `body`,
 `Math.random` trong `shared`, endpoint ghi thiếu chống lặp.
