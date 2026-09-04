@@ -774,13 +774,23 @@ slices:
       - packages/client/app/terms/page.tsx
       - packages/client/app/privacy/page.tsx
       - packages/client/app/paysupport/page.tsx
+      # THÊM so với kế hoạch:
+      - packages/client/src/lib/legal.ts            # dữ kiện tách khỏi câu chữ, 1 chỗ sửa
+      - packages/client/src/components/LegalPage.tsx # khung cuộn được + băng cảnh báo chưa điền
+      - packages/client/src/lib/__tests__/legal.test.ts
+      - packages/client/src/components/StartPanel.tsx # 3 link ở menu — Telegram đòi với tới được
     depends_on: []
     dod:
       - "pnpm --filter @hexagon/client build"
     risk: low
-    requires_human: true
-    human_note: "NỘI DUNG pháp lý phải do người chịu trách nhiệm duyệt — agent chỉ dựng khung trang."
-    status: todo
+    requires_human: false
+    note: >
+      Chủ dự án yêu cầu agent tự soạn nội dung (2026-09-04), nên cờ requires_human gỡ.
+      NHƯNG hai ô `operator` và `contactEmail` trong legal.ts vẫn để TRỐNG có chủ đích: bịa một
+      pháp nhân là tạo ra tổ chức không tồn tại. Chưa điền thì cả ba trang tự hiện băng đỏ
+      "BẢN NHÁP — CHƯA PHÁT HÀNH ĐƯỢC", nên không thể lặng lẽ trông như trang thật.
+      Còn lại cho người: điền hai ô đó + đọc lại nội dung — doc 37 Việc 6.
+    status: done
     commit: null
 
   - id: c4.2-self-serve-privacy
