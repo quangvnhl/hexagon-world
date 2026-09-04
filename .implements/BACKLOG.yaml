@@ -195,6 +195,38 @@ slices:
     status: todo
     commit: null
 
+  - id: r7-auto-review
+    doc: "36#R7"
+    title: "Tự động review PR — cổng tất định + tầng Claude review"
+    files:
+      - scripts/review-guard.mjs
+      - scripts/review-guard.test.mjs
+      - .github/workflows/review.yml
+      - .github/workflows/claude-review.yml
+      - .github/workflows/ci.yml
+      - AGENTS.md
+      - package.json
+    depends_on: [r1-ci, r6-agents-rules]
+    dod:
+      - "pnpm test:review-guard"
+      - "pnpm review:guard"
+    risk: low
+    requires_human: true
+    human_note: >-
+      Tầng Claude review cần secret ANTHROPIC_API_KEY (doc 37 §3b). Chưa có thì job vẫn XANH và chỉ
+      ghi một dòng nhắc — workflow đỏ vì thiếu cấu hình sẽ bị học cách phớt lờ, rồi khi nó đỏ vì lý
+      do thật cũng không ai nhìn nữa.
+    note: >-
+      Hai tầng, cố ý tách: cổng TẤT ĐỊNH (không secret, không tốn tiền, cùng câu trả lời mỗi lần)
+      biến luật AGENTS.md §1–§2 thành phép kiểm máy; tầng Claude lo phần cần suy xét mà regex không
+      viết được. Cổng chặn thỉnh thoảng đổi ý là cổng chặn không ai tin.
+      Có lối thoát hiểm `review-guard: bỏ qua <luật> — <lý do>` bắt buộc kèm lý do ≥ 8 ký tự: cổng
+      không có lối thoát hợp lệ sẽ bị vô hiệu hoá cả cụm vào ngày nó cản nhầm.
+      Chạy thử ngay lên 2 PR đang mở: bắt đúng 1 cảnh báo (campaign/complete không nhắc chống lặp)
+      và 1 chặn (mật khẩu giả trong test db-migrate — đúng ca cần miễn trừ có ghi lý do).
+    status: done
+    commit: null
+
   - id: t5-flaky-interest-snapshot
     doc: "36#R1"
     title: "Sửa test tích hợp chập chờn thứ hai: delay(10) cố định thay vì chờ snapshot"
