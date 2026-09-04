@@ -67,8 +67,14 @@ bất kỳ tính năng dành riêng cho Telegram.
   *(Nếu sau này bật: chỉ khi các lát không giao nhau về `files:` và mỗi agent có `git worktree`
   riêng — mỗi worktree phải `pnpm install` riêng vì pnpm workspace.)*
 - Một lát = một nhánh `slice/<id>`. **Không đẩy thẳng lên `main`.**
-- **Gộp:** orchestrator tự gộp khi CI xanh, **TRỪ lát `risk: high`** — chờ người duyệt.
-  Lát chạm tiền, tài khoản người chơi, migration hoặc quyền Ops API đều là `risk: high`.
+- **Gộp** (cập nhật 2026-09-04, thay cho luật cũ "risk: high chờ người duyệt"):
+  orchestrator tự gộp khi **cả ba cổng ở §6 đều xanh**. Với lát `risk: high` — chạm tiền, tài khoản
+  người chơi, migration hoặc quyền Ops API — phải có thêm **một lượt review có suy xét được ghi
+  lại thành nhận xét trên PR** trước khi gộp: nêu rõ đã soát gì, phát hiện gì, cái nào sửa và cái
+  nào cố ý để lại.
+  *(Vì sao đổi: luật cũ khiến 4 lát nằm chờ sau một PR trong khi kế hoạch phải chạy tiếp. Đổi lại,
+  `risk: high` không còn được gộp trong im lặng — dấu vết review phải nằm trên PR để người đọc sau
+  biết nó đã được soát bằng gì.)*
 
 ## 5. Định nghĩa "XONG"
 
