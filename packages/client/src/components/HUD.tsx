@@ -54,6 +54,10 @@ export interface Stats {
   canRevive: boolean;
   /** Người chơi đã chọn XEM (khán giả) — chờ hết ván. */
   spectating: boolean;
+  /** Người chơi đã ra lệnh lái ít nhất một lần trong ván này (chuột/joystick). Dùng cho FTUE
+   *  (doc 35 §D1) — đây là dữ kiện ĐẦU VÀO, không suy được từ `GameState`, vì nhân vật vẫn
+   *  chạy tới khi không ai chạm gì. Tuỳ chọn: mọi nơi dựng `Stats` cũ vẫn hợp lệ. */
+  steered?: boolean;
   /** Tên thực thể ĐANG XEM (khán giả) — hiển thị cạnh nút chuyển. Rỗng nếu chưa xác định. */
   spectateName?: string;
   /** Lý do chết lần gần nhất (cho popup). */

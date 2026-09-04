@@ -37,7 +37,11 @@ export type RemoteConfigKey =
   | "campaign.enabled"
   | "energy.regen_seconds"
   | "energy.purchase_price"
-  | "bots.difficulty_profile";
+  | "bots.difficulty_profile"
+  | "ftue.enabled"
+  | "ftue.bot_count"
+  | "ftue.step3_claims"
+  | "ftue.step3_target_pct";
 
 /**
  * Mặc định = SỰ THẬT khi không có gì khác. Đây chính là fallback của nguyên tắc 1.
@@ -53,6 +57,13 @@ export const REMOTE_CONFIG_DEFAULTS: Readonly<Record<RemoteConfigKey, RemoteConf
   "energy.regen_seconds": 180,
   "energy.purchase_price": 100,
   "bots.difficulty_profile": "normal",
+  // FTUE (doc 35 §D1). Ba số này ĐO ĐƯỢC ra chứ không chọn theo cảm tính — xem phần đầu
+  // `packages/client/src/components/ftueSteps.ts` để biết bảng đo. `bot_count: 0` vì chỉ cần
+  // 1 bot là hơn nửa số kiểu lái của người mới chết trước giây thứ 90.
+  "ftue.enabled": true,
+  "ftue.bot_count": 0,
+  "ftue.step3_claims": 2,
+  "ftue.step3_target_pct": 0.3,
 };
 
 /** Danh sách chạy được (admin liệt kê, test đối chiếu) — suy từ chính bảng mặc định nên không lệch. */

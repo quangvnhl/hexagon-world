@@ -6,7 +6,7 @@ import { OrthographicCamera, PerspectiveCamera } from "@react-three/drei";
 import * as THREE from "three";
 import { GameState } from "@hexagon/shared";
 import { CONFIG } from "@hexagon/shared";
-import type { PlayerAppearance, MatchConfigInput, CampaignOutcomeFacts } from "@hexagon/shared";
+import type { PlayerAppearance, MatchConfigInput, CampaignOutcomeFacts, Axial } from "@hexagon/shared";
 import { axialToPixel, parseKey } from "@hexagon/shared";
 import { track } from "@/lib/analytics";
 import { HexGridView } from "./HexGridView";
@@ -128,12 +128,16 @@ function GameLoop({
   pointer,
   joystick,
   spectateTargetRef,
+  steered,
   onStats,
 }: {
   game: GameState;
   pointer: React.MutableRefObject<PointerRef>;
   joystick: React.MutableRefObject<{ active: boolean; angle: number }>;
   spectateTargetRef: React.MutableRefObject<number>;
+  /** Bật lên ở lần lái ĐẦU TIÊN. Là ref chứ không phải state: đặt trong vòng lặp 24 Hz nên
+   *  không được phép kéo theo một lần render. FTUE đọc nó qua `onStats`. */
+  steered: React.MutableRefObject<boolean>;
   onStats: (s: Stats) => void;
 }) {
   const camera = useThree((s) => s.camera);
@@ -173,6 +177,7 @@ function GameLoop({
     // và BỎ QUA block chuột trong frame này.
     const j = joystick.current;
     if (j.active) {
+      steered.current = true;
       game.setHeadingTarget(j.angle);
     } else {
       // Hướng mong muốn = góc từ đầu người chơi tới điểm con trỏ chiếu xuống mặt đất.
@@ -184,6 +189,7 @@ function GameLoop({
           const dx = hitPoint.x - game.pos.x;
           const dy = hitPoint.y - game.pos.y;
           if (Math.hypot(dx, dy) > 0.4) {
+            steered.current = true;
             game.setHeadingTarget(Math.atan2(dy, dx));
           }
         }
@@ -251,6 +257,7 @@ function GameLoop({
       }
       const modifiers = game.gameplayModifiersFor(0);
       onStats({
+        steered: steered.current,
         pct: game.territoryPct(),
         king: game.isKing,
         kingId: game.kingId(),
@@ -315,6 +322,8 @@ export default function GameScene({
   config,
   onOutcome,
   endMode,
+  spawnAt,
+  onStatsChange,
   onExit,
   showMenu = true,
 }: {
@@ -330,6 +339,13 @@ export default function GameScene({
   onOutcome?: (won: boolean, facts: CampaignOutcomeFacts) => void;
   /** Kiểu hành động màn kết (mặc định "single" = Chơi lại; "campaign" = về danh sách cấp). */
   endMode?: EndScreenMode;
+  /** Chuyển tiếp `Stats` của mỗi nhịp đo ra ngoài. Dùng cho lớp phủ FTUE (doc 35 §D1) — cố ý
+   *  là prop TUỲ CHỌN và chỉ ĐỌC, để lớp phủ không phải len vào vòng lặp 24 Hz. */
+  /** Ô xuất phát cố định. Vắng ⇒ ngẫu nhiên như cũ. FTUE (doc 35 §D1) đặt vào TÂM SÂN: đo được
+   *  là spawn ngẫu nhiên khiến 27% người mới chết vào tường trong 90 giây đầu, còn spawn ở tâm
+   *  thì 0% — chênh lệch này đủ để một mình nó quyết định có đạt mốc "hoàn thành ≥ 70%" hay không. */
+  spawnAt?: Axial;
+  onStatsChange?: (s: Stats) => void;
   onExit?: () => void;
   showMenu?: boolean;
 } = {}) {
@@ -340,8 +356,9 @@ export default function GameScene({
     () =>
       new GameState({
         config: config ?? { win: { kind: "none" }, bots: { count: resolvedBotCount } },
+        spawnAt,
       }),
-    [config, resolvedBotCount]
+    [config, resolvedBotCount, spawnAt]
   );
   // [Campaign] Bắn onOutcome đúng một lần khi won/lost lần đầu bật.
   const outcomeFired = useRef(false);
@@ -352,6 +369,8 @@ export default function GameScene({
     if (playerName) game.setName(0, playerName);
     game.setAppearance(0, appearance);
   }, [appearance, game, playerName]);
+  // Đã lái lần nào chưa (FTUE bước 1). Ref: đặt trong vòng lặp 24 Hz nên không được re-render.
+  const steered = useRef(false);
   const pointer = useRef<PointerRef>({ x: 0, y: 0, w: 1, h: 1, active: false });
   // Hướng từ joystick ảo (chạm) — cập nhật trực tiếp qua ref, không re-render.
   const joystick = useRef<{ active: boolean; angle: number }>({
@@ -387,6 +406,7 @@ export default function GameScene({
   const onStats = useCallback(
     (s: Stats) => {
       setStats(s);
+      onStatsChange?.(s);
       if (!outcomeFired.current && (s.won || s.lost)) {
         outcomeFired.current = true;
         // won với chủ thể là người chơi (winnerId 0) = thắng; lost = thua.
@@ -417,7 +437,7 @@ export default function GameScene({
         });
       }
     },
-    [onOutcome, endMode]
+    [onOutcome, endMode, onStatsChange]
   );
   const onRevive = useCallback(() => game.revive(), [game]);
   const onRestart = useCallback(() => {
@@ -472,6 +492,7 @@ export default function GameScene({
           pointer={pointer}
           joystick={joystick}
           spectateTargetRef={spectateTargetRef}
+          steered={steered}
           onStats={onStats}
         />
         <HexGridView game={game} />
