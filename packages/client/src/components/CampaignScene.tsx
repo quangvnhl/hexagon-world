@@ -27,6 +27,7 @@ import {
   type EnergyStatus,
   type LevelProgress,
 } from "@/lib/backend";
+import { track } from "@/lib/analytics";
 
 const GameScene = dynamic(() => import("@/components/GameScene"), { ssr: false });
 
@@ -140,20 +141,42 @@ export default function CampaignScene({ playerName, appearance, onExit, showMenu
       setEnergy(res.energy);
       setPlaying({ level, config: applyPowerups(level.config, picks), playId: res.playId });
       setSelected(null);
+      // doc 35 §A1 — phát SAU khi server đã nhận và trừ năng lượng. Phát trước thì mỗi lần bấm
+      // hụt vì hết năng lượng cũng thành một "lượt bắt đầu", và tỉ lệ hoàn thành cấp sẽ sai.
+      track("campaign_level_start", { level_id: level.id, powerups: picks.length });
     } catch (err) {
-      setError(err instanceof Error ? err.message : "Không bắt đầu được cấp");
+      const message = err instanceof Error ? err.message : "Không bắt đầu được cấp";
+      // Hết năng lượng là tín hiệu kinh tế quan trọng nhất của campaign — đây là chỗ người chơi
+      // hoặc bỏ đi, hoặc chi tiền. Không đo thì không biết ngưỡng năng lượng đặt đúng chưa.
+      if (message.includes("insufficient_energy")) track("energy_empty", { at: "campaign_start", level_id: level.id });
+      setError(message);
     }
   }, [picks]);
 
   // [doc 35 §A3] Chỉ NỘP dữ kiện thô; sao/điểm/đạt-hay-không do server chấm. `won` chỉ để quyết
   // định có nộp hay không (thua thì khỏi nộp) — server vẫn chấm lại độc lập.
-  const onOutcome = useCallback(async (won: boolean, playId: string, facts: CampaignOutcomeFacts) => {
-    if (!won || submitting.current) return;
+  const onOutcome = useCallback(async (won: boolean, playId: string, levelId: string, facts: CampaignOutcomeFacts) => {
+    if (!won) {
+      // Thua cũng phải đo: phễu campaign chỉ đọc được khi biết cả mẫu số (bao nhiêu lượt thua ở
+      // cấp nào), không chỉ tử số.
+      track("campaign_level_fail", { level_id: levelId, deaths: facts.deaths, territory_pct: Math.round(facts.territoryPct) });
+      return;
+    }
+    if (submitting.current) return;
     submitting.current = true;
     try {
       await completeCampaignLevel(playId, facts);
+      track("campaign_level_complete", { level_id: levelId, deaths: facts.deaths, territory_pct: Math.round(facts.territoryPct) });
       await refresh();
-    } catch { /* giữ nguyên; người chơi vẫn thấy màn thắng */ }
+    } catch (err) {
+      // Thắng ở client nhưng server từ chối/không tới được: người chơi vẫn thấy màn thắng nhưng
+      // KHÔNG có thưởng. Không đo thì lỗi này vô hình — đúng loại hỏng mà lát a3.1 vừa suýt gây ra.
+      track("campaign_level_complete", {
+        level_id: levelId,
+        submitted: false,
+        error: err instanceof Error ? err.message.slice(0, 100) : "unknown",
+      });
+    }
     finally { submitting.current = false; }
   }, [refresh]);
 
@@ -165,7 +188,7 @@ export default function CampaignScene({ playerName, appearance, onExit, showMenu
         appearance={appearance}
         config={playing.config}
         endMode="campaign"
-        onOutcome={(won, result) => void onOutcome(won, playing.playId, result)}
+        onOutcome={(won, result) => void onOutcome(won, playing.playId, playing.level.id, result)}
         onExit={() => { setPlaying(null); void refresh(); }}
         showMenu={showMenu}
       />

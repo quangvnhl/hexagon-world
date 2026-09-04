@@ -481,11 +481,18 @@ slices:
     risk: low
     requires_human: false
     note: >-
+      Đã làm: match_end (mọi ván CÓ phân định), campaign_level_start (phát SAU khi server đã trừ
+      năng lượng — phát trước thì mỗi lần bấm hụt cũng thành một lượt), campaign_level_complete /
+      _fail (đo cả mẫu số, không chỉ tử số), energy_empty tại chỗ hết năng lượng, và một sự kiện
+      complete với submitted=false khi client thắng mà server từ chối — lỗi đó vô hình nếu không đo.
+      Bắt được khi làm: `outcomeFired` không được mở lại trong `game.restart()` (chơi lại KHÔNG
+      remount GameScene) nên mọi ván sau ván đầu sẽ biến mất khỏi số liệu.
+      Luyện tập dùng win.kind="none" nên không bao giờ phân định ⇒ đo thời lượng qua session_end.
       Tách khỏi a1.6 CÓ CHỦ Ý: ba file này đang bị PR #2 (lát a3.1) sửa và PR đó chờ người duyệt.
       Gắn sự kiện vào đó lúc này chỉ tạo xung đột trên một PR risk:high. Làm sau khi a3.1 gộp.
       Lưu ý: match_end/campaign_complete còn có bản SERVER ở a1.4 — bản server là nguồn tin cậy,
       bản client chỉ để đo phễu (người chơi thoát giữa chừng thì server không thấy).
-    status: todo
+    status: done
     commit: null
 
   - id: a1.4-server-events
