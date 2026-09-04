@@ -70,10 +70,20 @@ export class CampaignController {
    * ⚠️ ĐỔI HỢP ĐỒNG: client cũ (gửi `objectiveMet`) sẽ bị từ chối — client và server phải deploy
    * cùng nhau.
    */
+  // review-guard: bỏ qua write-endpoint-idempotency — chống lặp nằm ở khoá tự nhiên
+  // `campaign_plays.completed_at`: RPC complete_campaign_level khoá hàng rồi trả progress cũ
+  // nếu play đã tiêu, nên gọi lại không thưởng thêm lần nào.
   @Post("campaign/complete") async complete(@Req() req: Request, @Body() body: { playId?: string; facts?: Partial<CampaignOutcomeFacts> }) {
     const player = await this.sessions.resolve(req);
     if (!body.playId) throw new BadRequestException("missing_play_id");
-    if (!body.facts || typeof body.facts !== "object") throw new BadRequestException("missing_outcome_facts");
+    if (!body.facts || typeof body.facts !== "object") {
+      // Client CŨ gửi `objectiveMet`/`stars`/`score`. Trả mã riêng thay vì gộp chung vào
+      // `missing_outcome_facts`: doc 35 §A8 — Telegram Mini App không ép cập nhật được, nên khi
+      // deploy sẽ có người còn ở bản cũ, và trong log phải phân biệt được "client lỗi thời" với
+      // "payload hỏng". Vẫn TỪ CHỐI: nhận payload cũ chính là để nguyên lỗ hổng mà lát này vá.
+      const legacy = body as { objectiveMet?: unknown };
+      throw new BadRequestException(legacy.objectiveMet !== undefined ? "client_outdated" : "missing_outcome_facts");
+    }
 
     const { data: play, error } = await this.db.from("campaign_plays")
       .select("id,level_id,created_at,completed_at").eq("id", body.playId).eq("player_id", player.id).single();

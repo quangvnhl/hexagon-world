@@ -246,7 +246,11 @@ export function evaluateCampaignOutcome(
   switch (win.kind) {
     case "territory_pct":
       // `targetPct` là PHÂN SỐ 0..1 (trình vẽ/catalog), `territoryPct` là thang 0..100 — doc 33 §4c.
-      met = territoryPct >= (win.targetPct ?? Number.POSITIVE_INFINITY) * 100;
+      // Thiếu `targetPct` thì lùi về `kingPct` — PHẢI giống hệt engine (state.ts, nhánh
+      // territory_pct). `resolveMatchConfig` không đặt mặc định cho `targetPct`, nên nếu ở đây
+      // lùi về vô cực trong khi engine lùi về kingPct thì client tuyên bố thắng còn server từ chối
+      // MỌI lần nộp: người chơi mất năng lượng mỗi lượt và không bao giờ mở khoá được cấp kế.
+      met = territoryPct >= (win.targetPct !== undefined ? win.targetPct * 100 : win.kingPct);
       break;
     case "survive":
       met = elapsed >= (win.durationSec ?? Number.POSITIVE_INFINITY);
@@ -263,6 +267,12 @@ export function evaluateCampaignOutcome(
   }
   if (!met) return fail("objective_not_met");
 
+  // GIỚI HẠN đã biết: `stars` suy từ `deaths` và `score` suy từ `territoryPct` — cả hai đều do
+  // client khai và server KHÔNG có dữ kiện nào đối chiếu được (sim campaign chạy ở client). Ở đây
+  // server KẸP BIÊN chứ không xác minh. Điều này chấp nhận được vì thưởng lấy từ cấu hình cấp và
+  // `complete_campaign_level` chống replay bằng `completed_at` — tức là không farm được tiền.
+  // Nhưng ĐỪNG xây bảng xếp hạng hay điều kiện mở khoá lên `stars`/`best_score` khi chưa có lớp
+  // xác minh thật (doc 35 §A3 lớp 3 — replay input ở server).
   return {
     objectiveMet: true,
     stars: campaignStars(deaths),

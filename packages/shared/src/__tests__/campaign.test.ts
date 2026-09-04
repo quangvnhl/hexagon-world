@@ -216,3 +216,27 @@ describe("evaluateCampaignOutcome", () => {
     expect(at(5)).toBe(1);
   });
 });
+
+// ---- Hồi quy từ review PR #2 -------------------------------------------------------------------
+
+describe("evaluateCampaignOutcome: thiếu targetPct phải giống hệt engine", () => {
+  it("cấp territory_pct KHÔNG khai targetPct ⇒ lùi về kingPct, KHÔNG phải vô cực", () => {
+    // Engine (state.ts, nhánh territory_pct) lùi về `kingPct` khi thiếu `targetPct`.
+    // Nếu bên này lùi về vô cực thì client tuyên bố thắng còn server từ chối MỌI lần nộp:
+    // người chơi mất năng lượng mỗi lượt và không bao giờ mở khoá được cấp kế.
+    const config = { win: { kind: "territory_pct" } } as const;
+    const kingPct = resolveMatchConfig(config).win.kingPct;
+
+    const dat = evaluateCampaignOutcome(config, { deaths: 0, territoryPct: kingPct, totemsCaptured: 0, kingHeldSec: 0 }, 60);
+    expect(dat.objectiveMet).toBe(true);
+
+    const chuaDat = evaluateCampaignOutcome(config, { deaths: 0, territoryPct: kingPct - 1, totemsCaptured: 0, kingHeldSec: 0 }, 60);
+    expect(chuaDat.objectiveMet).toBe(false);
+  });
+
+  it("có targetPct thì vẫn quy về thang 0..100 như cũ", () => {
+    const config = { win: { kind: "territory_pct", targetPct: 0.5 } } as const;
+    expect(evaluateCampaignOutcome(config, { deaths: 0, territoryPct: 50, totemsCaptured: 0, kingHeldSec: 0 }, 60).objectiveMet).toBe(true);
+    expect(evaluateCampaignOutcome(config, { deaths: 0, territoryPct: 49, totemsCaptured: 0, kingHeldSec: 0 }, 60).objectiveMet).toBe(false);
+  });
+});
