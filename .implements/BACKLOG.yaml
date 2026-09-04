@@ -227,6 +227,25 @@ slices:
     status: done
     commit: null
 
+  - id: t6-lobby-started-before-tick
+    doc: "36#R1"
+    title: "Chờ phòng BẮT ĐẦU trước khi tick — nốt gốc rễ còn sót của t2"
+    files:
+      - packages/server/test/integration.spec.ts
+    depends_on: [t5-flaky-interest-snapshot]
+    dod:
+      - "pnpm --filter @hexagon/server test"
+    risk: low
+    requires_human: false
+    note: >-
+      Lát t5 đổi `delay(10)` cố định thành chờ điều kiện, nên lần đỏ tiếp theo báo đúng chỗ
+      ("Hết giờ chờ: snapshot đầu tiên cho A") thay vì TypeError khó hiểu — và lộ ra gốc rễ THẬT:
+      `waitWelcome()` chỉ đảm bảo client NHẬN welcome, còn `lobby_ready` (autoReady) lúc đó mới vừa
+      được GỬI. Phòng chưa `started` thì `tickOnce()` bỏ qua nó hoàn toàn ⇒ không snapshot nào.
+      Đúng gốc rễ đã sửa ở t2 nhưng còn sót ở test này. Chạy lại 3 lần: 96/96 ổn định.
+    status: done
+    commit: null
+
   - id: t5-flaky-interest-snapshot
     doc: "36#R1"
     title: "Sửa test tích hợp chập chờn thứ hai: delay(10) cố định thay vì chờ snapshot"
