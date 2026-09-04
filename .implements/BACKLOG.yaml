@@ -289,6 +289,29 @@ slices:
     status: done
     commit: null
 
+  - id: r10-doc-sync
+    doc: "36#R3"
+    title: "Đồng bộ .env.example + cập nhật doc 36 theo thực tế đã chốt"
+    files:
+      - .env.example
+      - .implements/36-phase-5-5-automation-rails.md
+    depends_on: [r7-auto-review, r9-review-agent]
+    dod:
+      - "pnpm review:guard"
+    risk: low
+    requires_human: false
+    note: >-
+      Hai chỗ văn bản đã trôi khỏi thực tế, phát hiện khi rà lại doc 35/36:
+      (1) doc 36 §R3.3 yêu cầu bổ sung 4 biến vào .env.example — đã có trong working tree nhưng
+      CHƯA BAO GIỜ được commit, nên máy mới dựng theo mẫu vẫn thiếu biến. Giá trị đều để rỗng,
+      chỉ COOKIE_SECURE=true là mặc định an toàn.
+      (2) doc 36 §8 vẫn ghi luật gộp cũ ("risk:high chờ người duyệt") sau khi lát r8 đã đổi.
+      Kèm: thêm mục R7 (review tự động ba tầng) vào doc 36 — nó được làm ở lát r7/r9 mà chưa có
+      chỗ nào trong kế hoạch mô tả, và bỏ hạng mục deploy/*.env.example đã thành vô nghĩa sau
+      quyết định dùng thẳng .env gốc.
+    status: done
+    commit: null
+
   - id: r9-review-agent
     doc: "36#R7"
     title: "Agent review chạy tại máy — subagent + /review-pr + bộ gom gói review"
