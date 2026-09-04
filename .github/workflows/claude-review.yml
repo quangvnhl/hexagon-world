@@ -1,0 +1,84 @@
+name: Claude Review
+
+# Tầng review CÓ SUY XÉT (doc 36 R7). Bổ sung cho `Review` (cổng tất định), không thay thế nó:
+# cổng tất định trả lời "có phạm luật viết sẵn không", tầng này trả lời "thiết kế có đúng không,
+# có bỏ sót trường hợp nào không" — thứ không viết thành regex được.
+#
+# CẦN secret `ANTHROPIC_API_KEY`. Chưa có thì job vẫn XANH và chỉ ghi một dòng nhắc: một workflow
+# đỏ vì thiếu cấu hình sẽ nhanh chóng bị mọi người học cách phớt lờ, và khi nó đỏ vì lý do thật
+# thì cũng không ai nhìn nữa.
+
+on:
+  pull_request:
+    types: [opened, synchronize]
+
+jobs:
+  review:
+    name: claude
+    runs-on: ubuntu-latest
+    # Bản nháp thì chưa cần review — tác giả còn đang viết.
+    if: ${{ !github.event.pull_request.draft }}
+    permissions:
+      contents: read
+      pull-requests: write
+      id-token: write
+    steps:
+      - name: Kiểm tra đã có API key chưa
+        id: gate
+        env:
+          KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          if [ -n "$KEY" ]; then
+            echo "ok=true" >> "$GITHUB_OUTPUT"
+          else
+            echo "ok=false" >> "$GITHUB_OUTPUT"
+            echo "::notice title=Chưa bật Claude review::Thêm secret ANTHROPIC_API_KEY trong Settings → Secrets and variables → Actions để bật tầng review này. Cổng review tất định vẫn đang chạy bình thường."
+          fi
+
+      - uses: actions/checkout@v4
+        if: steps.gate.outputs.ok == 'true'
+        with:
+          fetch-depth: 0
+
+      - uses: anthropics/claude-code-action@v1
+        if: steps.gate.outputs.ok == 'true'
+        with:
+          anthropic_api_key: ${{ secrets.ANTHROPIC_API_KEY }}
+          prompt: |
+            REPO: ${{ github.repository }}
+            PR NUMBER: ${{ github.event.pull_request.number }}
+
+            Nhánh PR đã được checkout sẵn ở thư mục làm việc hiện tại.
+
+            Bạn đang review một pull request của dự án game casual này. TRƯỚC KHI REVIEW, hãy đọc:
+              - `AGENTS.md` — luật bắt buộc của repo. Luật ở đó thắng mọi suy đoán tiện tay.
+              - Mục trong `.implements/` mà lát này trỏ tới (xem `.implements/BACKLOG.yaml`, tìm lát
+                có `id` khớp với tên nhánh).
+
+            Viết TOÀN BỘ nhận xét bằng TIẾNG VIỆT — theo đúng phần còn lại của repo.
+
+            Cổng `Review` đã tự động kiểm các luật viết thành regex được (bí mật lọt vào commit,
+            sửa migration đã áp, tắt test, log trong đường nóng). ĐỪNG lặp lại những thứ đó.
+            Việc của bạn là phần cần suy xét:
+
+            1. **Không tin client.** Có giá trị nào (coin, XP, năng lượng, sao, mở khoá, phần thưởng
+               quảng cáo) được server nhận từ client mà không tự tính hoặc tự xác minh lại không?
+            2. **Bất biến "default = hành vi cũ".** Field/config/cờ mới có giữ nguyên trải nghiệm
+               hiện tại của `/play`, `/netplay`, `/campaign` khi không ai đặt gì không?
+            3. **Trường hợp bỏ sót.** Mạng hỏng, database chết, giá trị sai kiểu, request gửi lại,
+               người chơi thoát giữa chừng — code xử lý thế nào? Chỗ nào im lặng nuốt lỗi?
+            4. **Nghiệm thu bằng số, không bằng mắt.** Thay đổi chạm gameplay có ít nhất một phép ĐO
+               hành vi không, hay chỉ có typecheck?
+            5. **Đúng phạm vi lát.** Có file nào bị sửa ngoài `files:` của lát trong BACKLOG không?
+
+            Với mỗi phát hiện, nói rõ: chuyện gì sẽ hỏng, trong tình huống nào. Đừng nêu nhận xét
+            phong cách hay sở thích cá nhân — repo này ưu tiên ít nhận xét mà đúng hơn là nhiều
+            nhận xét mà nhạt. Không tìm thấy vấn đề thật thì nói thẳng là không có.
+
+            Dùng `gh pr comment` cho nhận xét tổng thể.
+            Dùng `mcp__github_inline_comment__create_inline_comment` (với `confirmed: true`) cho
+            nhận xét gắn vào dòng code cụ thể.
+            Chỉ đăng nhận xét lên GitHub — không trả lời dưới dạng tin nhắn.
+
+          claude_args: |
+            --allowedTools "mcp__github_inline_comment__create_inline_comment,Bash(gh pr comment:*),Bash(gh pr diff:*),Bash(gh pr view:*),Bash(node scripts/review-guard.mjs:*)"
