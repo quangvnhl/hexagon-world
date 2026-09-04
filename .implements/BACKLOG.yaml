@@ -252,6 +252,24 @@ slices:
     status: done
     commit: null
 
+  - id: t7-revive-before-lobby-start
+    doc: "36#R1"
+    title: "Chờ phòng bắt đầu trước khi đặt phase=dead (test no_spawn)"
+    files:
+      - packages/server/test/integration.spec.ts
+    depends_on: [t6-lobby-started-before-tick]
+    dod:
+      - "pnpm --filter @hexagon/server test"
+    risk: low
+    requires_human: false
+    note: >-
+      Cùng gốc rễ với t2/t6, ở một test khác: lúc phòng BẮT ĐẦU, GameState spawn lại người chơi và
+      đặt phase="alive". Đặt "dead" trước mốc đó thì bị ghi đè và server trả `not_dead` thay vì
+      `no_spawn` — test đỏ vì lý do không liên quan tới thứ nó đo.
+      Lộ ra khi CI đỏ ở lát a1.7 (thay đổi thuần client). Chạy lại 4 lần: 99/99 ổn định.
+    status: done
+    commit: null
+
   - id: t6-lobby-started-before-tick
     doc: "36#R1"
     title: "Chờ phòng BẮT ĐẦU trước khi tick — nốt gốc rễ còn sót của t2"

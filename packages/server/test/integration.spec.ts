@@ -439,6 +439,10 @@ describe("NetServer integration (real ws, deterministic ticks)", () => {
     await a.open();
     a.join("A");
     await a.waitWelcome();
+    // Phải chờ phòng BẮT ĐẦU trước khi đụng vào trạng thái: lúc bắt đầu, GameState spawn lại người
+    // chơi và đặt `phase = "alive"`. Đặt "dead" trước mốc đó thì bị ghi đè, và server trả
+    // `not_dead` thay vì `no_spawn` — test đỏ vì lý do hoàn toàn không liên quan tới thứ nó đo.
+    await waitFor(() => a.lobby?.started === true, 3000, "phòng bắt đầu");
     const room = server.activeRoom!;
     room.gameState.players[a.welcome!.playerId].phase = "dead";
     vi.spyOn(room, "reviveSeat").mockReturnValue(false);
