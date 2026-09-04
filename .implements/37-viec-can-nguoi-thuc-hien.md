@@ -134,6 +134,31 @@ tab **Conversation**. Nếu chưa bật, job đó vẫn xanh kèm dòng "Chưa b
 
 ---
 
+## Việc 3c — Bật `pg_cron` cho rollup phân tích (2 phút — làm khi muốn số liệu tự tươi)
+
+Lát `a1.5` đã tạo 3 bảng tổng hợp + hàm `refresh_analytics_rollups(p_days)`. Hàm chạy đúng và
+idempotent, nhưng **chưa có lịch tự chạy**, nên `analytics_daily_kpi` (ARPDAU/DAU) chỉ mới bằng lần
+refresh gần nhất. Truy vấn retention và funnel FTUE đọc sự kiện thô nên luôn tươi — chỉ ARPDAU bị cũ.
+
+Agent **cố ý không tự bật** trong migration: `pg_cron` dựng một background worker và job của nó nằm
+ngoài repo — đọc code sẽ không thấy nó tồn tại. Đây là loại thay đổi hạ tầng phải do người bấm.
+
+1. Mở Supabase Dashboard → **Database** → **Extensions** → tìm `pg_cron` → bật.
+2. Vào **SQL Editor**, chạy:
+
+```sql
+select cron.schedule('analytics-rollup', '20 0 * * *',
+                     $$select public.refresh_analytics_rollups(3)$$);
+```
+
+Kiểm tra đạt — `select * from cron.job;` phải thấy dòng `analytics-rollup`.
+
+Chưa bật cũng không sao: chạy tay `select public.refresh_analytics_rollups(3);` trước khi đọc
+ARPDAU. Câu Q3 và Q4 trong [analytics-queries.md](analytics-queries.md) được viết để chỗ số liệu
+cũ **lộ ra** thay vì im lặng.
+
+---
+
 ## Việc 4 — Bot Telegram TEST (chưa gấp — cần ở Pha 7)
 
 Chặn: `b1-*` (rewarded ads), `b5-*` (gói ưu đãi), và phần Stars của `r2.2-e2e-money`.
