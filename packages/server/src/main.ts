@@ -5,6 +5,7 @@ import dotenv from "dotenv";
 import { existsSync } from "node:fs";
 import { resolve } from "node:path";
 import { runtimeConfig } from "./runtime-config";
+import { NestPinoLogger, createLogger, requestLogger } from "./logging";
 
 const envPath = [process.env.ENV_FILE, resolve(process.cwd(), ".env"), resolve(__dirname, "../../../.env")].find((path): path is string => Boolean(path && existsSync(path)));
 if (envPath) dotenv.config({ path: envPath, quiet: true });
@@ -20,10 +21,13 @@ async function bootstrap(): Promise<void> {
   // Import sau khi .env đã nạp vì AppModule chọn control/game modules theo SERVER_ROLE.
   const { AppModule } = await import("./app.module");
   const cfg = runtimeConfig();
+  const logger = createLogger({ role: cfg.role, region: cfg.region });
   const app = await NestFactory.create(AppModule, {
-    logger: ["log", "warn", "error"],
+    // Mọi `Logger` sẵn có trong code cũng đi qua đây ⇒ ra JSON, không phải sửa từng chỗ gọi.
+    logger: new NestPinoLogger(logger),
   });
   app.use(cookieParser());
+  app.use(requestLogger(logger));
   app.enableCors({
     origin(origin, callback) {
       // Requests without Origin are server-to-server/health checks. Browser origins must be explicit.
@@ -41,8 +45,7 @@ async function bootstrap(): Promise<void> {
     const { GatewayService } = await import("./game/game.module");
     await app.get(GatewayService).start();
   }
-  // eslint-disable-next-line no-console
-  console.log(`[Hexagon] role=${cfg.role} region=${cfg.region} port=${cfg.port}`);
+  logger.info({ role: cfg.role, region: cfg.region, port: cfg.port }, "server đã sẵn sàng");
 }
 
 void bootstrap();

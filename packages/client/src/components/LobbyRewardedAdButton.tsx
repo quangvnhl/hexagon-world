@@ -5,8 +5,11 @@ import {
   isAdsgramPlacementAvailable,
   showAdsgramAd,
 } from "@/lib/adsgram";
+import { useConfigFlag } from "@/lib/useRemoteConfig";
 
 export function LobbyRewardedAdButton() {
+  // Kill-switch (doc 35 §A2): tắt quảng cáo từ database, không cần deploy.
+  const adsEnabled = useConfigFlag("ads.enabled");
   const [available, setAvailable] = useState(false);
   const [showing, setShowing] = useState(false);
   const [message, setMessage] = useState("");
@@ -15,7 +18,7 @@ export function LobbyRewardedAdButton() {
     setAvailable(isAdsgramPlacementAvailable("rewarded-lobby-random"));
   }, []);
 
-  if (!available) return null;
+  if (!adsEnabled || !available) return null;
 
   const show = async () => {
     if (showing) return;

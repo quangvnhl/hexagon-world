@@ -111,6 +111,29 @@ Phải thấy `Đã áp      : 9/9` và `Không có migration nào cần áp.`
 
 ---
 
+## Việc 3b — Bật Claude review tự động (5 phút, khuyến nghị làm sớm)
+
+Repo đã có **hai** tầng review chạy sẵn, không cần anh làm gì:
+
+- `CI` → job `verify`: code có chạy không.
+- `Review` → job `guard`: có phạm luật trong `AGENTS.md` không (bí mật lọt vào commit, sửa
+  migration đã áp, tắt test, log trong đường nóng, server tin giá trị client tự khai…).
+
+Tầng thứ ba — Claude đọc diff và nhận xét phần **cần suy xét** — cần một API key. Chưa có key thì
+job vẫn **xanh** và chỉ ghi một dòng nhắc, không làm phiền ai.
+
+1. Lấy API key: https://console.anthropic.com/settings/keys → **Create Key** → copy (chỉ hiện một lần).
+2. Mở https://github.com/quangvnhl/hexagon-world/settings/secrets/actions
+3. **New repository secret** → Name: `ANTHROPIC_API_KEY` → Secret: dán key → **Add secret**.
+
+Kiểm tra đạt: mở một PR bất kỳ, tab **Checks** phải có job `claude` chạy và để lại nhận xét trong
+tab **Conversation**. Nếu chưa bật, job đó vẫn xanh kèm dòng "Chưa bật Claude review".
+
+> Chi phí: mỗi PR tốn một lượt gọi API theo kích thước diff. Muốn tắt tạm thì xoá secret — không
+> cần sửa code.
+
+---
+
 ## Việc 4 — Bot Telegram TEST (chưa gấp — cần ở Pha 7)
 
 Chặn: `b1-*` (rewarded ads), `b5-*` (gói ưu đãi), và phần Stars của `r2.2-e2e-money`.

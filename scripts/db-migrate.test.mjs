@@ -71,6 +71,7 @@ test("planMigrations: database trống ⇒ áp tất cả", () => {
 });
 
 test("redactDbUrl: che mật khẩu, giữ host để biết đang nối tới đâu", () => {
+  // review-guard: bỏ qua secret-literal — mật khẩu bịa đặt để kiểm chính hàm che mật khẩu
   const out = redactDbUrl("postgresql://postgres:sieubimat@db.abc.supabase.co:5432/postgres");
   assert.ok(!out.includes("sieubimat"), "mật khẩu KHÔNG được lọt ra log");
   assert.ok(out.includes("db.abc.supabase.co"), "vẫn phải thấy host");

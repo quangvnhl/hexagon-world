@@ -19,6 +19,8 @@ import { PlayerPreview3D } from "./PlayerPreview3D";
 import { getTelegramUserName } from "@/lib/telegram";
 import { ensureTelegramSession, getMe, startGoogleLogin, devLogin, isLocalhost, type BackendMe } from "@/lib/backend";
 import { ShopPanel } from "./ShopPanel";
+import { track } from "@/lib/analytics";
+import { useConfigFlag } from "@/lib/useRemoteConfig";
 import { LobbyRewardedAdButton } from "./LobbyRewardedAdButton";
 import { measureServerPing } from "./serverPing";
 import { trailVectorAsset } from "./trailVectorAssets";
@@ -123,6 +125,17 @@ export function StartPanel({
 }) {
   const [name, setName] = useState("");
   const [mode, setMode] = useState<GameMode>("solo");
+  // Kill-switch (doc 35 §A2): tắt hẳn một chế độ từ database khi nó đang hỏng, không cần deploy.
+  const netplayEnabled = useConfigFlag("netplay.enabled");
+  const campaignEnabled = useConfigFlag("campaign.enabled");
+
+  // Cấu hình về SAU khi màn hình đã vẽ (đọc từ mạng), nên chế độ đang chọn có thể vừa bị tắt.
+  // Không xử lý thì người chơi bấm "Bắt đầu" vào một chế độ không còn thẻ nào trên màn hình.
+  useEffect(() => {
+    if ((mode === "online" && !netplayEnabled) || (mode === "campaign" && !campaignEnabled)) {
+      setMode("solo");
+    }
+  }, [mode, netplayEnabled, campaignEnabled]);
   const [serverUrl, setServerUrl] = useState(DEFAULT_URL);
   const [botCount, setBotCount] = useState<number>(CONFIG.BOT_COUNT);
   const [appearance, setAppearance] = useState<PlayerAppearance>(
@@ -159,7 +172,16 @@ export function StartPanel({
     void (async () => {
       let me = await getMe();
       if (!me && getTelegramUserName()) {
-        try { await ensureTelegramSession(); me = await getMe(); } catch { /* vẫn cho chơi guest */ }
+        // doc 35 §A1 — chỉ đo lần ĐĂNG NHẬP thật (đổi từ chưa có phiên sang có), không đo mỗi lần
+        // mở lại app với phiên còn hạn; nếu không, `login_success` sẽ chỉ là bản sao của `app_open`.
+        try {
+          await ensureTelegramSession();
+          me = await getMe();
+          track(me ? "login_success" : "login_failed", { method: "telegram" });
+        } catch {
+          track("login_failed", { method: "telegram" });
+          /* vẫn cho chơi guest */
+        }
       }
       if (!active) return;
       setAccount(me);
@@ -352,7 +374,7 @@ export function StartPanel({
               )}
             </span>
           )}
-          {account && <button type="button" onClick={() => setShowShop(true)} style={{ border: "1px solid rgba(255,210,63,.35)", borderRadius: 9, padding: "6px 10px", color: "#ffe27a", background: "rgba(255,210,63,.08)", cursor: "pointer", whiteSpace: "nowrap" }}>Shop</button>}
+          {account && <button type="button" onClick={() => { track("shop_open"); setShowShop(true); }} style={{ border: "1px solid rgba(255,210,63,.35)", borderRadius: 9, padding: "6px 10px", color: "#ffe27a", background: "rgba(255,210,63,.08)", cursor: "pointer", whiteSpace: "nowrap" }}>Shop</button>}
         </div>
 
         {/* Tên */}
@@ -530,20 +552,20 @@ export function StartPanel({
         <label style={{ fontSize: 12, opacity: 0.7, letterSpacing: 1 }}>
           CHẾ ĐỘ CHƠI
         </label>
-        <div className="mode-grid" style={{ display: "grid", gridTemplateColumns: "repeat(3,minmax(0,1fr))", gap: 10, marginTop: 8 }}>
+        <div className="mode-grid" style={{ display: "grid", gridTemplateColumns: `repeat(${1 + (campaignEnabled ? 1 : 0) + (netplayEnabled ? 1 : 0)},minmax(0,1fr))`, gap: 10, marginTop: 8 }}>
           {card(
             "solo",
             "Luyện tập",
             "Không giới hạn thời gian, hồi sinh tự do, tự chỉnh số bot — chơi thoải mái không thắng/thua.",
             "🏋️"
           )}
-          {card(
+          {campaignEnabled && card(
             "campaign",
             "Cấp độ",
             "Chơi từng cấp có mục tiêu, chọn vật phẩm tăng cường, tốn 1 năng lượng mỗi lượt.",
             "🗺️"
           )}
-          {card(
+          {netplayEnabled && card(
             "online",
             "Nhiều người",
             "Tìm phòng, đấu thời gian thực với người thật (tối thiểu 2 người, không bot).",

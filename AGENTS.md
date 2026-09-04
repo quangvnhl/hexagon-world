@@ -72,5 +72,34 @@ bất kỳ tính năng dành riêng cho Telegram.
 
 ## 5. Định nghĩa "XONG"
 
-Job `verify` trong `.github/workflows/ci.yml` xanh, **và** mọi lệnh trong `dod:` của lát xanh.
-Không có tiêu chí nào khác. Tự khai "đã chạy thử thấy ổn" không tính.
+Job `verify` (`.github/workflows/ci.yml`) và job `guard` (`.github/workflows/review.yml`) đều xanh,
+**và** mọi lệnh trong `dod:` của lát xanh. Không có tiêu chí nào khác. Tự khai "đã chạy thử thấy ổn"
+không tính.
+
+## 6. Ba tầng review (doc 36 R7)
+
+| Tầng | Chạy khi nào | Trả lời câu hỏi | Cần gì |
+|---|---|---|---|
+| `CI` → job `verify` | mọi push/PR | *Code có chạy không?* | không |
+| `Review` → job `guard` | mọi PR | *Có phạm luật ở §1–§2 không?* | không |
+| `Claude Review` | mọi PR không phải nháp | *Thiết kế có đúng không, bỏ sót gì không?* | secret `ANTHROPIC_API_KEY` |
+
+Trước khi mở PR, chạy tại máy để khỏi phải chờ CI:
+
+```bash
+pnpm review:guard
+```
+
+Cổng `guard` biến các luật ở §1–§2 thành phép kiểm máy: bí mật lọt vào commit, sửa migration đã áp,
+tắt test đang đỏ, log trong đường nóng gameplay, server đọc thẳng giá trị có giá từ `body`,
+`Math.random` trong `shared`, endpoint ghi thiếu chống lặp.
+
+**Lối thoát hiểm** khi cổng chặn nhầm — viết ở dòng NGAY TRÊN dòng bị bắt:
+
+```
+// review-guard: bỏ qua <id-luật> — <lý do đủ dài để người sau hiểu>
+```
+
+Lý do dưới 8 ký tự không được tính là lý do. Miễn trừ được in ra trong log để người duyệt còn thấy.
+Thêm luật mới thì thêm cả test trong `scripts/review-guard.test.mjs` — một cổng chặn viết sai hoặc
+bỏ lọt, hoặc chặn nhầm rồi bị vô hiệu hoá cả cụm.

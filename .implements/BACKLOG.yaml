@@ -220,6 +220,58 @@ slices:
     status: todo
     commit: null
 
+  - id: r7-auto-review
+    doc: "36#R7"
+    title: "Tự động review PR — cổng tất định + tầng Claude review"
+    files:
+      - scripts/review-guard.mjs
+      - scripts/review-guard.test.mjs
+      - .github/workflows/review.yml
+      - .github/workflows/claude-review.yml
+      - .github/workflows/ci.yml
+      - AGENTS.md
+      - package.json
+    depends_on: [r1-ci, r6-agents-rules]
+    dod:
+      - "pnpm test:review-guard"
+      - "pnpm review:guard"
+    risk: low
+    requires_human: true
+    human_note: >-
+      Tầng Claude review cần secret ANTHROPIC_API_KEY (doc 37 §3b). Chưa có thì job vẫn XANH và chỉ
+      ghi một dòng nhắc — workflow đỏ vì thiếu cấu hình sẽ bị học cách phớt lờ, rồi khi nó đỏ vì lý
+      do thật cũng không ai nhìn nữa.
+    note: >-
+      Hai tầng, cố ý tách: cổng TẤT ĐỊNH (không secret, không tốn tiền, cùng câu trả lời mỗi lần)
+      biến luật AGENTS.md §1–§2 thành phép kiểm máy; tầng Claude lo phần cần suy xét mà regex không
+      viết được. Cổng chặn thỉnh thoảng đổi ý là cổng chặn không ai tin.
+      Có lối thoát hiểm `review-guard: bỏ qua <luật> — <lý do>` bắt buộc kèm lý do ≥ 8 ký tự: cổng
+      không có lối thoát hợp lệ sẽ bị vô hiệu hoá cả cụm vào ngày nó cản nhầm.
+      Chạy thử ngay lên 2 PR đang mở: bắt đúng 1 cảnh báo (campaign/complete không nhắc chống lặp)
+      và 1 chặn (mật khẩu giả trong test db-migrate — đúng ca cần miễn trừ có ghi lý do).
+    status: done
+    commit: null
+
+  - id: t5-flaky-interest-snapshot
+    doc: "36#R1"
+    title: "Sửa test tích hợp chập chờn thứ hai: delay(10) cố định thay vì chờ snapshot"
+    files:
+      - packages/server/test/integration.spec.ts
+    depends_on: []
+    dod:
+      - "pnpm --filter @hexagon/server test"
+    risk: low
+    requires_human: false
+    note: >-
+      CI đỏ ở lát a2.1 dù thay đổi không liên quan: "control interest đổi spectator target" đổ ở
+      `snapshots.at(-1)!` với TypeError vì chưa có snapshot nào. Cùng họ với t2 — khẳng định sau
+      một `delay(10)` cố định thay vì chờ ĐIỀU KIỆN. Thêm `tickAndWaitSnapshot` (chờ client thật
+      sự nhận snapshot mới) và `tickUntil` (khung điều khiển interest/revive đi qua socket thật nên
+      có thể tới SAU tick kế tiếp; tick một lần rồi khẳng định là cá cược vào thứ tự gói tin).
+      Chạy lại 3 lần: 70/70 ổn định.
+    status: done
+    commit: null
+
   - id: t2-flaky-bot-interval
     doc: "36#R1"
     title: "Sửa test tích hợp chập chờn: tick trước khi phòng kịp bắt đầu"
@@ -341,15 +393,71 @@ slices:
     title: "POST /v1/events + bảng analytics_events + khử trùng theo event_id"
     files:
       - packages/server/src/analytics/analytics.controller.ts
-      - packages/server/src/app.module.ts
+      - packages/server/src/control/control.module.ts
       - packages/server/test/analytics.spec.ts
-      - supabase/migrations/202609010002_analytics_events.sql
+      - supabase/migrations/202609030001_analytics_events.sql
     depends_on: [a1.1-analytics-schema, r3.1-db-migrate]
     dod:
       - "pnpm --filter @hexagon/server test"
     risk: medium
     requires_human: false
-    note: "Session tuỳ chọn (guest gửi anon_id); rate-limit tái dùng net/rate-limit.ts; bảng partition theo ngày."
+    note: >-
+      Session tuỳ chọn (guest gửi anon_id); rate-limit tái dùng net/rate-limit.ts; bảng partition
+      theo NGÀY + partition DEFAULT làm lưới an toàn (thiếu partition thì hàng rơi vào default chứ
+      KHÔNG làm vỡ INSERT). Khử trùng bằng unique (event_id, occurred_at) — Postgres bắt unique
+      index của bảng phân mảnh phải chứa khoá phân mảnh nên không unique riêng event_id được.
+      Một sự kiện hỏng không giết cả lô (nếu không lô lỗi sẽ kẹt vĩnh viễn trong đệm client).
+      Đã đo trên database dev: chèn rơi đúng partition ngày, gửi lại lô cũ ⇒ 0 hàng thêm, đường
+      PostgREST (đường server thật đi) trả 201 và không nhân đôi.
+    status: done
+    commit: null
+
+  - id: a1.6-client-instrument
+    doc: "35#A1"
+    title: "Gắn sự kiện vào client — cắm ống + phát app_open/session_end/mode_select/match_start"
+    files:
+      - packages/client/app/layout.tsx
+      - packages/client/app/page.tsx
+      - packages/client/src/components/AnalyticsBoot.tsx
+      - packages/client/src/components/StartPanel.tsx
+      - packages/client/src/lib/analytics.ts
+      - packages/client/src/lib/__tests__/analytics.test.ts
+      - .claude/launch.json
+    depends_on: [a1.3-events-endpoint]
+    dod:
+      - "pnpm --filter @hexagon/client test"
+    risk: low
+    requires_human: false
+    note: >-
+      Phát hiện khi làm a1.3: `startBrowserAnalytics()` viết ở a1.2 nhưng KHÔNG nơi nào gọi, và
+      không call site nào gọi `track()`. Ống dẫn xong hai đầu mà chưa cắm.
+      Đã làm: track() TỰ khởi động (gọi trước lúc boot không còn mất sự kiện im lặng);
+      session_end phát TRƯỚC khi xả lúc pagehide (listener đăng ký sau sẽ chạy sau flushOnExit
+      nên sự kiện mất trắng) và chỉ một lần mỗi phiên; app_open ở layout (không ở trang chủ —
+      deep link Telegram vào thẳng /campaign sẽ rơi khỏi mẫu số); mode_select phát NGAY khi bấm
+      chứ không đợi vào được trận; match_start; shop_open; login_success/_failed.
+      ĐO THẬT trên trình duyệt + database dev: 4 hàng đúng thứ tự app_open → mode_select
+      (mode=solo) → match_start (bot_count=24) → session_end (duration_sec=55).
+    status: done
+    commit: null
+
+  - id: a1.7-client-instrument-game
+    doc: "35#A1"
+    title: "Sự kiện client trong trận: match_end, campaign_level_*, energy_empty"
+    files:
+      - packages/client/src/components/GameScene.tsx
+      - packages/client/src/components/CampaignScene.tsx
+      - packages/client/src/lib/backend.ts
+    depends_on: [a1.6-client-instrument, a3.1-server-scores-campaign]
+    dod:
+      - "pnpm --filter @hexagon/client test"
+    risk: low
+    requires_human: false
+    note: >-
+      Tách khỏi a1.6 CÓ CHỦ Ý: ba file này đang bị PR #2 (lát a3.1) sửa và PR đó chờ người duyệt.
+      Gắn sự kiện vào đó lúc này chỉ tạo xung đột trên một PR risk:high. Làm sau khi a3.1 gộp.
+      Lưu ý: match_end/campaign_complete còn có bản SERVER ở a1.4 — bản server là nguồn tin cậy,
+      bản client chỉ để đo phễu (người chơi thoát giữa chừng thì server không thấy).
     status: todo
     commit: null
 
@@ -389,17 +497,31 @@ slices:
     doc: "35#A2"
     title: "Bảng remote_config + GET /v1/config có ETag"
     files:
-      - packages/server/src/config/remote-config.controller.ts
-      - packages/server/src/app.module.ts
+      - packages/shared/src/remote-config.ts
+      - packages/shared/src/__tests__/remote-config.test.ts
+      - packages/server/src/config-api/remote-config.controller.ts
+      - packages/server/src/control/control.module.ts
       - packages/server/test/remote-config.spec.ts
-      - supabase/migrations/202609010004_remote_config.sql
+      - supabase/migrations/202609030002_remote_config.sql
     depends_on: [r3.1-db-migrate]
     dod:
       - "pnpm --filter @hexagon/server test"
+      - "pnpm --filter @hexagon/shared test"
     risk: medium
     requires_human: false
-    note: "audience jsonb cho phép bật theo % (hash player_id) ⇒ nền cho A/B. Mọi bảng mang nhãn platform ngay từ đầu (doc 35 §B8)."
-    status: todo
+    note: >-
+      Luật giải quyết cấu hình nằm ở SHARED (không ở SQL) để client và server dùng chung một luật;
+      nhét vào SQL thì client sẽ có luật thứ hai và hai bên sẽ trôi khỏi nhau.
+      Bốn tính chất bắt buộc: luôn có fallback trong code (endpoint KHÔNG BAO GIỜ trả lỗi — client
+      gọi nó lúc khởi động); giá trị sai kiểu thì bỏ chứ không tự đổi kiểu; rollout % tất định bằng
+      FNV-1a trên (khoá + id) nên client/server tính độc lập vẫn khớp và hai khoá chia nhóm độc lập;
+      mọi khoá mang nhãn platform từ đầu.
+      Bảng remote_config để TRỐNG có chủ ý — seed sẵn sẽ tạo hai nguồn sự thật cho cùng một con số.
+      Kèm remote_config_audit + trigger ghi giá trị trước/sau (kill-switch bị bấm lúc đang hoảng,
+      hôm sau không ai nhớ ai bấm gì).
+      ĐO THẬT trên database dev: ghi ads.enabled=false ⇒ endpoint đổi trong 30s, ETag đổi theo,
+      If-None-Match ⇒ 304, audit ghi lại thay đổi. Không deploy gì.
+    status: done
     commit: null
 
   - id: a2.2-client-config
@@ -407,14 +529,27 @@ slices:
     title: "Client đọc remote config + fallback hằng trong shared"
     files:
       - packages/client/src/lib/remoteConfig.ts
+      - packages/client/src/lib/useRemoteConfig.ts
       - packages/client/src/lib/__tests__/remoteConfig.test.ts
+      - packages/client/src/components/StartPanel.tsx
+      - packages/client/src/components/LobbyRewardedAdButton.tsx
     depends_on: [a2.1-remote-config-api]
     dod:
       - "pnpm --filter @hexagon/client test"
     risk: medium
     requires_human: false
-    note: "Cache 5 phút; MẤT MẠNG vẫn chạy bằng fallback. Kill-switch tối thiểu: ads.enabled, stars.enabled, netplay.enabled, energy.*"
-    status: todo
+    note: >-
+      Cache 5 phút; MẤT MẠNG vẫn chạy bằng fallback (lần đầu ⇒ hằng trong shared, mở lại ⇒ bản đệm
+      localStorage). Bản đệm được chạy LẠI qua luật của shared vì nó có thể đến từ app cũ (thiếu
+      khoá mới, thừa khoá đã bỏ).
+      Hook `useConfigFlag` khởi tạo bằng HẰNG MẶC ĐỊNH chứ không phải bản đệm — nếu không thì server
+      render một đằng, client hydrate một nẻo.
+      Đã CẮM vào UI ngay (bài học a1.6, không để lại thư viện chết): ads.enabled tắt nút quảng cáo
+      thưởng, netplay.enabled / campaign.enabled ẩn thẻ chế độ và tự đưa lựa chọn về solo.
+      BẮT ĐƯỢC KHI ĐO: thiếu `cache: "no-cache"` thì bộ đệm HTTP của trình duyệt tự trả bản cũ theo
+      Cache-Control max-age=300 của server, request không bao giờ tới nơi, kill-switch trễ 5 phút.
+      Đo thật: ghi netplay.enabled=false ⇒ thẻ "Nhiều người" biến mất khỏi UI; xoá dòng ⇒ quay lại.
+    status: done
     commit: null
 
   - id: a2.3-admin-config-ui
@@ -495,6 +630,8 @@ slices:
     files:
       - packages/server/src/main.ts
       - packages/server/src/logging.ts
+      - packages/server/src/game/game.module.ts
+      - packages/server/test/logging.spec.ts
       - packages/server/package.json
     depends_on: []
     dod:
@@ -502,8 +639,17 @@ slices:
       - "pnpm build"
     risk: low
     requires_human: false
-    note: "Tách log control plane khỏi đường nóng gameplay (đường nóng chỉ ĐẾM, không log mỗi tick)."
-    status: todo
+    note: >-
+      Tách log control plane khỏi đường nóng gameplay: vòng lặp 24 Hz chỉ ĐẾM (net/telemetry.ts),
+      không log mỗi tick — log mỗi tick sẽ tạo bão I/O đúng lúc server bận nhất, tức là công cụ
+      chẩn đoán góp phần gây ra chính sự cố nó phải chẩn đoán.
+      Bí mật bị che ở TẦNG CODE (redactFields, so khớp chuỗi con không phân biệt hoa thường) chứ
+      không dặn miệng — cùng tinh thần FORBIDDEN_PROP_KEYS của analytics.
+      request_id nhận từ header nếu "lành" (chỉ [A-Za-z0-9._-], tránh chuỗi ngoài phá vỡ định dạng
+      log), không thì tự sinh, và LUÔN trả lại trong response để báo lỗi của người chơi nối được
+      với dòng log. NestPinoLogger nối Logger sẵn có của Nest vào pino nên không phải sửa từng chỗ.
+      Đo trên server đang chạy: header x-request-id tự sinh, và id gửi từ ngoài vào được giữ nguyên.
+    status: done
     commit: null
 
   - id: c4.1-legal-pages
