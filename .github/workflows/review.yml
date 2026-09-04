@@ -1,0 +1,29 @@
+name: Review
+
+# Cổng review TẤT ĐỊNH (doc 36 R7). Chạy trên mọi pull request, KHÔNG cần secret nào.
+#
+# Tách khỏi workflow `CI` có chủ ý: `CI` trả lời "code có chạy không", còn cái này trả lời "code có
+# phạm luật trong AGENTS.md không". Hai câu hỏi khác nhau, và khi một trong hai đỏ thì người đọc
+# phải biết ngay là đỏ vì lý do gì mà không cần mở log.
+
+on:
+  pull_request:
+    types: [opened, synchronize, reopened]
+
+jobs:
+  guard:
+    name: guard
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          # Cần đủ lịch sử để tìm điểm rẽ nhánh với base; fetch-depth mặc định (1) không đủ.
+          fetch-depth: 0
+
+      - name: Lấy nhánh gốc để so
+        run: git fetch --no-tags origin "+refs/heads/${{ github.base_ref }}:refs/remotes/origin/${{ github.base_ref }}"
+
+      - name: Kiểm luật AGENTS.md
+        run: node scripts/review-guard.mjs --base "origin/${{ github.base_ref }}"

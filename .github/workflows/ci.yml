@@ -57,6 +57,11 @@ jobs:
       - name: Release gate self-test
         run: pnpm test:release-gate
 
+      # Cổng review chạy ở workflow `Review` (nó cần diff), nhưng LUẬT của nó phải được test ở đây —
+      # một cổng chặn viết sai sẽ hoặc bỏ lọt, hoặc chặn nhầm rồi bị vô hiệu hoá cả cụm.
+      - name: Review guard self-test
+        run: pnpm test:review-guard
+
       - name: Build (shared + server + client)
         run: pnpm build
 
