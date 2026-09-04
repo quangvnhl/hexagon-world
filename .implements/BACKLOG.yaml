@@ -793,16 +793,28 @@ slices:
     title: "FTUE 3 bước — 90 giây đầu, không bắt đăng nhập"
     files:
       - packages/client/src/components/Ftue.tsx
+      - packages/client/src/components/ftueSteps.ts
+      - packages/client/src/components/GameScene.tsx
+      - packages/client/src/components/HUD.tsx
       - packages/client/app/page.tsx
-      - packages/client/src/components/__tests__/ftue.test.ts
+      - packages/client/src/components/__tests__/ftueSteps.test.ts
+      - packages/client/src/components/__tests__/ftueReachable.test.ts
+      - packages/shared/src/remote-config.ts
     depends_on: []
     dod:
       - "pnpm --filter @hexagon/client test"
     risk: medium
-    requires_human: true
-    human_note: "Nội dung 3 bước + ngưỡng 'đạt' của mỗi bước cần người chốt (cảm giác chơi)."
-    note: "Vào thẳng Practice có dẫn dắt: (1) di chuyển, (2) vẽ vòng chiếm đất, (3) hạ 1 bot / đạt mốc %."
-    status: todo
+    requires_human: false
+    note: |
+      Vào thẳng Practice có dẫn dắt. Nội dung 3 bước + ngưỡng chốt bằng ĐO (doc 35 §10 xếp mục này
+      vào loại "không cần dừng lại hỏi"), không phải bằng cảm tính — bảng đo nằm ở đầu
+      `ftueSteps.ts`. Ba phát hiện đổi thiết kế so với bản nháp của doc 35:
+      (1) sân phải 0 bot — chỉ 1 bot là >nửa số kiểu lái của người mới chết trong 90 giây;
+      (2) spawn phải ở TÂM sân — spawn ngẫu nhiên làm 27% người mới chết vào tường, ở tâm là 0%;
+      (3) bước 3 không thể là mốc % đơn thuần — vòng khép đầu tiên vượt luôn mốc trong một nhịp,
+      nên bước 3 đòi khép vòng LẦN THỨ HAI.
+      Ngưỡng để ở remote config (`ftue.*`) để chỉnh bằng dữ liệu thật, không cần deploy.
+    status: done
     commit: null
 
   - id: d1.2-ftue-funnel
