@@ -684,6 +684,16 @@ export function StartPanel({
             </div>
           </div>
         )}
+        {/* doc 35 §C4 — Telegram YÊU CẦU ba trang này phải với tới được từ trong app, không phải
+            chỉ tồn tại ở một URL ai đó biết. Dùng <a> chứ không phải <Link>: chúng là trang tĩnh
+            hiếm khi bấm, prefetch chỉ tốn băng thông của người chơi. */}
+        <div style={{ marginTop: 16, display: "flex", flexWrap: "wrap", gap: 12, justifyContent: "center", fontSize: 11, opacity: 0.45 }}>
+          <a href="/terms" style={{ color: "inherit", textDecoration: "none" }}>Điều khoản</a>
+          <span aria-hidden>·</span>
+          <a href="/privacy" style={{ color: "inherit", textDecoration: "none" }}>Riêng tư</a>
+          <span aria-hidden>·</span>
+          <a href="/paysupport" style={{ color: "inherit", textDecoration: "none" }}>Hỗ trợ thanh toán</a>
+        </div>
         <style jsx>{`
           @supports (height: 100dvh) {
             .welcome-main {
