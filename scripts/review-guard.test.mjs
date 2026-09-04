@@ -61,7 +61,9 @@ test("luật applied-migration-edited CHẶN khi sửa migration cũ", () => {
 test("luật secret-literal bắt khoá service_role và chuỗi kết nối có mật khẩu", () => {
   const { findings } = runRules(input({
     added: [
+      // review-guard: bỏ qua secret-literal — chuỗi giả trong test của chính luật này, không phải bí mật thật
       line("packages/server/src/x.ts", 'const key = "sb_secret_abcdefghijklmnop";'),
+      // review-guard: bỏ qua secret-literal — chuỗi giả trong test của chính luật này, không phải bí mật thật
       line("scripts/y.mjs", 'const url = "postgresql://postgres:matkhauthat@db.abc.supabase.co:5432/postgres";', 2),
     ],
   }));
@@ -71,11 +73,13 @@ test("luật secret-literal bắt khoá service_role và chuỗi kết nối có
 
 test("secret-literal KHÔNG kêu với placeholder trong .env.example", () => {
   const { findings } = runRules(input({
+    // review-guard: bỏ qua secret-literal — chuỗi giả trong test của chính luật này, không phải bí mật thật
     added: [line(".env.example", "SUPABASE_DB_URL=postgresql://postgres:[YOUR-PASSWORD]@db.YOUR_REF.supabase.co:5432/postgres")],
   }));
   // `[YOUR-PASSWORD]` vẫn khớp hình dạng mật khẩu — đây là lý do lối thoát hiểm phải tồn tại.
   assert.equal(findings.length, 1);
   const { findings: after } = runRules(input({
+    // review-guard: bỏ qua secret-literal — chuỗi giả trong test của chính luật này, không phải bí mật thật
     added: [line(".env.example", "SUPABASE_DB_URL=postgresql://postgres:[YOUR-PASSWORD]@db.YOUR_REF.supabase.co:5432/postgres", 1,
       "# review-guard: bỏ qua secret-literal — placeholder trong file mẫu, không phải bí mật thật")],
   }));
