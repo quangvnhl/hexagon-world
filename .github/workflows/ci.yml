@@ -67,6 +67,9 @@ jobs:
       - name: Review guard self-test
         run: pnpm test:review-guard
 
+      - name: Review collector self-test
+        run: pnpm test:review-collect
+
       - name: Build (shared + server + client)
         run: pnpm build
 
