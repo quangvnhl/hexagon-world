@@ -41,6 +41,23 @@ function ev(over: Partial<AnalyticsEvent> = {}, now = 1_700_000_000_000): Analyt
 }
 
 describe("AnalyticsController.ingest", () => {
+  it("client KHÔNG giả mạo được sự kiện tiền/tài nguyên của server (lát a1.4)", async () => {
+    const d = db();
+    const c = new AnalyticsController(sessions({ id: "p1" }), d.service);
+    // Lô trộn: một sự kiện hợp lệ + ba sự kiện chỉ-server. Ba cái sau bị bỏ RIÊNG, cái đầu vẫn
+    // vào bảng — nếu giết cả lô thì client sẽ đệm rồi gửi lại mãi và mất toàn bộ sự kiện về sau.
+    const out = await c.ingest(req(), {
+      events: [
+        ev({ name: "app_open" }),
+        ev({ name: "purchase_fulfilled", eventId: "e-1" }),
+        ev({ name: "energy_grant", eventId: "e-2" }),
+        ev({ name: "energy_spend", eventId: "e-3" }),
+      ],
+    });
+    expect(out).toEqual({ accepted: 1, rejected: 3 });
+    expect(d.upserts[0].rows.map((r) => r.name)).toEqual(["app_open"]);
+  });
+
   it("khách (không session) vẫn gửi được — player_id null, KHÔNG ném lỗi", async () => {
     const d = db();
     const c = new AnalyticsController(sessions(null), d.service);

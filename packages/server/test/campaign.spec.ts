@@ -3,6 +3,18 @@ import { ForbiddenException, BadRequestException } from "@nestjs/common";
 import { CampaignController } from "../src/campaign/campaign.controller";
 import type { SessionService } from "../src/auth/session.service";
 import type { SupabaseService } from "../src/database/supabase.service";
+import type { ServerAnalyticsService } from "../src/analytics/server-analytics.service";
+
+/** Đo đạc giả (lát a1.4). Ghi lại sự kiện để test khẳng định được, và không bao giờ ném — đúng
+ *  hợp đồng của `ServerAnalyticsService`: một phép đo hỏng không được làm hỏng nghiệp vụ. */
+function analyticsStub() {
+  const events: { name: string; props?: Record<string, unknown> }[] = [];
+  const service = {
+    emit: async (e: { name: string; props?: Record<string, unknown> }) => { events.push(e); return true; },
+    emitMany: async (list: { name: string; props?: Record<string, unknown> }[]) => { events.push(...list); return true; },
+  } as unknown as ServerAnalyticsService;
+  return { service, events };
+}
 
 // L2/L3 — CampaignController đọc cấp từ DB (campaign_levels); unlock bằng isUnlockedIn; thưởng từ DB.
 
@@ -32,7 +44,7 @@ describe("CampaignController.start", () => {
   it("cấp KHÓA (chưa qua cấp trước) ⇒ ForbiddenException, KHÔNG gọi RPC", async () => {
     const rpc = vi.fn();
     const d = db({ campaign_levels: { list: LEVELS }, player_level_progress: { list: [] } }, rpc);
-    const c = new CampaignController(sessions(), d);
+    const c = new CampaignController(sessions(), d, analyticsStub().service);
     await expect(c.start({} as never, { levelId: "c2", idempotencyKey: "k1" })).rejects.toBeInstanceOf(ForbiddenException);
     expect(rpc).not.toHaveBeenCalled();
   });
@@ -40,14 +52,14 @@ describe("CampaignController.start", () => {
   it("cấp MỞ (requires=null) ⇒ gọi start_campaign_level đúng tham số", async () => {
     const rpc = vi.fn(async () => ({ playId: "p1", energy: {} }));
     const d = db({ campaign_levels: { list: LEVELS }, player_level_progress: { list: [] } }, rpc);
-    const c = new CampaignController(sessions(), d);
+    const c = new CampaignController(sessions(), d, analyticsStub().service);
     await c.start({} as never, { levelId: "c1", idempotencyKey: "k1" });
     expect(rpc).toHaveBeenCalledWith("start_campaign_level", { p_player_id: PLAYER.id, p_level_id: "c1", p_idempotency_key: "k1" });
   });
 
   it("cấp không tồn tại trong DB ⇒ BadRequest", async () => {
     const d = db({ campaign_levels: { list: LEVELS }, player_level_progress: { list: [] } });
-    const c = new CampaignController(sessions(), d);
+    const c = new CampaignController(sessions(), d, analyticsStub().service);
     await expect(c.start({} as never, { levelId: "cX", idempotencyKey: "k1" })).rejects.toBeInstanceOf(BadRequestException);
   });
 });
@@ -64,7 +76,7 @@ describe("CampaignController.complete", () => {
 
   it("thiếu `facts` ⇒ BadRequest, không thưởng (client cũ bị từ chối)", async () => {
     const rpc = vi.fn();
-    const c = new CampaignController(sessions(), db({}, rpc));
+    const c = new CampaignController(sessions(), db({}, rpc), analyticsStub().service);
     await expect(c.complete({} as never, { playId: "p1" })).rejects.toBeInstanceOf(BadRequestException);
     expect(rpc).not.toHaveBeenCalled();
   });
@@ -75,7 +87,7 @@ describe("CampaignController.complete", () => {
       campaign_plays: { single: play(30) },
       campaign_levels: { single: LEVEL_TERRITORY },
     }, rpc);
-    const c = new CampaignController(sessions(), d);
+    const c = new CampaignController(sessions(), d, analyticsStub().service);
     // Cấp yêu cầu 30% lãnh thổ; client mới đạt 10% nhưng khai thu 99 totem + giữ King lâu.
     await expect(c.complete({} as never, {
       playId: "p1",
@@ -90,7 +102,7 @@ describe("CampaignController.complete", () => {
       campaign_plays: { single: play(30) },
       campaign_levels: { single: LEVEL_TERRITORY },
     }, rpc);
-    const c = new CampaignController(sessions(), d);
+    const c = new CampaignController(sessions(), d, analyticsStub().service);
     await c.complete({} as never, { playId: "p1", facts: { deaths: 1, territoryPct: 45, totemsCaptured: 0, kingHeldSec: 0 } });
     const call = rpc.mock.calls[0][1] as { p_rewards: unknown; p_stars: number; p_score: number };
     expect(call.p_rewards).toEqual(LEVEL_TERRITORY.rewards);
@@ -103,14 +115,14 @@ describe("CampaignController.complete", () => {
     const rpc = vi.fn(async () => ({}));
     // Mới bắt đầu 5 giây trước ⇒ không thể "sống sót 60s", bất kể client khai gì.
     const early = db({ campaign_plays: { single: play(5) }, campaign_levels: { single: level } }, rpc);
-    await expect(new CampaignController(sessions(), early).complete({} as never, {
+    await expect(new CampaignController(sessions(), early, analyticsStub().service).complete({} as never, {
       playId: "p1", facts: { deaths: 0, territoryPct: 99, totemsCaptured: 0, kingHeldSec: 0 },
     })).rejects.toBeInstanceOf(BadRequestException);
     expect(rpc).not.toHaveBeenCalled();
 
     // Đã 90 giây ⇒ đạt.
     const late = db({ campaign_plays: { single: play(90) }, campaign_levels: { single: level } }, rpc);
-    await new CampaignController(sessions(), late).complete({} as never, {
+    await new CampaignController(sessions(), late, analyticsStub().service).complete({} as never, {
       playId: "p1", facts: { deaths: 0, territoryPct: 12, totemsCaptured: 0, kingHeldSec: 0 },
     });
     expect(rpc).toHaveBeenCalledTimes(1);
@@ -119,7 +131,7 @@ describe("CampaignController.complete", () => {
   it("play không thuộc người chơi / không tồn tại ⇒ BadRequest", async () => {
     const rpc = vi.fn();
     const d = db({ campaign_plays: { single: null }, campaign_levels: { single: LEVEL_TERRITORY } }, rpc);
-    const c = new CampaignController(sessions(), d);
+    const c = new CampaignController(sessions(), d, analyticsStub().service);
     await expect(c.complete({} as never, {
       playId: "p1", facts: { deaths: 0, territoryPct: 99, totemsCaptured: 0, kingHeldSec: 0 },
     })).rejects.toBeInstanceOf(BadRequestException);

@@ -53,7 +53,13 @@ export type AnalyticsEventName =
   | "ad_error"
   // lan truyền
   | "invite_sent"
-  | "invite_accepted";
+  | "invite_accepted"
+  // CHỈ server phát (doc 35 §A1.4) — lời khai về tiền và tài nguyên. Client gửi ba tên này lên
+  // `POST /v1/events` thì bị từ chối: một lời khai của client về việc mình vừa được cộng tiền
+  // không phải là dữ liệu, nó là yêu cầu.
+  | "purchase_fulfilled"
+  | "energy_spend"
+  | "energy_grant";
 
 /** Danh sách chạy được (để test/validate/liệt kê ở admin) — phải khớp union trên. */
 export const ANALYTICS_EVENT_NAMES: readonly AnalyticsEventName[] = [
@@ -80,7 +86,30 @@ export const ANALYTICS_EVENT_NAMES: readonly AnalyticsEventName[] = [
   "ad_error",
   "invite_sent",
   "invite_accepted",
+  "purchase_fulfilled",
+  "energy_spend",
+  "energy_grant",
 ] as const;
+
+/**
+ * Ai phát ra sự kiện (doc 35 §A1.4).
+ *
+ * Vì sao phải có trục này chứ không chỉ dựa vào tên sự kiện: `match_end` và `campaign_level_complete`
+ * được phát ở CẢ HAI phía. Client phát sớm hơn và phủ được cả ván không nộp kết quả; server phát
+ * muộn hơn nhưng là thứ duy nhất dùng để đếm tiền và đánh giá liêm chính. Trộn hai nguồn vào một
+ * cột `name` là cách chắc chắn nhất để mọi con số về sau đều nhân đôi mà không ai nhận ra.
+ *
+ * Quy ước truy vấn: số liệu HÀNH VI (funnel, retention) đọc `source = 'client'`; số liệu TIỀN và
+ * liêm chính đọc `source = 'server'`.
+ */
+export type AnalyticsSource = "client" | "server";
+
+/** Sự kiện chỉ server được phát — client gửi lên thì phải bị từ chối. */
+export const SERVER_ONLY_EVENTS: readonly AnalyticsEventName[] = [
+  "purchase_fulfilled",
+  "energy_spend",
+  "energy_grant",
+];
 
 /** Giá trị thuộc tính cho phép — cố ý KHÔNG cho object/array lồng nhau để bảng còn truy vấn được. */
 export type AnalyticsValue = string | number | boolean | null;

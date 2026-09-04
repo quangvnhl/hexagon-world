@@ -2,6 +2,18 @@ import { describe, expect, it, vi } from "vitest";
 import { EnergyController } from "../src/energy/energy.controller";
 import type { SessionService } from "../src/auth/session.service";
 import type { SupabaseService } from "../src/database/supabase.service";
+import type { ServerAnalyticsService } from "../src/analytics/server-analytics.service";
+
+/** Đo đạc giả (lát a1.4). Ghi lại sự kiện để test khẳng định được, và không bao giờ ném — đúng
+ *  hợp đồng của `ServerAnalyticsService`: một phép đo hỏng không được làm hỏng nghiệp vụ. */
+function analyticsStub() {
+  const events: { name: string; props?: Record<string, unknown> }[] = [];
+  const service = {
+    emit: async (e: { name: string; props?: Record<string, unknown> }) => { events.push(e); return true; },
+    emitMany: async (list: { name: string; props?: Record<string, unknown> }[]) => { events.push(...list); return true; },
+  } as unknown as ServerAnalyticsService;
+  return { service, events };
+}
 
 // E3 — EnergyController: mỏng, chỉ resolve player rồi ủy quyền RPC read_energy (server tính hồi lười).
 
@@ -12,7 +24,7 @@ describe("EnergyController", () => {
     const rpc = vi.fn(async () => status);
     const db = { rpc } as unknown as SupabaseService;
 
-    const controller = new EnergyController(sessions, db);
+    const controller = new EnergyController(sessions, db, analyticsStub().service);
     const result = await controller.energy({} as never);
 
     expect(result).toEqual(status);
@@ -23,7 +35,7 @@ describe("EnergyController", () => {
     const sessions = { resolve: vi.fn(async () => ({ id: "player-1", platform: "web" })) } as unknown as SessionService;
     const rpc = vi.fn(async () => ({ current: 20, max: 50, regen_interval_seconds: 180, next_at: null, refill_coin_cost: 100, refill_energy_amount: 20 }));
     const db = { rpc } as unknown as SupabaseService;
-    const controller = new EnergyController(sessions, db);
+    const controller = new EnergyController(sessions, db, analyticsStub().service);
     await controller.purchase({} as never, { idempotencyKey: "key-1" });
     expect(rpc).toHaveBeenCalledWith("purchase_energy_with_coin", { p_player_id: "player-1", p_idempotency_key: "key-1" });
   });
