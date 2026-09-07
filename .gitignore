@@ -8,9 +8,20 @@ out/
 !packages/admin/.env.example
 .pnpm-store/
 client_secret_*.apps.googleusercontent.com.json
-# App admin (Vite) build output — deploy tĩnh, không commit.
-packages/admin/dist/
-packages/admin/*.tsbuildinfo
+# Build output của MỌI gói — không bao giờ commit.
+#
+# Vì sao (sự cố 2026-09-04): `packages/shared/dist` từng nằm trong git và đã LẠC HẬU so với
+# `src` (thiếu hẳn `remote-config.js` và `analytics.js`). Một lệnh `git checkout -- packages/
+# shared/dist` để dọn working tree đã khôi phục bản cũ đó, làm 27 test của client đỏ với
+# `Cannot read properties of undefined (reading 'ftue.bot_count')` — một hồi quy GIẢ, tốn cả
+# buổi truy. Ngoài ra dist liên tục hiện "modified" (LF/CRLF trên Windows) nên `git rebase` bị
+# chặn vì "unstaged changes", còn `git add -A` thì dễ nuốt nhầm build output vào commit.
+#
+# Không có gì phụ thuộc vào dist trong git: CI chạy `pnpm build:shared` trước khi typecheck/test,
+# và `.dockerignore` loại `**/dist` rồi tự build lại trong image. Nguồn sự thật là `src`.
+packages/*/dist/
+*.tsbuildinfo
+.tsbuildinfo
 
 # File env cho deploy/staging (doc 37 Việc 3). Pattern `.env*` ở trên chỉ khớp TÊN file bắt
 # đầu bằng ".env", nên KHÔNG bao che được `deploy/staging.env` — thiếu dòng này là secret có
