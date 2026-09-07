@@ -721,16 +721,36 @@ slices:
     files:
       - packages/server/src/admin/admin.controller.ts
       - packages/server/src/admin/ops-errors.ts
-      - packages/server/src/main.ts
       - packages/server/test/ops-openapi.spec.ts
-      - packages/server/package.json
+      # ĐỔI so với kế hoạch — lý do ở từng dòng:
+      # KHÔNG dùng @nestjs/swagger (nên `packages/server/package.json` không đổi, và `main.ts`
+      # không cần SwaggerModule). Danh mục sinh THẲNG từ metadata `@Ops({...})` mà guard đang thi
+      # hành: với swagger, phạm vi bị khai lần thứ hai trong decorator tài liệu và hai bản khai đó
+      # sẽ trôi khỏi nhau — tài liệu nói `wallet:write` trong khi guard đòi `players:write` là loại
+      # sai không ai thấy cho tới khi agent gọi thật và trượt.
+      - packages/server/src/admin/ops-openapi.ts
+      # dry_run cần một cờ trong metadata + chặn ở interceptor TRƯỚC khi handler chạy:
+      - packages/server/src/admin/ops-auth.guard.ts
+      - packages/server/src/admin/ops-audit.interceptor.ts
+      # Lời gọi thử khô không đổi gì nên không được tiêu hạn mức — nếu tiêu thì cách rẻ nhất để
+      # làm xong việc trong hạn mức là BỎ bước thử khô, tức bỏ đúng rào an toàn đang bảo vệ mình:
+      - supabase/migrations/202609070002_ops_daily_usage_dry_run.sql
+      - .implements/ops-api-runbook.md
     depends_on: [c2.1-ops-api-keys]
     dod:
       - "pnpm --filter @hexagon/server test"
     risk: high
     requires_human: false
-    note: "Agent tự khám phá endpoint qua openapi.json; dry_run trả kết quả DỰ KIẾN, không đổi dữ liệu; lỗi có {code,message,hint,retryable}."
-    status: todo
+    note: >
+      Agent tự khám phá endpoint qua GET internal/v1/admin/openapi.json (chỉ cần khoá hợp lệ,
+      KHÔNG cần phạm vi riêng — bắt phải có phạm vi để đọc danh mục là bài toán con gà–quả trứng).
+      `?dry_run=true` MẶC ĐỊNH BỊ TỪ CHỐI trên endpoint chưa khai `dryRun: true`, và bị từ chối
+      TRƯỚC khi handler chạy: nếu nó rơi xuống nhánh thật thì agent làm đúng quy trình (luôn thử
+      khô trước) sẽ thực hiện thao tác thật mà tưởng đang xem trước.
+      Thử khô cũng KHÔNG ghi khoá idempotency — ghi thì lời gọi thật ngay sau đó bị coi là lặp lại
+      và không bao giờ chạy.
+      Lỗi luôn `{code,message,hint,retryable}` qua OpsErrorFilter, kể cả lỗi không do controller ném.
+    status: done
     commit: null
 
   - id: a4.2-error-reporting

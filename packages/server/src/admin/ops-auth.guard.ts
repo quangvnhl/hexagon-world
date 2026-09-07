@@ -32,6 +32,16 @@ export interface OpsEndpointMeta {
   unitKind?: string;
   /** Rút số lượng tiêu thụ từ body — chỉ dùng khi có `unitKind`. */
   units?: (body: Record<string, unknown>) => number;
+  /**
+   * doc 35 §C2.5 — endpoint này có CÀI `?dry_run=true` chưa.
+   *
+   * Mặc định `false` và interceptor TỪ CHỐI `?dry_run=true` trên endpoint chưa khai. Đây là chỗ
+   * quan trọng nhất của c2.2: nếu `dry_run` lặng lẽ rơi xuống nhánh thật thì một agent làm đúng
+   * quy trình — luôn thử khô trước — sẽ thực hiện thao tác thật mà tưởng mình chỉ đang xem trước.
+   */
+  dryRun?: boolean;
+  /** Chỉ cần khoá hợp lệ, không cần phạm vi nào. Dùng cho endpoint khám phá (openapi.json). */
+  anyKey?: boolean;
 }
 
 /** Gắn phạm vi + tính chất cho một endpoint. Thiếu decorator này ⇒ guard TỪ CHỐI (xem bên dưới). */
@@ -43,6 +53,8 @@ export interface OpsRequest extends Request {
   opsMeta?: OpsEndpointMeta;
   opsPayloadHash?: string;
   opsUnits?: number;
+  /** `?dry_run=true` — handler phải trả kết quả DỰ KIẾN và không được đổi dữ liệu. */
+  opsDryRun?: boolean;
 }
 
 @Injectable()
@@ -79,6 +91,7 @@ export class OpsAuthGuard implements CanActivate {
     req.opsActor = actor;
     req.opsMeta = meta;
     req.opsPayloadHash = hash;
+    req.opsDryRun = isDryRun(req);
 
     const deny = async (code: string, message: string, retryable: boolean) => {
       await this.keys.record({
@@ -89,17 +102,21 @@ export class OpsAuthGuard implements CanActivate {
       return { code, message, retryable };
     };
 
-    if (!hasScope(actor.scopes, meta.scope)) {
+    if (!meta.anyKey && !hasScope(actor.scopes, meta.scope)) {
       throw new ForbiddenException(await deny("scope_denied", `khoá thiếu phạm vi ${meta.scope}`, false));
     }
 
     // Ghi mà không có `Idempotency-Key` thì gửi lại vì lỗi mạng sẽ thực hiện lần hai. Bắt buộc ở
     // TẦNG NÀY, không để từng handler tự nhớ — doc 36 R6: "mọi endpoint ghi mới phải có idempotency".
-    if (meta.isWrite && !idempotencyKey) {
+    // Thử khô không đổi gì nên không cần khoá chống lặp — bắt buộc nó ở đây chỉ làm agent ngại
+    // dùng `dry_run`, tức là làm hỏng đúng thói quen mà §C2.5 muốn tạo ra.
+    if (meta.isWrite && !req.opsDryRun && !idempotencyKey) {
       throw new ForbiddenException(await deny("missing_idempotency_key", "lời gọi ghi phải có header Idempotency-Key", false));
     }
 
-    const units = meta.unitKind && meta.units ? meta.units(body) : 0;
+    // Thử khô không cấp gì ⇒ không tiêu hạn mức LƯỢNG. Trần số lần vẫn tính (nó chống vòng lặp
+    // hỏng), nhưng `ops_daily_usage` đã loại hàng dry_run nên chi phí thật là 0.
+    const units = !req.opsDryRun && meta.unitKind && meta.units ? meta.units(body) : 0;
     req.opsUnits = units;
     const usage = await this.keys.dailyUsage(actor.keyId, meta.unitKind ?? null);
     const limited = overDailyLimit(actor.dailyLimits, usage, { isWrite: meta.isWrite, unitKind: meta.unitKind, units });
@@ -112,6 +129,14 @@ export class OpsAuthGuard implements CanActivate {
 
     return true;
   }
+}
+
+/** Chỉ `?dry_run=true` mới bật. Mọi giá trị khác (kể cả `1`, `yes`) đều là KHÔNG — một chuỗi gõ
+ *  nhầm không được phép trở thành "đã thực hiện thật". */
+export function isDryRun(req: Pick<Request, "query">): boolean {
+  const raw = (req.query as Record<string, unknown> | undefined)?.dry_run;
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return String(value ?? "") === "true";
 }
 
 function headerOf(req: Request, name: string): string | null {
