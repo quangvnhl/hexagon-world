@@ -421,14 +421,31 @@ slices:
       - packages/server/src/campaign/campaign.controller.ts
       - packages/server/src/net/rate-limit.ts
       - packages/server/test/campaign.spec.ts
-      - supabase/migrations/202609010001_campaign_sanity.sql
+      # ĐỔI tên file: 202609010001 nằm TRƯỚC mọi migration đã áp ⇒ phá thứ tự.
+      - supabase/migrations/202609070003_campaign_sanity.sql
+      # THÊM: phép đo thuần tách khỏi controller để kiểm được mà không cần dựng database.
+      # Đây là chỗ quyết định chặn hay không chặn — nó phải test được trực tiếp.
+      - packages/server/src/campaign/campaign-sanity.ts
     depends_on: [a3.1-server-scores-campaign, r3.1-db-migrate]
     dod:
       - "pnpm --filter @hexagon/server test"
     risk: high
     requires_human: false
-    note: "elapsed >= minTime(level) suy từ bán kính + ngưỡng %; elapsed <= maxTime; trần lần hoàn thành/cấp/ngày."
-    status: todo
+    note: >
+      Cận thời gian dùng BẤT ĐẲNG THỨC ĐẲNG CHU (P >= 2*sqrt(pi*A)) — cận toán học tuyệt đối, không
+      hình nào bao được diện tích A bằng đường ngắn hơn — chia cho tốc độ TRẦN cộng toàn bộ bonus
+      totem, rồi nhân SAFETY_FACTOR = 0.5. Rộng như vậy vì doc 35 §9 rủi ro #6: từ chối oan ở đây
+      không phải phiền toái nhỏ mà là người chơi mất năng lượng mỗi lượt và KHÔNG BAO GIỜ mở khoá
+      được cấp kế tiếp. Có một test khoá chiều đó lại ("30s cho cấp 30% đất vẫn qua").
+      Thứ tự kiểm: rate-limit theo player_id (chặn trước mọi truy vấn) -> evaluator -> cận thời gian
+      -> trần ngày. Evaluator TRƯỚC lớp chặn có chủ ý: lượt thất bại thật phải nhận lý do "chưa đạt
+      mục tiêu", không phải một cáo buộc gian lận.
+      Đếm trần hỏng ⇒ CHO QUA (ngược hướng với hạn mức Ops API, nơi hỏng thì đóng): chặn nhầm người
+      vận hành chỉ gây phiền, chặn nhầm người chơi là lấy mất tài nguyên của họ.
+      CÒN THIẾU: các hằng số nằm trong code, chưa đọc từ remote config — server hiện chưa có bộ đọc
+      remote config cho chính nó (controller ở config-api chỉ phục vụ client). Khi có, chuyển
+      SAFETY_FACTOR / DAILY_COMPLETIONS_PER_LEVEL sang đó để nới ngưỡng không cần deploy.
+    status: done
     commit: null
 
   - id: a3.3-replay-verify

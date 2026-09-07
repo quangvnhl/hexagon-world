@@ -38,6 +38,38 @@ export class TokenBucket {
   }
 }
 
+/**
+ * Cửa sổ trượt THEO KHOÁ (player_id, IP, …) — doc 35 §A3 lớp 2.
+ *
+ * Có trần cứng cho số khoá theo dõi: một Map không giới hạn theo `player_id` là một rò rỉ bộ nhớ
+ * tỉ lệ với số người chơi từng ghé qua. Khi đầy thì **xoá sạch**: chấp nhận "tha" một nhịp cho vài
+ * khoá đang bị chặn để đổi lấy trần bộ nhớ cứng. Rate-limit sai một nhịp rẻ hơn nhiều so với rò
+ * bộ nhớ trên tiến trình chạy dài.
+ *
+ * (`analytics.controller.ts` có một bản chép tay cũ hơn của đúng lớp này — gộp lại khi lần sau
+ * chạm vào file đó; lát này không được phép sửa nó.)
+ */
+export class KeyedSlidingWindow {
+  private readonly perKey = new Map<string, SlidingWindowCounter>();
+
+  constructor(
+    private readonly max: number,
+    private readonly windowMs: number,
+    private readonly maxKeys: number = 10_000,
+  ) {}
+
+  /** true = cho qua, false = vượt trần. */
+  allow(key: string, now: number = Date.now()): boolean {
+    if (this.perKey.size >= this.maxKeys) this.perKey.clear();
+    let counter = this.perKey.get(key);
+    if (!counter) {
+      counter = new SlidingWindowCounter(this.max, this.windowMs);
+      this.perKey.set(key, counter);
+    }
+    return counter.record(now);
+  }
+}
+
 /** Đếm số sự kiện trong cửa sổ trượt `windowMs`; báo vượt trần `max`. */
 export class SlidingWindowCounter {
   private readonly hits: number[] = [];
