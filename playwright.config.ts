@@ -20,10 +20,12 @@ const PORT = 3877;
 
 export default defineConfig({
   testDir: "tests/e2e",
-  // 120s, và đây là con số ĐO ĐƯỢC chứ không phải chọn cho rộng rãi: trên WebGL phần mềm
-  // (SwiftShader — thứ CI bắt buộc phải dùng vì runner không có GPU), `/play` mất 30–45 giây để
-  // vẽ được khung hình đầu. Trên GPU thật chỉ vài giây. Đặt 60s như bản đầu là đủ để xanh trên máy
-  // dev rồi đỏ chập chờn trong CI — loại đỏ khiến người ta tắt smoke test đi.
+  // 120s. Con số này dựa trên ĐO ĐƯỢC, và hai lần đo lệch nhau rất xa — chính vì thế mới để rộng:
+  //   • máy dev (Windows, SwiftShader): `/play` mất 30–45 giây để vẽ khung hình đầu;
+  //   • runner ubuntu-latest (SwiftShader, run 34197660719): cả bài `/play` chỉ 8,0 giây.
+  // Tức là chi phí thật KHÔNG suy ra được từ "có GPU hay không" — nó phụ thuộc máy. Đặt 60s như bản
+  // đầu là đủ để xanh trên máy nhanh rồi đỏ chập chờn trên máy chậm — loại đỏ khiến người ta tắt
+  // smoke test đi. Nếu về sau muốn siết lại, hãy siết theo số đo của máy CHẬM NHẤT đang chạy nó.
   timeout: 120_000,
   expect: { timeout: 10_000 },
   fullyParallel: false,
@@ -62,6 +64,13 @@ export default defineConfig({
   ],
   webServer: {
     // `next start` trực tiếp thay vì script `start` của gói: script đó ghim cứng `-p 3890`.
+    //
+    // GIỚI HẠN ĐÃ BIẾT: `next.config` đặt `output: "standalone"`, nên Next in cảnh báo
+    // «"next start" does not work with "output: standalone"». Nó vẫn phục vụ đúng bản build (CI
+    // xác nhận: canvas có ngữ cảnh WebGL sống, HUD hiện, khung hình tăng, console sạch), vì `.next`
+    // vẫn còn đủ file server. Nhưng thứ được deploy thật là `.next/standalone/server.js`, và tầng
+    // này KHÔNG chạm tới nó — vậy nên smoke xanh không chứng minh artifact deploy chạy được.
+    // Khoảng trống đó thuộc về tầng kiểm deploy, không phải tầng 1.
     command: `pnpm exec next start -p ${PORT}`,
     cwd: "packages/client",
     url: `http://127.0.0.1:${PORT}`,
