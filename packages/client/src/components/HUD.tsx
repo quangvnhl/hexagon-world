@@ -381,6 +381,10 @@ export function HUD({
 
       {/* Bảng chỉ số góc trên trái */}
       <div
+        // Móc cho smoke test (lát r2.1). HUD là fragment nên không có phần tử gốc để bám; đây là
+        // khối LUÔN hiện ở mọi phase, nên nó là dấu hiệu tin cậy nhất cho "HUD đã dựng".
+        // Một smoke test bám vào regex trên innerText sẽ mục ngay lần đổi copy đầu tiên.
+        data-testid="hud-stats"
         style={{
           position: "absolute",
           top: `calc(${hudSafeTop} + 36px + var(--telegram-hud-portrait-offset, 0px))`,

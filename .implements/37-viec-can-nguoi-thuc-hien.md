@@ -134,6 +134,31 @@ tab **Conversation**. Nếu chưa bật, job đó vẫn xanh kèm dòng "Chưa b
 
 ---
 
+## Việc 3c — Bật `pg_cron` cho rollup phân tích (2 phút — làm khi muốn số liệu tự tươi)
+
+Lát `a1.5` đã tạo 3 bảng tổng hợp + hàm `refresh_analytics_rollups(p_days)`. Hàm chạy đúng và
+idempotent, nhưng **chưa có lịch tự chạy**, nên `analytics_daily_kpi` (ARPDAU/DAU) chỉ mới bằng lần
+refresh gần nhất. Truy vấn retention và funnel FTUE đọc sự kiện thô nên luôn tươi — chỉ ARPDAU bị cũ.
+
+Agent **cố ý không tự bật** trong migration: `pg_cron` dựng một background worker và job của nó nằm
+ngoài repo — đọc code sẽ không thấy nó tồn tại. Đây là loại thay đổi hạ tầng phải do người bấm.
+
+1. Mở Supabase Dashboard → **Database** → **Extensions** → tìm `pg_cron` → bật.
+2. Vào **SQL Editor**, chạy:
+
+```sql
+select cron.schedule('analytics-rollup', '20 0 * * *',
+                     $$select public.refresh_analytics_rollups(3)$$);
+```
+
+Kiểm tra đạt — `select * from cron.job;` phải thấy dòng `analytics-rollup`.
+
+Chưa bật cũng không sao: chạy tay `select public.refresh_analytics_rollups(3);` trước khi đọc
+ARPDAU. Câu Q3 và Q4 trong [analytics-queries.md](analytics-queries.md) được viết để chỗ số liệu
+cũ **lộ ra** thay vì im lặng.
+
+---
+
 ## Việc 4 — Bot Telegram TEST (chưa gấp — cần ở Pha 7)
 
 Chặn: `b1-*` (rewarded ads), `b5-*` (gói ưu đãi), và phần Stars của `r2.2-e2e-money`.
@@ -162,21 +187,44 @@ printf 'TELEGRAM_BOT_TOKEN=%s\n' 'DÁN_TOKEN' >> deploy/staging.env
 
 ---
 
-## Việc 6 — Nội dung pháp lý (chặn `c4.1-legal-pages`)
+## Việc 6 — Điền 2 ô còn trống của trang pháp lý (5 phút)
 
-Agent dựng **khung** 3 trang `/terms`, `/privacy`, `/paysupport`; **nội dung phải do anh duyệt** vì
-đây là cam kết pháp lý và là điều kiện của Telegram Stars.
+**Nội dung 3 trang đã soạn xong** (lát `c4.1`, 2026-09-04 — anh yêu cầu agent tự viết).
+`/terms`, `/privacy`, `/paysupport` đã chạy, cuộn được, vừa màn hình điện thoại, và có link từ menu
+chính. Sáu mục hỏi trong bản trước đã được chốt như sau:
 
-Cần anh cung cấp 6 mục:
+| Mục | Đã chốt | Ai quyết |
+|---|---|---|
+| Chính sách hoàn Stars | Hoàn trong **14 ngày**; từ chối khi đã tiêu hết coin/năng lượng, đổi ý, hoặc tài khoản bị khoá vì gian lận | agent soạn |
+| Tuổi tối thiểu | **13** (khớp điều kiện của chính Telegram) | agent soạn |
+| Dữ liệu thu thập | Liệt kê theo **schema database thật**, không theo trí nhớ — có test khoá hạn 90 ngày cho khớp `purge_old_analytics_events` | agent soạn |
+| Luật áp dụng | **Việt Nam** | agent soạn |
+| **Tên đơn vị vận hành** | ⛔ **CÒN TRỐNG** | **chỉ anh** |
+| **Email hỗ trợ** | ⛔ **CÒN TRỐNG** | **chỉ anh** |
 
-1. Tên pháp nhân hoặc cá nhân vận hành game (hiện trên điều khoản).
-2. Email hỗ trợ người chơi (dùng cho `/paysupport`).
-3. **Chính sách hoàn Stars**: hoàn trong bao lâu, trường hợp nào từ chối.
-4. Tuổi tối thiểu được chơi.
-5. Dữ liệu thu thập và thời hạn lưu (agent sẽ liệt kê đúng những gì code thật sự thu thập; anh xác nhận).
-6. Quốc gia/luật áp dụng.
+Hai ô cuối agent **cố ý không bịa**: đó là lời khẳng định về việc *ai chịu trách nhiệm pháp lý*, và
+đặt một cái tên nghe hợp lý vào đó là tạo ra một pháp nhân không tồn tại.
 
-Trả lời 6 mục này trong chat là đủ (không có gì bí mật), agent sẽ soạn thành trang.
+### Cách điền
+
+Mở `packages/client/src/lib/legal.ts`, sửa đúng hai dòng đầu:
+
+```ts
+operator: "Tên công ty hoặc tên anh",
+contactEmail: "email-ho-tro@ten-mien.vn",
+```
+
+Tuỳ chọn: `contactTelegram: "@ten_bot_ho_tro"` nếu muốn hiện thêm kênh Telegram.
+
+Kiểm tra đạt: mở `/terms` — băng đỏ **"BẢN NHÁP — CHƯA PHÁT HÀNH ĐƯỢC"** phải **biến mất**. Chừng
+nào băng đó còn, cả ba trang tự khai mình là bản nháp, nên không thể vô tình nộp cho Telegram.
+
+Sau khi điền, đọc lại một lượt và sửa chỗ nào không đúng ý anh — đây là cam kết pháp lý mang tên
+anh, agent chỉ soạn bản đầu.
+
+⚠️ Nội dung này do agent soạn, **không phải luật sư rà**. Nếu game bắt đầu có doanh thu đáng kể hoặc
+người chơi ngoài Việt Nam, nên đưa một luật sư đọc lại — nhất là mục giới hạn trách nhiệm và mục
+hoàn tiền.
 
 ---
 
@@ -215,14 +263,23 @@ Lý do chúng là `high`: chạm tiền, tài khoản người chơi, schema dat
 ```
 Việc 1 (Actions) ✅  →  Việc 2 (branch protection) ⏸️ bỏ qua  →  Việc 3 (database) ✅
                                                                       ↓
-                                     Việc 7 (duyệt PR #2)  ← ĐANG CHẶN lát a3.2, a3.3
+                            Việc 3c (pg_cron, 2 phút)   ·   Việc 6 (pháp lý)
                                                                       ↓
-                                Việc 6 (nội dung pháp lý)  →  Việc 4, 5 khi tới Pha 7
+                                Việc 7 (duyệt PR risk:high)  ←  sẽ cần cho a3.2, c2.1
+                                                                      ↓
+                                                        Việc 4, 5 khi tới Pha 7
 ```
 
-**Đang chặn ngay lúc này: Việc 7** — PR #2 (`risk: high`, sửa lỗ hổng kinh tế ở `campaign/complete`)
-và PR của lát `r3.1` đang chờ anh duyệt. Ngoài ra chỉ còn 1 phút sửa `SUPABASE_DB_URL` ở §3.2 để
-agent khỏi phải ghép chuỗi pooler thủ công mỗi lần.
+**Không có việc nào của anh đang CHẶN agent** (cập nhật 2026-09-04). Các việc còn lại nâng chất
+lượng chứ không mở khoá lát nào:
+
+- **Việc 3c** — chưa bật `pg_cron` thì ARPDAU đọc số của lần refresh gần nhất. Retention và funnel
+  đọc sự kiện thô nên luôn tươi.
+- **Việc 6** — chưa điền thì trang pháp lý tự khai mình là bản nháp.
+- **§3.2** — 1 phút sửa `SUPABASE_DB_URL` sang chuỗi Session pooler, để agent khỏi ghép chuỗi thủ
+  công mỗi lần chạy migration.
+
+Sắp tới sẽ cần **Việc 7**: `a3.2-campaign-sanity` và `c2.1-ops-api-keys` đều là `risk: high`.
 
 ---
 

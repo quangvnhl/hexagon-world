@@ -29,6 +29,6 @@ packages/*/dist/
 deploy/*.env
 deploy/**/*.env
 
-# Playwright (dong bo voi main sau lat r2.1)
+# Kết quả chạy Playwright (lát r2.1) — sinh lại được, và trace có thể vài MB mỗi lần đỏ.
 test-results/
 playwright-report/

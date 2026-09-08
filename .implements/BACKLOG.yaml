@@ -89,13 +89,37 @@ slices:
       - playwright.config.ts
       - tests/e2e/smoke.spec.ts
       - .github/workflows/ci.yml
+      # THÊM so với kế hoạch:
+      - .gitignore                                   # test-results/ + playwright-report/
+      - packages/client/src/components/HUD.tsx       # một dòng data-testid, lý do dưới
+      - pnpm-lock.yaml
     depends_on: [r1-ci]
     dod:
       - "pnpm test:e2e:smoke"
     risk: low
     requires_human: false
-    note: "Mở `/` và `/play`; assert canvas dựng được, HUD có mặt, console KHÔNG có lỗi, FPS > 0 sau 5s."
-    status: todo
+    note: >
+      Mở `/` và `/play`; assert canvas dựng được (VÀ có ngữ cảnh WebGL sống), HUD có mặt,
+      console không có lỗi, vòng lặp render còn chạy sau 5 giây.
+      BỐN thứ phải đúng, mỗi thứ đều đã làm bài này ĐỎ GIẢ ít nhất một lần trong lúc dựng:
+      (1) `channel: "chromium"` — mặc định mới của Playwright là headless-shell KHÔNG có WebGL;
+      (2) cổng RIÊNG 3877 + `reuseExistingServer: false` — bám vào dev server có sẵn ở 3890 khiến
+          bài kiểm đo nhầm một bản build khác (một lần đo đúng màn hình lỗi của dev server);
+      (3) lọc tiếng ồn theo ORIGIN chứ không theo regex chuỗi lỗi — thông điệp của Chromium là
+          "Failed to load resource: net::ERR_CONNECTION_REFUSED", KHÔNG kèm URL, nên regex theo
+          cổng 8910 không khớp gì cả;
+      (4) chờ bằng `expect.poll` trên KÍCH THƯỚC canvas — `app/loading.tsx` + suspense của React giữ
+          canvas trong wrapper `display:none`, ở đó Playwright coi là "visible" nhưng boundingBox = 0.
+      `data-testid="hud-stats"` thêm vào HUD vì HUD là fragment, không có phần tử gốc để bám; một
+      smoke test bám vào regex trên innerText sẽ mục ngay lần đổi copy đầu tiên.
+      Timeout 120s dựa trên số ĐO ĐƯỢC, và hai lần đo lệch xa nhau: máy dev (Windows, SwiftShader)
+      mất 30–45 giây để `/play` vẽ khung hình đầu, còn runner ubuntu-latest chỉ 8,0 giây cho cả bài.
+      Chi phí thật không suy ra được từ "có GPU hay không" — nó phụ thuộc máy, nên để rộng.
+      Đã chạy 3 lần liên tiếp trên máy dev (xanh cả 3) và 1 lần trên CI (run 34197660719, xanh).
+      GIỚI HẠN ĐÃ BIẾT: `next.config` đặt `output: "standalone"` nên `next start` in cảnh báo; nó
+      vẫn phục vụ đúng bản build, nhưng artifact deploy thật là `.next/standalone/server.js` và
+      tầng 1 KHÔNG chạm tới nó — smoke xanh không chứng minh artifact deploy chạy được.
+    status: done
     commit: null
 
   - id: r2.3-measure-not-look
@@ -597,15 +621,24 @@ slices:
     doc: "35#A1"
     title: "Rollup analytics_daily + 3 truy vấn mẫu (retention, funnel FTUE, ARPDAU)"
     files:
-      - supabase/migrations/202609010003_analytics_rollup.sql
+      # ĐỔI tên file so với kế hoạch: 202609010003 nằm TRƯỚC các migration đã áp
+      # (202609030001, 202609040001) nên sẽ phá thứ tự áp. Dùng mốc sau chúng.
+      - supabase/migrations/202609040002_analytics_rollup.sql
       - .implements/analytics-queries.md
+      - .implements/37-viec-can-nguoi-thuc-hien.md
     depends_on: [a1.4-server-events]
     dod:
       - "node scripts/db-migrate.mjs --target staging"
     risk: medium
-    requires_human: true
-    human_note: "Cần staging + dữ liệu; sinh tải bằng packages/server/test/load/ rồi đối chiếu số."
-    status: todo
+    requires_human: false
+    note: >
+      Cờ requires_human GỠ ngày 2026-09-04. Lý do cũ ("cần staging + dữ liệu") đã hết hiệu lực:
+      chốt của chủ dự án là Supabase đang deploy CHÍNH LÀ dev, `--target staging` trỏ vào đó, và
+      bảng đã có dữ liệu thật (53 hàng sự kiện từ đợt kiểm thử FTUE). Cả 4 truy vấn trong
+      analytics-queries.md đã chạy thật trên DB đó và có số kèm theo trong tài liệu.
+      CÒN LẠI cho người: bật pg_cron để rollup tự tươi — doc 37 Việc 3c. Không bật thì chỉ
+      ARPDAU bị cũ; retention và funnel đọc sự kiện thô nên luôn đúng.
+    status: done
     commit: null
 
   - id: a2.1-remote-config-api
@@ -787,13 +820,23 @@ slices:
       - packages/client/app/terms/page.tsx
       - packages/client/app/privacy/page.tsx
       - packages/client/app/paysupport/page.tsx
+      # THÊM so với kế hoạch:
+      - packages/client/src/lib/legal.ts            # dữ kiện tách khỏi câu chữ, 1 chỗ sửa
+      - packages/client/src/components/LegalPage.tsx # khung cuộn được + băng cảnh báo chưa điền
+      - packages/client/src/lib/__tests__/legal.test.ts
+      - packages/client/src/components/StartPanel.tsx # 3 link ở menu — Telegram đòi với tới được
     depends_on: []
     dod:
       - "pnpm --filter @hexagon/client build"
     risk: low
-    requires_human: true
-    human_note: "NỘI DUNG pháp lý phải do người chịu trách nhiệm duyệt — agent chỉ dựng khung trang."
-    status: todo
+    requires_human: false
+    note: >
+      Chủ dự án yêu cầu agent tự soạn nội dung (2026-09-04), nên cờ requires_human gỡ.
+      NHƯNG hai ô `operator` và `contactEmail` trong legal.ts vẫn để TRỐNG có chủ đích: bịa một
+      pháp nhân là tạo ra tổ chức không tồn tại. Chưa điền thì cả ba trang tự hiện băng đỏ
+      "BẢN NHÁP — CHƯA PHÁT HÀNH ĐƯỢC", nên không thể lặng lẽ trông như trang thật.
+      Còn lại cho người: điền hai ô đó + đọc lại nội dung — doc 37 Việc 6.
+    status: done
     commit: null
 
   - id: c4.2-self-serve-privacy

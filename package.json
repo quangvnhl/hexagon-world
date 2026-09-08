@@ -21,9 +21,11 @@
     "dev:server": "pnpm --filter @hexagon/server start:dev",
     "dev:admin": "pnpm --filter @hexagon/admin dev",
     "build:admin": "pnpm --filter @hexagon/admin build",
-    "test:integration": "pnpm --filter @hexagon/server test:integration"
+    "test:integration": "pnpm --filter @hexagon/server test:integration",
+    "test:e2e:smoke": "playwright test --config playwright.config.ts"
   },
   "devDependencies": {
+    "@playwright/test": "^1.63.0",
     "pg": "^8.23.0",
     "typescript": "^5.7.0"
   }
