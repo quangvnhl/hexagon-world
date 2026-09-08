@@ -107,6 +107,9 @@ Kết quả trên dev (2026-09-04), dữ liệu thật từ đợt kiểm thử 
 
 Mốc của doc 35 §8: **hoàn thành FTUE ≥ 70%**.
 
+`ftue_step` mang bốn trường: `step` (`move`/`claim`/`survive`/`done`), `index`, `total`,
+`outcome` (`enter`/`complete`/`skipped`), và từ lát d1.2 thêm `seconds` — giây kể từ lúc FTUE bắt đầu.
+
 Đọc thẳng sự kiện thô, không qua rollup: bước FTUE nằm trong `props->>'step'`, mà bảng tổng hợp
 **cố ý không** fan-out theo props (mỗi tên sự kiện có bộ khoá props riêng; một bảng cố phủ hết sẽ
 có hàng chục cột rỗng). Index `analytics_events_name_time_idx` tồn tại chính cho truy vấn này.
@@ -141,17 +144,75 @@ where name = 'ftue_step' and source = 'client' and props->>'outcome' = 'skipped'
 group by 1 order by thiet_bi desc;
 ```
 
-Mẫu số `b1_lai` là thiết bị **vào được bước 1**, không phải mọi thiết bị mở app. Chênh lệch giữa
-`app_open` và `b1_lai` là người rơi *trước cả FTUE* — hỏng tải trang, chặn WebGL, thoát ngay. Muốn
-thấy chỗ đó:
+Hai cột `xong` và `bo_qua` **loại trừ nhau** — một thiết bị không thể nằm ở cả hai. Đó không phải
+may mắn: `ftueFunnel.ts` chốt kết cục ở sự kiện đầu tiên trong hai loại đó và im lặng với mọi lời
+gọi sau. Trước lát d1.2 tính chất này chỉ được giữ bởi việc nút "Bỏ qua" bị ẩn khi hiện lời khen —
+tức là bởi CSS và thứ tự render, không phải bởi phép đo.
+
+### Người bỏ dở: loay hoay mãi, hay đóng app sau 5 giây?
+
+Cùng một tỉ lệ rơi, hai nguyên nhân này cần hai cách sửa ngược nhau (nới ngưỡng vs. rút ngắn mở
+đầu). `seconds` có từ lát d1.2 nên **chỉ đọc được với sự kiện từ bản đó trở đi** — mệnh đề
+`props ? 'seconds'` ở dưới loại bỏ dữ liệu cũ thay vì lặng lẽ coi nó là 0 giây.
 
 ```sql
-select
-  (select count(distinct anon_id) from public.analytics_events
-    where name = 'app_open' and occurred_at >= (now() at time zone 'UTC') - interval '30 days') as mo_app,
-  (select count(distinct anon_id) from public.analytics_events
-    where name = 'ftue_step' and occurred_at >= (now() at time zone 'UTC') - interval '30 days') as vao_ftue;
+select props->>'outcome' as ket_cuc,
+       props->>'step'    as o_buoc,
+       count(distinct anon_id) as thiet_bi,
+       round(percentile_cont(0.5) within group (order by (props->>'seconds')::numeric)) as p50_giay,
+       round(percentile_cont(0.9) within group (order by (props->>'seconds')::numeric)) as p90_giay
+from public.analytics_events
+where name = 'ftue_step' and source = 'client'
+  and props ? 'seconds'
+  and props->>'outcome' in ('complete', 'skipped')
+  and occurred_at >= (now() at time zone 'UTC') - interval '30 days'
+group by 1, 2 order by thiet_bi desc;
 ```
+
+Trên dev câu này hiện trả về **rỗng** — đúng như phải thế, vì `seconds` mới có từ lát d1.2 và chưa
+bản client nào phát nó. Đã kiểm bằng cách chèn hai hàng tổng hợp mang `seconds`, chạy lại (ra
+`complete/done p50=74s` và `skipped/claim p50=11s`), rồi xoá đúng hai hàng đó. Nói ra vì "truy vấn
+trả rỗng" và "truy vấn viết sai" nhìn giống hệt nhau trong một tài liệu.
+
+### Mẫu số: thiết bị MỚI, không phải mọi thiết bị mở app
+
+Mẫu số `b1_lai` là thiết bị **vào được bước 1**. Câu hỏi tiếp theo — bao nhiêu người rơi *trước cả*
+FTUE (hỏng tải trang, chặn WebGL, thoát ngay) — thì phải cẩn thận.
+
+> **Đừng so `app_open` với `ftue_step`.** FTUE chỉ hiện với thiết bị CHƯA từng xem
+> (`hexagon.ftue.done` trong localStorage). Người chơi quay lại mở app mỗi ngày và **không bao giờ**
+> phát `ftue_step` nữa — đúng như thiết kế. So thẳng hai con số đó sẽ quy toàn bộ người chơi trung
+> thành thành "rơi trước FTUE", và tỉ lệ đó tệ dần đi theo đúng mức độ sản phẩm giữ chân được người.
+> Một chỉ số càng thành công càng trông càng thảm.
+
+Mẫu số đúng là **thiết bị mới**, đọc từ `analytics_device_first_seen` (bảng do `a1.5` dựng):
+
+```sql
+with moi as (
+  select anon_id from public.analytics_device_first_seen
+  where first_day >= ((now() at time zone 'UTC')::date - 30)
+),
+vao as (
+  select distinct e.anon_id
+  from public.analytics_events e
+  join moi on moi.anon_id = e.anon_id
+  where e.name = 'ftue_step'
+    and e.occurred_at >= (now() at time zone 'UTC') - interval '30 days'
+)
+select (select count(*) from moi) as thiet_bi_moi,
+       (select count(*) from vao) as vao_ftue,
+       round(100.0 * (select count(*) from vao)
+             / nullif((select count(*) from moi), 0), 1) as pct_vao_ftue;
+```
+
+Kết quả trên dev: `thiet_bi_moi=3, vao_ftue=2, pct_vao_ftue=66.7`.
+
+Đáng chú ý: câu SAI ở trên cho ra **đúng cùng con số** trên dữ liệu dev (`mo_app=3, vao_ftue=2`),
+vì ở đây chưa có ai quay lại lần thứ hai. Lỗi loại này chỉ hiện ra khi sản phẩm bắt đầu giữ được
+người — tức là đúng lúc người ta bắt đầu tin vào báo cáo.
+
+`analytics_device_first_seen` do `refresh_analytics_rollups()` ghi, nên bảng chỉ mới tới lần chạy
+gần nhất; xem mục **Bảo trì** ở cuối file.
 
 ---
 

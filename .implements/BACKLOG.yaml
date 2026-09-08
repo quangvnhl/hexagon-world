@@ -927,11 +927,34 @@ slices:
     files:
       - packages/client/src/components/Ftue.tsx
       - .implements/analytics-queries.md
+      # THÊM so với kế hoạch — lý do ở `note`:
+      - packages/client/src/components/ftueFunnel.ts
+      - packages/client/src/components/__tests__/ftueFunnel.test.ts
     depends_on: [d1.1-ftue, a1.5-rollup-queries]
     dod:
       - "pnpm --filter @hexagon/client test"
     risk: low
     requires_human: false
-    note: "Mục tiêu doc 35 §8: hoàn thành FTUE >= 70%."
-    status: todo
+    note: >
+      Mục tiêu doc 35 §8: hoàn thành FTUE >= 70%.
+      Phần lớn phần ĐO đã có sẵn: `d1.1` phát `ftue_step`, `a1.5` viết §Q2. Việc thật còn lại của
+      lát này là hai chỗ khiến con số 70% CHƯA dùng được:
+      (1) KHÔNG có test nào khoá phép đo. Xoá lời gọi `track` trong `Ftue.tsx` đi thì game vẫn chạy,
+          typecheck vẫn xanh, smoke vẫn xanh — chỉ chỉ số lặng lẽ về 0. Nên luật phát sự kiện được
+          tách ra `ftueFunnel.ts` (thuần, test bằng dữ liệu — đúng cách `ftueSteps.ts` đã làm với
+          luật vượt bước) và khoá bằng 11 bài test: phát đúng một lần/bậc dù `onStats` chạy 24
+          lần/giây, lùi bước không phát lại, và `xong`/`bo_qua` loại trừ nhau theo CẤU TRÚC chứ
+          không nhờ nút "Bỏ qua" bị ẩn (một tính chất của CSS, không phải của phép đo).
+          Nói cho đúng mức: 11 bài đó khoá LUẬT phát sự kiện, KHÔNG khoá được việc `Ftue.tsx` có gọi
+          luật đó không — xoá `track(...)` đi thì chúng vẫn xanh. Bịt nốt cần jsdom/testing-library
+          (client chưa có) hoặc một bài E2E chơi hết FTUE, mà smoke tầng 1 lại cố ý đặt sẵn
+          `hexagon.ftue.done`. Thuộc tầng 2/3 doc 36 §R2.
+      (2) MẪU SỐ của funnel sai: §Q2 so `app_open` với `ftue_step` và gọi chênh lệch là "rơi trước
+          FTUE". Nhưng FTUE chỉ hiện với thiết bị chưa từng xem, nên mọi người chơi QUAY LẠI đều bị
+          quy thành rơi — chỉ số càng thành công trông càng thảm. Đổi sang mẫu số "thiết bị mới"
+          đọc từ `analytics_device_first_seen` (bảng a1.5 dựng). Trên dữ liệu dev hai câu ra CÙNG
+          một số vì chưa có ai quay lại — đó chính là lý do lỗi này phải sửa trước khi phát hành.
+      Thêm `seconds` vào sự kiện: cùng một tỉ lệ rơi, "loay hoay mãi không qua" và "đóng app sau 5
+      giây" cần hai cách sửa ngược nhau, và không có trường này thì không phân biệt được.
+    status: done
     commit: null
