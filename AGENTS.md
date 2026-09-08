@@ -3,6 +3,7 @@
 > Đọc file này TRƯỚC khi sửa bất cứ thứ gì. Luật ở đây thắng mọi suy đoán tiện tay.
 > Nguồn thiết kế: `.implements/` (đọc `README.md` để biết thứ tự). Nguồn *việc*: `.implements/BACKLOG.yaml`.
 > Bối cảnh vì sao có file này: `.implements/36-phase-5-5-automation-rails.md` (R5, R6).
+> Nguồn *cách làm việc*: skill `karpathy-guidelines` — xem §7.
 
 ## 0. Vòng làm việc chuẩn của một lát
 
@@ -126,3 +127,26 @@ tắt test đang đỏ, log trong đường nóng gameplay, server đọc thẳn
 Lý do dưới 8 ký tự không được tính là lý do. Miễn trừ được in ra trong log để người duyệt còn thấy.
 Thêm luật mới thì thêm cả test trong `scripts/review-guard.test.mjs` — một cổng chặn viết sai hoặc
 bỏ lọt, hoặc chặn nhầm rồi bị vô hiệu hoá cả cụm.
+
+## 7. Cách làm việc (skill `karpathy-guidelines`, thêm 2026-09-08)
+
+`.claude/skills/karpathy-guidelines/SKILL.md` — bộ quy tắc hành vi lấy từ
+[multica-ai/andrej-karpathy-skills](https://github.com/multica-ai/andrej-karpathy-skills) (@ `2c60614`),
+rút ra từ ghi chép của Andrej Karpathy về các kiểu sai thường gặp khi LLM viết code. Bốn nhóm:
+nghĩ trước khi code · đơn giản trước · sửa đúng chỗ · chạy theo tiêu chí nghiệm thu được.
+
+**Thứ tự ưu tiên:** file này là **luật**, skill kia là **cách làm việc**. Nói khác nhau về cùng một
+việc thì file này thắng — nó chứa những điều cấm không thương lượng được (§1).
+
+Ba chỗ đã chốt với chủ dự án khi cài, ghi đầy đủ ở cuối file skill:
+
+| | |
+|---|---|
+| **§1 "chưa rõ thì dừng và hỏi"** | **Áp dụng, và nó THAY cho lệ cũ "tự chạy hết kế hoạch, đừng hỏi".** Một chỗ diễn giải được hai cách mà hai cách dẫn tới việc khác nhau ⇒ dừng và hỏi. Khớp với §0.5 vốn đã có sẵn ở trên. |
+| **§3 "đừng sửa lân cận"** | Giữ nguyên với code. **Một ngoại lệ: chú thích mô tả SAI điều đang xảy ra thì được sửa** — nó là thứ người sau tin mà không kiểm. Phải nói rõ trong commit/PR. Không mở rộng thành "viết lại cho hay hơn". |
+| **§2 "không trừu tượng hoá cho code dùng một lần"** | KHÔNG cấm việc tách phần thuần ra để test được (`ftueSteps.ts`, `ftueFunnel.ts`, `campaign-sanity.ts`). Tách vì **kiểm được** thì đúng; tách vì "sau này có thể cần" mới là thứ §2 cấm. |
+
+Cập nhật từ upstream: tải lại `skills/karpathy-guidelines/SKILL.md` rồi dán lại phần dưới dòng phân
+cách. Phần trên dòng đó là bản sao nguyên văn, nên `git diff` chỉ cho thấy thay đổi thật của upstream.
+
+*(Repo nguồn KHÔNG có file LICENSE ở gốc, dù frontmatter của skill khai `license: MIT`.)*
