@@ -187,6 +187,44 @@ printf 'TELEGRAM_BOT_TOKEN=%s\n' 'DÁN_TOKEN' >> deploy/staging.env
 
 ---
 
+## Việc 3d — Lên lịch xoá tài khoản quá hạn (1 phút — **làm cùng lúc với Việc 3c**)
+
+Đây **không** cùng loại với 3c. 3c chỉ làm số liệu tươi hơn; việc này là **giữ đúng một lời hứa đã
+in ra cho người dùng đọc**.
+
+Trang `/privacy` (lát c4.1) viết nguyên văn:
+
+> *"Khi bạn yêu cầu xoá, tài khoản bị vô hiệu ngay và dữ liệu chơi bị xoá hẳn sau 30 ngày"*
+
+Lát `c4.2` đã làm vế đầu (`DELETE /v1/me` vô hiệu ngay) và đã viết sẵn vế sau —
+`purge_deleted_players(p_grace_days integer default 30)` trong migration `202609080002`. Hàm chạy
+đúng và idempotent (đã kiểm trên DB dev bằng một giao dịch rollback: xoá sạch định danh + dữ liệu
+chơi, giữ chứng từ, chạy lần hai trả 0). **Nhưng chưa có lịch chạy.**
+
+Chừng nào chưa có lịch, câu trên trang `/privacy` là một câu **sai**. Không ai bấm thì không có
+tài khoản nào bị xoá hẳn cả.
+
+Sau khi đã bật `pg_cron` ở Việc 3c, chạy thêm:
+
+```sql
+select cron.schedule('purge-deleted-players', '40 0 * * *',
+                     $$select public.purge_deleted_players(30)$$);
+```
+
+Kiểm nó có việc để làm hay không (an toàn, chỉ đọc):
+
+```sql
+select count(*) as cho_xoa
+from public.players
+where status = 'deleted' and purged_at is null
+  and deleted_at < now() - interval '30 days';
+```
+
+Con số `30` ở lệnh `cron.schedule` **phải** khớp `LEGAL.deletionGraceDays` trong
+`packages/client/src/lib/legal.ts`. Có test khoá hằng số controller với cả `legal.ts` lẫn mặc định
+trong migration, nhưng test **không** nhìn thấy được tham số bạn gõ vào `cron.schedule` — nên chỗ
+này là chỗ duy nhất phải tự để ý.
+
 ## Việc 6 — Điền 2 ô còn trống của trang pháp lý (5 phút)
 
 **Nội dung 3 trang đã soạn xong** (lát `c4.1`, 2026-09-04 — anh yêu cầu agent tự viết).
