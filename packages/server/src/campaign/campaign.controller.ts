@@ -10,6 +10,7 @@ import {
 import { SessionService } from "../auth/session.service";
 import { SupabaseService } from "../database/supabase.service";
 import { ServerAnalyticsService } from "../analytics/server-analytics.service";
+import { ReplayService } from "./replay.service";
 import { KeyedSlidingWindow } from "../net/rate-limit";
 import { createLogger } from "../logging";
 import {
@@ -48,6 +49,10 @@ export class CampaignController {
     private readonly sessions: SessionService,
     private readonly db: SupabaseService,
     private readonly analytics: ServerAnalyticsService,
+    // Thêm ở CUỐI danh sách có chủ ý: chèn vào giữa làm lệch vị trí mọi tham số phía sau, và mọi
+    // nơi dựng controller bằng tham số vị trí sẽ nhận nhầm đối tượng mà typecheck không bắt được
+    // (cả hai đều là `object`). Đã thử chèn vào giữa và 8 test đỏ vì đúng lý do đó.
+    private readonly replay: ReplayService,
   ) {}
 
   /** Danh sách cấp ĐÃ PUBLISH (nguồn Supabase — doc 29 L2). Public, không cần session. */
@@ -110,7 +115,7 @@ export class CampaignController {
   // review-guard: bỏ qua write-endpoint-idempotency — chống lặp nằm ở khoá tự nhiên
   // `campaign_plays.completed_at`: RPC complete_campaign_level khoá hàng rồi trả progress cũ
   // nếu play đã tiêu, nên gọi lại không thưởng thêm lần nào.
-  @Post("campaign/complete") async complete(@Req() req: Request, @Body() body: { playId?: string; facts?: Partial<CampaignOutcomeFacts> }) {
+  @Post("campaign/complete") async complete(@Req() req: Request, @Body() body: { playId?: string; facts?: Partial<CampaignOutcomeFacts>; trace?: unknown }) {
     const player = await this.sessions.resolve(req);
     // Chặn NGAY sau khi biết danh tính, trước mọi truy vấn nghiệp vụ: một vòng lặp farm không được
     // phép làm ta tốn một lượt đọc `campaign_plays` + `campaign_levels` nào. (Không đặt được trước
@@ -130,9 +135,9 @@ export class CampaignController {
     }
 
     const { data: play, error } = await this.db.from("campaign_plays")
-      .select("id,level_id,created_at,completed_at").eq("id", body.playId).eq("player_id", player.id).single();
+      .select("id,level_id,created_at,completed_at,seed").eq("id", body.playId).eq("player_id", player.id).single();
     if (error || !play) throw new BadRequestException("play_not_found");
-    const row = play as { level_id: string; created_at: string; completed_at: string | null };
+    const row = play as { level_id: string; created_at: string; completed_at: string | null; seed?: number };
 
     const { data: level } = await this.db.from("campaign_levels")
       .select("config,rewards").eq("id", row.level_id).single();
@@ -196,7 +201,29 @@ export class CampaignController {
     // idempotent nên gọi lại trả đúng mốc cũ ⇒ `(event_id, occurred_at)` lặp y hệt ⇒ database khử
     // trùng thật sự. Một truy vấn thêm trên khoá chính, và không nằm ở đường nóng.
     void this.emitCampaignComplete(player.id, body.playId, row.level_id, outcome, lvl.rewards);
+    // doc 35 §A3 lớp 3 — xác minh sâu, xếp lịch SAU khi phần thưởng đã cấp và không chờ kết quả.
+    // Đặt ở đây chứ không trước RPC là có chủ ý: lớp này KHÔNG chặn, nó chỉ đánh dấu nghi vấn để
+    // người xem lại (doc 35 §A3 lớp 3 + §9 rủi ro #6). Chặn bằng một phép chạy lại tốn CPU cũng
+    // đồng nghĩa mỗi lần nó sai là một người chơi thật mất lượt.
+    if (body.trace !== undefined) void this.storeTrace(body.playId, body.trace);
+    this.replay.schedule({
+      playId: body.playId,
+      seed: Number(row.seed ?? 0),
+      config: (lvl.config ?? {}) as MatchConfigInput,
+      trace: body.trace,
+      claimed: body.facts,
+    });
+
     return progress;
+  }
+
+  /** Lưu trace để còn xem lại về sau. Hỏng thì thôi — mất trace không được làm hỏng lượt chơi. */
+  private async storeTrace(playId: string, trace: unknown): Promise<void> {
+    try {
+      await this.db.from("campaign_plays").update({ input_trace: trace }).eq("id", playId);
+    } catch {
+      // Có chủ ý.
+    }
   }
 
   /**

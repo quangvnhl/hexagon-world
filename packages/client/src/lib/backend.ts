@@ -1,4 +1,5 @@
 import type { PlayerAppearance, CampaignLevel, CampaignOutcomeFacts } from "@hexagon/shared";
+import type { InputTrace } from "@hexagon/shared";
 import { getTelegramWebApp } from "./telegram";
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8910";
@@ -86,7 +87,12 @@ export async function equipItem(item: CatalogItem): Promise<void> {
 
 export interface EnergyStatus { current: number; max: number; regen_interval_seconds: number; next_at: string | null; refill_coin_cost: number; refill_energy_amount: number; }
 export interface LevelProgress { level_id: string; status: string; stars: number; best_score: number; completed_at: string; }
-export interface StartPlayResult { playId: string; energy: EnergyStatus; }
+export interface StartPlayResult {
+  playId: string;
+  energy: EnergyStatus;
+  /** [doc 35 §A3 lớp 3] Seed của ván, do SERVER cấp. Vắng ⇒ server chưa có lát a3.3. */
+  seed?: number;
+}
 
 /** Đọc năng lượng hiện tại (server tính hồi lười). */
 export async function getEnergy(): Promise<EnergyStatus> {
@@ -121,10 +127,15 @@ export async function startCampaignLevel(levelId: string): Promise<StartPlayResu
 
 /** Nộp kết quả cấp: gửi DỮ KIỆN THÔ, server tự chấm đạt/sao/điểm rồi phát thưởng + mở khóa.
  *  Client KHÔNG gửi `objectiveMet`/`stars`/`score` nữa (doc 35 §A3 — chống farm thưởng). */
-export async function completeCampaignLevel(playId: string, facts: CampaignOutcomeFacts): Promise<LevelProgress> {
+export async function completeCampaignLevel(
+  playId: string,
+  facts: CampaignOutcomeFacts,
+  /** [doc 35 §A3 lớp 3] Chuỗi input để server chạy lại và đối chiếu. Vắng ⇒ server chỉ bỏ qua. */
+  trace?: InputTrace | null,
+): Promise<LevelProgress> {
   return json<LevelProgress>("/v1/campaign/complete", {
     method: "POST",
-    body: JSON.stringify({ playId, facts }),
+    body: JSON.stringify({ playId, facts, ...(trace ? { trace } : {}) }),
   });
 }
 

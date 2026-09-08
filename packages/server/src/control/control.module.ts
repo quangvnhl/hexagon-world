@@ -6,6 +6,7 @@ import { AnalyticsController } from "../analytics/analytics.controller";
 import { ServerAnalyticsService } from "../analytics/server-analytics.service";
 import { AuthController } from "../auth/auth.controller";
 import { CampaignController } from "../campaign/campaign.controller";
+import { ReplayService } from "../campaign/replay.service";
 import { DevAuthController } from "../auth/dev-auth.controller";
 import { EnergyController } from "../energy/energy.controller";
 import { GoogleOAuthController } from "../auth/google-oauth.controller";
@@ -23,6 +24,6 @@ import { ControlBootstrapService } from "./control-bootstrap.service";
 
 @Module({
   controllers: [AdminController, AnalyticsController, AuthController, CampaignController, DevAuthController, EnergyController, GoogleOAuthController, TelegramAuthController, MatchesController, TelegramPaymentsController, PlayersController, RegionsController, RemoteConfigController, ShopController],
-  providers: [IdentityService, SessionService, TicketService, ControlBootstrapService, ServerAnalyticsService, OpsKeysService, OpsAuditInterceptor],
+  providers: [ReplayService, IdentityService, SessionService, TicketService, ControlBootstrapService, ServerAnalyticsService, OpsKeysService, OpsAuditInterceptor],
 })
 export class ControlModule {}

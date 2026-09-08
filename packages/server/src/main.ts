@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
+import { json } from "express";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
 import { existsSync } from "node:fs";
@@ -26,6 +27,11 @@ async function bootstrap(): Promise<void> {
     // Mọi `Logger` sẵn có trong code cũng đi qua đây ⇒ ra JSON, không phải sửa từng chỗ gọi.
     logger: new NestPinoLogger(logger),
   });
+  // Trần thân request, ĐẶT TƯỜNG MINH. Mặc định của body-parser là 100 KB, và `inputTrace` của
+  // lát a3.3 làm thân `campaign/complete` nặng 79,1 KB cho một ván 90 giây — tức là ván dài hơn
+  // ~115 giây sẽ nhận 413 và người chơi mất phần thưởng. `MAX_TRACE_FRAMES` chặn ở 307,2 KB, nên
+  // 512 KB là trần có chỗ thở mà vẫn chặn payload dựng để làm kiệt bộ nhớ.
+  app.use(json({ limit: "512kb" }));
   app.use(cookieParser());
   app.use(requestLogger(logger));
   app.enableCors({

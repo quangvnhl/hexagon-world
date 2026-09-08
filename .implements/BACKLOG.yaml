@@ -483,13 +483,47 @@ slices:
       - packages/server/src/campaign/replay.service.ts
       - packages/shared/src/replay.ts
       - packages/server/test/replay.spec.ts
+      # NỚI PHẠM VI (chốt với chủ dự án 2026-09-08). `files:` gốc chỉ có 3 file mới, nhưng cả ba
+      # tiền đề của thiết kế đều SAI ở thời điểm làm — xem `note`. Làm đúng `files:` sẽ cho ra một
+      # engine không nối được vào đâu và không xác minh được ván thật nào.
+      - supabase/migrations/202609080001_campaign_replay.sql   # cột seed/input_trace/verify_*
+      - packages/shared/src/index.ts                            # export ./replay
+      - packages/shared/src/__tests__/replay.test.ts            # test engine (thuần)
+      - packages/server/src/campaign/campaign.controller.ts     # trả seed, nhận trace, xếp lịch
+      - packages/server/src/control/control.module.ts           # đăng ký ReplayService
+      - packages/server/test/campaign.spec.ts                   # stub ReplayService
+      - packages/client/src/lib/backend.ts                      # seed ra, trace vào
+      - packages/client/src/components/CampaignScene.tsx        # seed vào config, gửi trace
+      - packages/client/src/components/GameScene.tsx            # ghi input trong vòng lặp
     depends_on: [t1-seeded-rng, a3.2-campaign-sanity]
     dod:
       - "pnpm --filter @hexagon/server test"
     risk: high
     requires_human: false
-    note: "Chạy bất đồng bộ; lệch ⇒ đánh dấu nghi vấn, KHÔNG thu hồi tự động. P2 — làm sau khi Pha 6 đóng."
-    status: todo
+    note: >
+      Chạy bất đồng bộ; lệch ⇒ đánh dấu nghi vấn, KHÔNG thu hồi tự động.
+      BA TIỀN ĐỀ CỦA THIẾT KẾ ĐỀU SAI khi bắt tay vào làm, nên lát này phải dựng cả ba trước:
+        1. doc 35 nói "seed lưu trong campaign_plays" — bảng KHÔNG có cột seed. Đã thêm, và seed
+           sinh TRONG RPC `start_campaign_level` chứ không phải bằng một UPDATE riêng: gọi lại cùng
+           idempotency_key phải trả đúng seed cũ, nếu không một lần thử lại sau lỗi mạng sẽ ghi đè
+           seed của ván đang chơi dở và ván đó vĩnh viễn không xác minh được.
+        2. Campaign KHÔNG đặt seed ở đâu cả ⇒ ván chạy bằng Math.random ⇒ không tất định. Nay
+           server cấp seed lúc start, client đưa thẳng vào MatchConfig.
+        3. doc 35 phác thảo trace là "(seq + heading), vài KB" — KHÔNG đủ: client chạy dt biến
+           thiên từ useFrame. Trace phải mang cả dt. Giải bằng LƯỢNG TỬ HOÁ ở ranh giới: client làm
+           tròn dt về micro giây, heading về micro radian, rồi mô phỏng bằng CHÍNH giá trị đã làm
+           tròn (`TraceRecorder.record()` trả về giá trị đó để bên gọi không thể dùng nhầm số thô).
+           Nhờ vậy trace là mảng số nguyên và chạy lại khớp tuyệt đối. KHÔNG đổi sang bước thời
+           gian cố định — dt vẫn biến thiên, chỉ tròn tới 1 µs (dưới 0,003% một khung 60fps).
+      LUẬT KHÔNG ĐƯỢC PHÁ: server chạy lại bằng seed của CHÍNH NÓ, không bao giờ bằng seed trong
+      trace — trace do client gửi nên seed trong đó cũng do client chọn. Khoá ở replay.spec.ts.
+      Mọi lý do "không xác minh được" ra `skipped`, KHÔNG ra `mismatch`: 73 lượt chơi trên DB dev có
+      seed = 0 (trước migration), và gọi chúng là gian lận sẽ chôn vùi những lần lệch thật.
+      ĐÃ THỬ VÀ BỎ: một test "đổi seed ⇒ ván khác". Tính chất đó KHÔNG đúng — người chơi lái vòng
+      tròn khép được diện tích như nhau dù spawn ở đâu, và 8 bot trong 20 giây vẫn chưa kịp chạm
+      tới. Hệ quả đáng nhớ: lớp này KHÔNG phát hiện được seed giả qua dữ kiện của người chơi, nên
+      luật "dùng seed của server" ở trên không phải cẩn thận thừa mà là chỗ duy nhất chặn được.
+    status: done
     commit: null
 
   - id: a1.1-analytics-schema
