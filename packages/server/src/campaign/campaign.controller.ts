@@ -10,6 +10,14 @@ import {
 import { SessionService } from "../auth/session.service";
 import { SupabaseService } from "../database/supabase.service";
 import { ServerAnalyticsService } from "../analytics/server-analytics.service";
+import { KeyedSlidingWindow } from "../net/rate-limit";
+import { createLogger } from "../logging";
+import {
+  COMPLETE_CALLS_PER_MINUTE,
+  DAILY_COMPLETIONS_PER_LEVEL,
+  checkElapsed,
+  startOfUtcDay,
+} from "./campaign-sanity";
 
 interface ProgressRow { level_id: string; status: string; stars: number; best_score: number; completed_at: string }
 interface LevelRow { id: string; sort_order: number; name: string; config: unknown; powerups: string[]; unlock_requires: string | null; rewards: { coin: number; xp: number; energy: number } }
@@ -27,6 +35,15 @@ function toLevel(r: LevelRow): CampaignLevel {
 
 @Controller("v1")
 export class CampaignController {
+  /**
+   * doc 35 §A3 lớp 2 — trần theo NGƯỜI CHƠI, không theo IP.
+   *
+   * Theo IP thì một mạng chung (ký túc xá, quán net, NAT của nhà mạng di động) sẽ khoá lẫn nhau,
+   * còn kẻ farm chỉ cần đổi IP. Ở đây danh tính đã xác thực, nên dùng thẳng nó.
+   */
+  private readonly completeLimiter = new KeyedSlidingWindow(COMPLETE_CALLS_PER_MINUTE, 60_000);
+  private readonly log = createLogger().child({ component: "campaign-sanity" });
+
   constructor(
     private readonly sessions: SessionService,
     private readonly db: SupabaseService,
@@ -95,6 +112,13 @@ export class CampaignController {
   // nếu play đã tiêu, nên gọi lại không thưởng thêm lần nào.
   @Post("campaign/complete") async complete(@Req() req: Request, @Body() body: { playId?: string; facts?: Partial<CampaignOutcomeFacts> }) {
     const player = await this.sessions.resolve(req);
+    // Chặn NGAY sau khi biết danh tính, trước mọi truy vấn nghiệp vụ: một vòng lặp farm không được
+    // phép làm ta tốn một lượt đọc `campaign_plays` + `campaign_levels` nào. (Không đặt được trước
+    // `sessions.resolve` vì trần này theo người chơi — mà biết người chơi là ai thì phải resolve đã.)
+    // Đây cũng là lớp duy nhất còn tác dụng khi kẻ tấn công gửi `playId` rác hàng loạt.
+    if (!this.completeLimiter.allow(player.id)) {
+      throw new ForbiddenException({ code: "rate_limited", message: "gửi kết quả quá nhanh", retryable: true });
+    }
     if (!body.playId) throw new BadRequestException("missing_play_id");
     if (!body.facts || typeof body.facts !== "object") {
       // Client CŨ gửi `objectiveMet`/`stars`/`score`. Trả mã riêng thay vì gộp chung vào
@@ -123,6 +147,39 @@ export class CampaignController {
     const outcome = evaluateCampaignOutcome(lvl.config ?? {}, body.facts, elapsedSec);
     if (!outcome.objectiveMet) throw new BadRequestException(outcome.reason);
 
+    // doc 35 §A3 lớp 2 — thời gian là dữ kiện DUY NHẤT client không nói dối được, vì server đo nó.
+    //
+    // Chạy SAU evaluator có chủ ý. Một lượt chơi thất bại thật (mới sống 5 giây trong cấp cần 60)
+    // phải nhận đúng lý do "chưa đạt mục tiêu", không phải một cáo buộc gian lận. Bảo mật không
+    // mất gì: cả hai đều chặn trước khi RPC cấp thưởng chạy.
+    //
+    // BỎ QUA hoàn toàn khi lượt chơi ĐÃ hoàn thành. `elapsedSec` đo từ `created_at` nên nó LỚN DẦN
+    // mãi mãi: nộp lại một lượt đã xong sau 4 giờ sẽ dính `play_too_old`, và người chơi nhận một
+    // cáo buộc gian lận thay vì bản tiến độ đã có. Lần nộp lại đó không cấp thêm gì (RPC idempotent,
+    // play đã tiêu), nên ở đây không có gì để bảo vệ — chỉ có một người chơi thật để làm phiền.
+    // Cùng lý do đã dùng cho trần ngày ngay bên dưới; thiếu ở đây là thiếu nhất quán.
+    const verdict = row.completed_at ? { ok: true as const } : checkElapsed(lvl.config ?? {}, elapsedSec);
+    if (!verdict.ok) {
+      // Ghi lại MỌI lần chặn. doc 35 §9 rủi ro #6 cảnh báo "từ chối oan khi siết A3"; không có
+      // dòng log này thì không có cách nào biết ngưỡng đang chặn nhầm người chơi thật.
+      this.log.warn({ playerId: player.id, levelId: row.level_id, code: verdict.code, ...verdict.detail }, "chan ket qua campaign phi ly");
+      throw new ForbiddenException({ code: verdict.code, message: verdict.message, retryable: false, ...verdict.detail });
+    }
+
+    // Trần theo NGÀY, chỉ áp cho lượt chưa hoàn thành. Nộp lại một lượt đã xong là idempotent —
+    // tính nó vào trần sẽ biến việc thử lại sau lỗi mạng thành một hình phạt.
+    if (!row.completed_at) {
+      const done = await this.countCompletionsToday(player.id, row.level_id);
+      if (done >= DAILY_COMPLETIONS_PER_LEVEL) {
+        this.log.warn({ playerId: player.id, levelId: row.level_id, done }, "cham tran hoan thanh/ngay");
+        throw new ForbiddenException({
+          code: "daily_level_cap",
+          message: "đã đạt trần số lần hoàn thành cấp này trong ngày",
+          retryable: true, done, cap: DAILY_COMPLETIONS_PER_LEVEL,
+        });
+      }
+    }
+
     const progress = await this.db.rpc("complete_campaign_level", {
       p_play_id: body.playId,
       p_player_id: player.id,
@@ -140,6 +197,27 @@ export class CampaignController {
     // trùng thật sự. Một truy vấn thêm trên khoá chính, và không nằm ở đường nóng.
     void this.emitCampaignComplete(player.id, body.playId, row.level_id, outcome, lvl.rewards);
     return progress;
+  }
+
+  /**
+   * Đếm số lần đã HOÀN THÀNH cấp này trong ngày UTC hôm nay.
+   *
+   * Đọc hỏng ⇒ trả 0 (cho qua), KHÔNG phải chặn. Khác hẳn hướng của hạn mức Ops API: ở đó chặn
+   * nhầm chỉ làm phiền một người vận hành, còn ở đây chặn nhầm là **lấy mất năng lượng của người
+   * chơi và khoá đường mở cấp kế tiếp**. Trần này chống farm hàng loạt, không phải chống một lượt
+   * chơi thật — nên khi không chắc thì nghiêng về phía người chơi.
+   */
+  private async countCompletionsToday(playerId: string, levelId: string): Promise<number> {
+    try {
+      const { count, error } = await this.db.from("campaign_plays")
+        .select("id", { count: "exact", head: true })
+        .eq("player_id", playerId).eq("level_id", levelId)
+        .gte("completed_at", startOfUtcDay());
+      if (error) return 0;
+      return Number(count ?? 0);
+    } catch {
+      return 0;
+    }
   }
 
   /** Tách khỏi `complete` để phần đo không làm dài thêm luồng nghiệp vụ. Không bao giờ ném. */
