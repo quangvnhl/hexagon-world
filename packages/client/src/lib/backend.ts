@@ -94,6 +94,16 @@ export interface StartPlayResult {
   seed?: number;
 }
 
+/** [doc 35 §C4] Xuất toàn bộ dữ liệu của chính mình. Trả JSON để tải xuống tại máy. */
+export async function exportMyData(): Promise<Record<string, unknown>> {
+  return json<Record<string, unknown>>("/v1/me/export", { cache: "no-store" });
+}
+
+/** [doc 35 §C4] Tự xoá tài khoản. Vô hiệu ngay; xoá hẳn sau thời gian chờ ghi ở `/privacy`. */
+export async function deleteMyAccount(): Promise<{ deletedAt: string; graceDays: number }> {
+  return json<{ deletedAt: string; graceDays: number }>("/v1/me", { method: "DELETE" });
+}
+
 /** Đọc năng lượng hiện tại (server tính hồi lười). */
 export async function getEnergy(): Promise<EnergyStatus> {
   return json<EnergyStatus>("/v1/energy", { cache: "no-store" });

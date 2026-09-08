@@ -4,6 +4,7 @@
 // trang chủ render thẳng scene tương ứng (không đổi route).
 
 import { useEffect, useState, type CSSProperties } from "react";
+import { AccountPanel } from "./AccountPanel";
 import {
   DEFAULT_PLAYER_APPEARANCE,
   CONFIG,
@@ -683,6 +684,17 @@ export function StartPanel({
               Server dev: <code>pnpm --filter @hexagon/server start:dev</code>
             </div>
           </div>
+        )}
+        {/* doc 35 §C4 (lát c4.2) — quyền xuất/xoá dữ liệu chỉ hiện khi ĐÃ đăng nhập: khách chưa có
+            gì để xuất và không có tài khoản để xoá. Gập lại trong <details> vì đây là thứ dùng một
+            lần trong đời, không phải thứ chiếm chỗ trên màn hình đầu mỗi lần mở app. */}
+        {account && (
+          <details style={{ marginTop: 14, fontSize: 12, opacity: 0.9 }}>
+            <summary style={{ cursor: "pointer", opacity: 0.6 }}>Dữ liệu &amp; tài khoản</summary>
+            <div style={{ marginTop: 10 }}>
+              <AccountPanel onDeleted={() => setAccount(null)} />
+            </div>
+          </details>
         )}
         {/* doc 35 §C4 — Telegram YÊU CẦU ba trang này phải với tới được từ trong app, không phải
             chỉ tồn tại ở một URL ai đó biết. Dùng <a> chứ không phải <Link>: chúng là trang tĩnh

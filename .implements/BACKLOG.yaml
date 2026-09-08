@@ -921,13 +921,34 @@ slices:
       - packages/server/src/players/players.controller.ts
       - packages/server/test/players.spec.ts
       - packages/client/src/components/AccountPanel.tsx
+      # THÊM so với kế hoạch — lý do ở `note`:
+      - supabase/migrations/202609080002_self_serve_privacy.sql  # thứ THẬT SỰ xoá sau 30 ngày
+      - packages/client/src/lib/backend.ts                        # hai hàm gọi API
+      - packages/client/src/components/StartPanel.tsx             # chỗ với tới được panel
+      - .implements/37-viec-can-nguoi-thuc-hien.md                # Việc 3d — lên lịch purge
     depends_on: []
     dod:
       - "pnpm --filter @hexagon/server test"
     risk: high
     requires_human: false
-    note: "Hiện CHỈ admin xoá được. Xoá phải giữ ledger/kế toán theo quy định, ẩn danh phần định danh."
-    status: todo
+    note: >
+      Hiện CHỈ admin xoá được. Xoá phải giữ ledger/kế toán theo quy định, ẩn danh phần định danh.
+      PHẢI THÊM MIGRATION vì trang /privacy (lát c4.1) đã hứa nguyên văn "tài khoản bị vô hiệu ngay
+      và dữ liệu chơi bị xoá hẳn sau 30 ngày". Endpoint lo vế đầu; không có gì lo vế sau thì lời
+      hứa đó là một câu sai — và đó là loại sai đắt nhất trong một chính sách riêng tư.
+      "Xoá hẳn" KHÔNG thể là `delete from players`: lược đồ đã mã hoá sẵn chính sách kế toán bằng
+      khoá ngoại ON DELETE RESTRICT trên wallet_ledger, purchase_orders, player_energy_ledger.
+      Nên `purge_deleted_players()` xoá dữ liệu chơi + gỡ định danh và giữ chứng từ trên một hàng
+      người chơi vô danh — đúng những gì /privacy đã nói trước.
+      Đã kiểm trên DB dev bằng giao dịch ROLLBACK: purge 1 tài khoản ⇒ định danh còn 0, thống kê
+      còn 0, tên thành "Deleted Player", purged_at có, chạy lần hai trả 0 (idempotent). Rollback
+      xong còn sót 0 hàng. KHÔNG chạy purge thật: 0 tài khoản trên dev đủ điều kiện, và AGENTS.md
+      §1 cấm xoá dữ liệu người chơi.
+      3 test khoá con số 30 ngày ở BA nơi (legal.ts ↔ hằng số controller ↔ mặc định trong SQL) và
+      1 test chặn việc lỡ thêm bảng chứng từ vào danh sách xoá.
+      CÒN THIẾU MỘT VIỆC CỦA NGƯỜI: purge chưa có lịch chạy (doc 37 Việc 3d). Chừng nào chưa bấm,
+      câu trên trang /privacy vẫn chưa đúng.
+    status: done
     commit: null
 
   - id: d1.1-ftue
