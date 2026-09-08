@@ -762,12 +762,29 @@ slices:
       - packages/admin/src/RemoteConfig.tsx
       - packages/admin/src/App.tsx
       - packages/admin/src/api.ts
+      # THÊM so với kế hoạch — lý do ở `note`:
+      - packages/server/src/admin/admin.controller.ts  # 3 endpoint config (KHÔNG hề tồn tại)
+      - packages/server/test/admin-config.spec.ts      # khoá lạc quan theo version
     depends_on: [a2.1-remote-config-api, c2.1-ops-api-keys]
     dod:
       - "pnpm build:admin"
     risk: low
     requires_human: false
-    status: todo
+    note: >
+      `a2.1` dựng bảng `remote_config` + đường ĐỌC cho client (`GET /v1/config`), nhưng KHÔNG có
+      endpoint ghi nào cả — đổi một tham số vẫn phải vào SQL Editor. Nên `files:` chỉ có 3 file
+      admin sẽ cho ra một giao diện không gọi được gì. Đã thêm 3 endpoint vào admin.controller
+      (`GET config`, `GET config/:key/history`, `PUT config/:key`). Phạm vi `config:write` đã có
+      sẵn trong OPS_SCOPES từ c2.1 — bằng chứng thiết kế đã tính tới endpoint này.
+      KHOÁ LẠC QUAN theo cột `version`: cột đó có từ a2.1 với đúng ghi chú "để trang admin phát
+      hiện ghi đè lẫn nhau, chưa dùng ở a2.1". Đây là chỗ nó được dùng. Không có nó thì hai người
+      cùng mở trang trong một sự cố sẽ làm mất một thay đổi kill-switch mà không ai truy ra được.
+      Khoá chưa tồn tại đòi `version = 0` để tạo mới là hành động cố ý.
+      KHÔNG ghi lịch sử ở tầng ứng dụng: `202609030002` đã có trigger `remote_config_write_audit()`
+      ghi cả giá trị trước và sau. Ghi thêm lần nữa là tạo hai nguồn sự thật cho cùng một câu hỏi.
+      Khoá lạ KHÔNG bị chặn (thêm cấu hình trước khi client dùng là hợp lệ) nhưng `dry_run` nói rõ
+      `knownKey: false` — gõ nhầm tên khoá thì im lặng và không bao giờ có tác dụng.
+    status: done
     commit: null
 
   - id: c2.1-ops-api-keys
