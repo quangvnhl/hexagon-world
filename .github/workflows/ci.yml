@@ -75,3 +75,24 @@ jobs:
 
       - name: Build admin
         run: pnpm build:admin
+
+      # Smoke UI (doc 36 §R2 tầng 1). Đặt SAU `pnpm build` có chủ ý: nó chạy trên chính `.next` vừa
+      # build, nên không tốn thêm một lần biên dịch nào.
+      #
+      # `--with-deps` cài thư viện hệ thống cho Chromium; `chromium` (không phải `--only-shell`) là
+      # BẮT BUỘC — bản headless-shell rút gọn không có WebGL, mà WebGL chính là thứ tầng này đo.
+      - name: Cài Chromium cho Playwright
+        run: pnpm exec playwright install --with-deps chromium
+
+      - name: Smoke UI
+        run: pnpm test:e2e:smoke
+
+      # Ảnh/trace chỉ sinh khi đỏ. Không có chúng thì một lần đỏ trong CI là không tài nào chẩn
+      # đoán được — canvas hỏng không để lại dấu vết gì trong log.
+      - name: Tải lên dấu vết khi smoke đỏ
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: playwright-smoke-trace
+          path: test-results/
+          retention-days: 7

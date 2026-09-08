@@ -89,13 +89,33 @@ slices:
       - playwright.config.ts
       - tests/e2e/smoke.spec.ts
       - .github/workflows/ci.yml
+      # THÊM so với kế hoạch:
+      - .gitignore                                   # test-results/ + playwright-report/
+      - packages/client/src/components/HUD.tsx       # một dòng data-testid, lý do dưới
+      - pnpm-lock.yaml
     depends_on: [r1-ci]
     dod:
       - "pnpm test:e2e:smoke"
     risk: low
     requires_human: false
-    note: "Mở `/` và `/play`; assert canvas dựng được, HUD có mặt, console KHÔNG có lỗi, FPS > 0 sau 5s."
-    status: todo
+    note: >
+      Mở `/` và `/play`; assert canvas dựng được (VÀ có ngữ cảnh WebGL sống), HUD có mặt,
+      console không có lỗi, vòng lặp render còn chạy sau 5 giây.
+      BỐN thứ phải đúng, mỗi thứ đều đã làm bài này ĐỎ GIẢ ít nhất một lần trong lúc dựng:
+      (1) `channel: "chromium"` — mặc định mới của Playwright là headless-shell KHÔNG có WebGL;
+      (2) cổng RIÊNG 3877 + `reuseExistingServer: false` — bám vào dev server có sẵn ở 3890 khiến
+          bài kiểm đo nhầm một bản build khác (một lần đo đúng màn hình lỗi của dev server);
+      (3) lọc tiếng ồn theo ORIGIN chứ không theo regex chuỗi lỗi — thông điệp của Chromium là
+          "Failed to load resource: net::ERR_CONNECTION_REFUSED", KHÔNG kèm URL, nên regex theo
+          cổng 8910 không khớp gì cả;
+      (4) chờ bằng `expect.poll` trên KÍCH THƯỚC canvas — `app/loading.tsx` + suspense của React giữ
+          canvas trong wrapper `display:none`, ở đó Playwright coi là "visible" nhưng boundingBox = 0.
+      `data-testid="hud-stats"` thêm vào HUD vì HUD là fragment, không có phần tử gốc để bám; một
+      smoke test bám vào regex trên innerText sẽ mục ngay lần đổi copy đầu tiên.
+      Timeout 120s là số ĐO ĐƯỢC: trên WebGL phần mềm (SwiftShader — CI không có GPU) `/play` mất
+      30–45 giây để vẽ khung hình đầu; trên GPU thật chỉ vài giây.
+      Đã chạy 3 lần liên tiếp trên máy dev, xanh cả 3.
+    status: done
     commit: null
 
   - id: r2.3-measure-not-look
