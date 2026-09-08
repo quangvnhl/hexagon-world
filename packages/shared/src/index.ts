@@ -16,3 +16,4 @@ export * from "./protocol-version";
 export * from "./spatialhash";
 export * from "./totems";
 export * from "./replay";
+export * from "./error-scrub";

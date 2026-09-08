@@ -866,15 +866,29 @@ slices:
       - packages/server/src/main.ts
       - packages/client/package.json
       - packages/server/package.json
+      # LỆCH so với kế hoạch, thêm khi làm:
+      - packages/shared/src/error-scrub.ts          # làm sạch DÙNG CHUNG: hai bản chép tay sẽ lệch, bên lệch là bên rò
+      - packages/shared/src/__tests__/error-scrub.test.ts
+      - packages/shared/src/index.ts                # export error-scrub
+      - packages/client/app/page.tsx                # điểm gọi initErrorReporting
+      - .env.example                                # ERROR_DSN / NEXT_PUBLIC_ERROR_DSN / BUILD_ID
     depends_on: []
     dod:
       - "pnpm -r typecheck"
       - "pnpm build"
     risk: medium
     requires_human: true
-    human_note: "Chọn Sentry hay GlitchTip self-host + cấp DSN."
-    note: "Scrub initData/token/email; gắn release = commit sha để quy lỗi theo bản."
-    status: todo
+    human_note: "Chỉ còn dán DSN vào ERROR_DSN + NEXT_PUBLIC_ERROR_DSN. Code TRUNG TÍNH: GlitchTip nói đúng giao thức Sentry nên cùng SDK chạy được cả hai; rỗng = tắt."
+    note: |
+      Scrub initData/token/email; gắn release = BUILD_ID để quy lỗi theo bản.
+      Hai điều đo được, không phải suy đoán:
+      - `FORBIDDEN_PROP_KEYS` (analytics) KHÔNG đủ cho báo cáo lỗi: nó không chứa
+        `authorization`/`cookie` vì props analytics do CHÍNH TA đặt tên, không bao giờ có header
+        HTTP. Test bắt được, nên có thêm `ERROR_ONLY_FORBIDDEN` cộng vào — cố ý KHÔNG mở rộng
+        `FORBIDDEN_PROP_KEYS`, vì hai danh sách phục vụ hai loại dữ liệu khác nhau.
+      - SDK ra 3 chunk / 455 KB nhưng KHÔNG chunk nào nằm trong app-build-manifest của trang nào:
+        có trên đĩa, trình duyệt không lấy trừ khi `import()` động chạy (tức đã có DSN thật).
+    status: done
     commit: null
 
   - id: a4.3-structured-logs
