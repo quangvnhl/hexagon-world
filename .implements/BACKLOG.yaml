@@ -722,7 +722,16 @@ slices:
       - packages/server/src/admin/ops-auth.guard.ts
       - packages/server/src/admin/admin.controller.ts
       - packages/server/test/ops-auth.spec.ts
-      - supabase/migrations/202609010005_ops_api_keys.sql
+      # ĐỔI tên file: 202609010005 nằm TRƯỚC các migration đã áp (202609030001,
+      # 202609040001, 202609040002) nên sẽ phá thứ tự áp. Dùng mốc sau chúng.
+      - supabase/migrations/202609070001_ops_api_keys.sql
+      # THÊM so với kế hoạch — lý do ở từng dòng:
+      # Guard chỉ trả lời được "có được vào không". Nó chạy TRƯỚC handler nên KHÔNG thấy kết quả,
+      # mà `ops_audit_log` phải ghi cả `result`. Tách hai mối quan tâm thay vì nhét vào một file:
+      - packages/server/src/admin/ops-keys.service.ts     # tra khoá, hạn mức, ghi audit, khử trùng
+      - packages/server/src/admin/ops-audit.interceptor.ts # bọc handler: replay idempotent + ghi kết quả
+      - packages/server/src/control/control.module.ts      # đăng ký 2 provider mới
+      - .implements/ops-api-runbook.md                    # cách tạo khoá đầu tiên + đọc vết
     depends_on: [r3.1-db-migrate]
     dod:
       - "pnpm --filter @hexagon/server test"
@@ -730,9 +739,13 @@ slices:
     requires_human: false
     note: >-
       ops_api_keys(actor_kind human|agent, scopes[], daily_limits, expires_at, revoked_at) +
-      ops_audit_log ghi MỌI lời gọi ghi, không ngoại lệ. PHẢI xong trước khi mở bất kỳ endpoint
-      ghi nào cho agent.
-    status: todo
+      ops_audit_log ghi MỌI lời gọi, không ngoại lệ (kể cả bị từ chối và bị lỗi). PHẢI xong trước
+      khi mở bất kỳ endpoint ghi nào cho agent.
+      CÁCH GỠ `x-admin-key` mà không tự khoá mình ra ngoài: chuỗi cũ chỉ còn dùng được KHI
+      `ops_api_keys` chưa có khoá nào còn hiệu lực. Tạo khoá thật đầu tiên chính là hành động gỡ
+      chuỗi dùng chung — không có biến môi trường nào để quên tắt. Xem .implements/ops-api-runbook.md.
+      Header giữ nguyên tên `x-admin-key` nên packages/admin chạy nguyên, chỉ cần dán chuỗi khác.
+    status: done
     commit: null
 
   - id: c2.2-openapi-dryrun
