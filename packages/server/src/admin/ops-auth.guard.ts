@@ -32,6 +32,16 @@ export interface OpsEndpointMeta {
   unitKind?: string;
   /** Rút số lượng tiêu thụ từ body — chỉ dùng khi có `unitKind`. */
   units?: (body: Record<string, unknown>) => number;
+  /**
+   * doc 35 §C2.5 — endpoint này có CÀI `?dry_run=true` chưa.
+   *
+   * Mặc định `false` và interceptor TỪ CHỐI `?dry_run=true` trên endpoint chưa khai. Đây là chỗ
+   * quan trọng nhất của c2.2: nếu `dry_run` lặng lẽ rơi xuống nhánh thật thì một agent làm đúng
+   * quy trình — luôn thử khô trước — sẽ thực hiện thao tác thật mà tưởng mình chỉ đang xem trước.
+   */
+  dryRun?: boolean;
+  /** Chỉ cần khoá hợp lệ, không cần phạm vi nào. Dùng cho endpoint khám phá (openapi.json). */
+  anyKey?: boolean;
 }
 
 /** Gắn phạm vi + tính chất cho một endpoint. Thiếu decorator này ⇒ guard TỪ CHỐI (xem bên dưới). */
@@ -43,6 +53,8 @@ export interface OpsRequest extends Request {
   opsMeta?: OpsEndpointMeta;
   opsPayloadHash?: string;
   opsUnits?: number;
+  /** `?dry_run=true` — handler phải trả kết quả DỰ KIẾN và không được đổi dữ liệu. */
+  opsDryRun?: boolean;
 }
 
 @Injectable()
@@ -79,6 +91,7 @@ export class OpsAuthGuard implements CanActivate {
     req.opsActor = actor;
     req.opsMeta = meta;
     req.opsPayloadHash = hash;
+    req.opsDryRun = isDryRun(req);
 
     const deny = async (code: string, message: string, retryable: boolean) => {
       await this.keys.record({
@@ -89,17 +102,21 @@ export class OpsAuthGuard implements CanActivate {
       return { code, message, retryable };
     };
 
-    if (!hasScope(actor.scopes, meta.scope)) {
+    if (!meta.anyKey && !hasScope(actor.scopes, meta.scope)) {
       throw new ForbiddenException(await deny("scope_denied", `khoá thiếu phạm vi ${meta.scope}`, false));
     }
 
     // Ghi mà không có `Idempotency-Key` thì gửi lại vì lỗi mạng sẽ thực hiện lần hai. Bắt buộc ở
     // TẦNG NÀY, không để từng handler tự nhớ — doc 36 R6: "mọi endpoint ghi mới phải có idempotency".
-    if (meta.isWrite && !idempotencyKey) {
+    // Thử khô không đổi gì nên không cần khoá chống lặp — bắt buộc nó ở đây chỉ làm agent ngại
+    // dùng `dry_run`, tức là làm hỏng đúng thói quen mà §C2.5 muốn tạo ra.
+    if (meta.isWrite && !req.opsDryRun && !idempotencyKey) {
       throw new ForbiddenException(await deny("missing_idempotency_key", "lời gọi ghi phải có header Idempotency-Key", false));
     }
 
-    const units = meta.unitKind && meta.units ? meta.units(body) : 0;
+    // Thử khô không cấp gì ⇒ không tiêu hạn mức LƯỢNG. Trần số lần vẫn tính (nó chống vòng lặp
+    // hỏng), nhưng `ops_daily_usage` đã loại hàng dry_run nên chi phí thật là 0.
+    const units = !req.opsDryRun && meta.unitKind && meta.units ? meta.units(body) : 0;
     req.opsUnits = units;
     const usage = await this.keys.dailyUsage(actor.keyId, meta.unitKind ?? null);
     const limited = overDailyLimit(actor.dailyLimits, usage, { isWrite: meta.isWrite, unitKind: meta.unitKind, units });
@@ -112,6 +129,30 @@ export class OpsAuthGuard implements CanActivate {
 
     return true;
   }
+}
+
+/**
+ * `?dry_run` CÓ MẶT ⇒ bật, trừ khi giá trị là một chữ phủ định rõ ràng (`false`, `0`, `no`, `off`).
+ * Vắng mặt ⇒ tắt.
+ *
+ * Hướng hỏng được chọn theo mức thiệt hại, vì hai hướng KHÔNG đối xứng:
+ *   • hiểu nhầm thành thử khô  ⇒ người gọi nhận bản xem trước, gọi lại là xong. Phiền, hết.
+ *   • hiểu nhầm thành làm thật ⇒ coin đã cấp, tài khoản đã xoá. Không có nút hoàn tác.
+ *
+ * Bản đầu chỉ nhận đúng chuỗi `"true"` và lập luận rằng gõ nhầm sẽ bị chặn vì thiếu
+ * `Idempotency-Key`. Lá chắn đó thủng đúng với người gọi CẨN THẬN nhất: agent làm theo tài liệu
+ * luôn gửi `Idempotency-Key` cho mọi lời gọi ghi, nên `?dry_run=1` của họ qua được guard và chạy
+ * THẬT — trong khi họ tin mình đang xem trước. Đó chính là bất biến mà lát này tự đặt ra:
+ * "`dry_run` không bao giờ được rơi xuống nhánh thật".
+ */
+const DRY_RUN_OFF = new Set(["false", "0", "no", "off"]);
+
+export function isDryRun(req: Pick<Request, "query">): boolean {
+  const query = req.query as Record<string, unknown> | undefined;
+  if (!query || !("dry_run" in query)) return false;
+  const raw = query.dry_run;
+  const value = Array.isArray(raw) ? raw[0] : raw;
+  return !DRY_RUN_OFF.has(String(value ?? "").trim().toLowerCase());
 }
 
 function headerOf(req: Request, name: string): string | null {

@@ -93,6 +93,70 @@ Hai trần tách nhau, vì cấp 50.000 coin một lần và 500 lần mỗi l�
 Ngày neo vào **UTC**, khớp `DAY_RESET_TZ` của doc 35 (chốt #3). Chạm trần trả `429` với
 `retryable: true` — "thử lại sau", khác hẳn "sai tham số".
 
+## Khám phá API bằng máy (lát c2.2)
+
+```bash
+curl "$API/internal/v1/admin/openapi.json" -H "x-admin-key: $KEY"
+```
+
+OpenAPI 3.1, **sinh thẳng từ metadata `@Ops({...})` mà guard đang thi hành** — không phải một bản
+khai thứ hai. Nghĩa là danh mục không thể nói `wallet:write` trong khi guard đòi `players:write`.
+
+Endpoint này chỉ cần **khoá hợp lệ**, không cần phạm vi riêng: bắt phải được cấp quyền mới đọc được
+danh mục là bài toán con gà–quả trứng, mà danh mục không tiết lộ dữ liệu người chơi nào.
+
+Bốn phần mở rộng agent cần để tự quyết định:
+
+| Trường | Ý nghĩa |
+|---|---|
+| `x-ops-scope` | phạm vi cần có (`any` = chỉ cần khoá hợp lệ) |
+| `x-ops-write` | có đổi dữ liệu không |
+| `x-ops-dry-run` | có thử khô được không |
+| `x-ops-unit-kind` | loại tài nguyên tiêu thụ, ví dụ `coin_granted` |
+
+## Thử khô trước khi làm thật
+
+```bash
+curl -X POST "$API/internal/v1/admin/players/$ID/grant-coin?dry_run=true" \
+  -H "x-admin-key: $KEY" -H "content-type: application/json" \
+  -d '{"amount":500,"reason":"khieu nai mat coin"}'
+```
+
+Trả về kết quả **dự kiến** (`currentBalance`, `predictedBalance`, `playerFound`) và **không đổi một
+dòng dữ liệu nào**. Ba tính chất quan trọng:
+
+1. **Mặc định TỪ CHỐI.** Endpoint chưa cài `dry_run` trả `400 dry_run_unsupported` — chặn **trước
+   khi** handler chạy. Nếu `?dry_run=true` rơi xuống nhánh thật thì một agent làm đúng quy trình sẽ
+   cấp coin trong khi tin rằng mình chỉ đang xem trước; hỏng theo hướng *người cẩn thận bị phạt*.
+2. **Chỉ đúng chuỗi `true` mới bật.** `1`, `yes`, `on`, `TRUE` đều **không** bật. Gõ nhầm ⇒ lời gọi
+   bị từ chối vì thiếu `Idempotency-Key`, chứ không âm thầm làm thật.
+3. **Không tiêu hạn mức lượng, không chiếm khoá idempotency.** Tính nó vào hạn mức sẽ khiến cách rẻ
+   nhất để làm xong việc là *bỏ bước thử khô*. Và nếu nó chiếm khoá idempotency thì lời gọi thật
+   ngay sau đó bị coi là lặp lại — im lặng nuốt mất thao tác vừa xem trước xong.
+
+Thử khô **vẫn để lại vết** (`dry_run = true`): biết một agent đã xem trước những gì là thông tin có
+giá trị khi truy sự cố.
+
+## Hình dạng lỗi
+
+Mọi lỗi thoát ra khỏi Ops API đều là:
+
+```json
+{ "code": "daily_unit_limit", "message": "...", "hint": "...", "retryable": true }
+```
+
+`retryable` là trường quan trọng nhất: một agent gặp lỗi chỉ có hai hành vi đúng — **thử lại** hoặc
+**dừng và báo người**. Đoán sai chiều nào cũng hỏng:
+
+- Coi lỗi tham số là tạm thời ⇒ vòng lặp thử lại vô hạn trên lời gọi không bao giờ thành công.
+- Coi lỗi tạm thời là vĩnh viễn ⇒ bỏ dở việc vận hành đang cần làm, và báo nhầm nguyên nhân.
+
+`hint` dành cho *người đọc log lúc 2 giờ sáng*, không dùng để phân nhánh.
+
+Hợp đồng này áp cho **cả lỗi không do controller ném** (Supabase, pipe của Nest, `TypeError` không
+lường trước) — `OpsErrorFilter` bọc hết. Hợp đồng lỗi chỉ đúng ở đường thuận là hợp đồng không dùng
+được đúng lúc cần nó nhất.
+
 ## Đọc vết kiểm toán
 
 ```bash
