@@ -14,6 +14,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { track } from "@/lib/analytics";
+import { FtueFunnel } from "./ftueFunnel";
 import {
   currentFtueStep,
   ftueStepCopy,
@@ -59,21 +60,15 @@ export function Ftue({
 }) {
   const step = currentFtueStep(signals, thresholds);
   const [closing, setClosing] = useState(false);
-  // Bước đã phát sự kiện `ftue_step` rồi — chống phát lại mỗi frame (onStats chạy 24 lần/giây).
-  const announced = useRef<Set<string>>(new Set());
+  // Toàn bộ luật "phát sự kiện nào, mấy lần" nằm ở `ftueFunnel.ts` để test được bằng dữ liệu —
+  // `onStats` chạy 24 lần/giây, nên chống phát lại là yêu cầu chứ không phải tối ưu.
+  const funnel = useRef<FtueFunnel | null>(null);
+  if (funnel.current === null) funnel.current = new FtueFunnel(Date.now());
   const finished = useRef(false);
 
   useEffect(() => {
-    if (finished.current) return;
-    const key = step ?? "__done__";
-    if (announced.current.has(key)) return;
-    announced.current.add(key);
-    track("ftue_step", {
-      step: step ?? "done",
-      index: step ? ftueStepIndex(step) : FTUE_STEP_IDS.length,
-      total: FTUE_STEP_IDS.length,
-      outcome: step ? "enter" : "complete",
-    });
+    const event = funnel.current?.observe(step, Date.now());
+    if (event) track("ftue_step", { ...event });
   }, [step]);
 
   // Xong cả ba: giữ lời khen một nhịp rồi mới trả người chơi về sân thật.
@@ -93,12 +88,11 @@ export function Ftue({
     if (finished.current) return;
     finished.current = true;
     // Ghi rõ bỏ dở ở BƯỚC NÀO — "70% hoàn thành" chỉ hành động được khi biết người ta rơi ở đâu.
-    track("ftue_step", {
-      step: step ?? "done",
-      index: step ? ftueStepIndex(step) : FTUE_STEP_IDS.length,
-      total: FTUE_STEP_IDS.length,
-      outcome: "skipped",
-    });
+    // `skip()` của funnel trả `null` nếu kết cục đã chốt (đã phát `complete`), nên một thiết bị
+    // không bao giờ đếm được ở cả hai rổ. Vẫn đóng overlay như thường — phép đo không được phép
+    // giữ người chơi lại.
+    const event = funnel.current?.skip(step, Date.now());
+    if (event) track("ftue_step", { ...event });
     markFtueDone();
     onFinish("skipped");
   };
