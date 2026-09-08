@@ -124,10 +124,21 @@ describe("30 ngày phải là MỘT con số, không phải ba", () => {
     expect(Number(m![1])).toBe(DELETION_GRACE_DAYS);
   });
 
+  it("bản purge MỚI NHẤT cắt liên kết `analytics_events.player_id`", () => {
+    // `/privacy` hứa "không còn cách nào tìm ra chúng thuộc về ai". Đo trên DB dev khi làm lát này:
+    // 28/53 sự kiện CÓ `player_id` (lát a1.4 phát sự kiện từ server, gắn thẳng người chơi) — nên
+    // câu đó chưa đúng. Chọn cách làm cho lời hứa thành đúng thay vì hạ thấp nó: giữ hàng sự kiện
+    // (số liệu tổng hợp), chỉ gỡ cột nối.
+    const sql = read("supabase/migrations/202609080003_purge_unlink_analytics.sql");
+    expect(sql).toMatch(/update\s+public\.analytics_events\s+set\s+player_id\s*=\s*null/i);
+    // Và KHÔNG xoá hàng — xoá đi thì mọi báo cáo lịch sử hỏng theo.
+    expect(sql).not.toMatch(/delete\s+from\s+public\.analytics_events/i);
+  });
+
   it("migration GIỮ đúng ba bảng chứng từ mà /privacy đã hứa không xoá", () => {
     // `wallet_ledger`, `purchase_orders`, `player_energy_ledger` đều ON DELETE RESTRICT — lược đồ
     // đã mã hoá chính sách. Nếu một lần sửa thêm chúng vào danh sách xoá, bài này đỏ.
-    const sql = read("supabase/migrations/202609080002_self_serve_privacy.sql");
+    const sql = read("supabase/migrations/202609080003_purge_unlink_analytics.sql");
     for (const t of ["wallet_ledger", "purchase_orders", "player_energy_ledger"]) {
       expect(sql, `${t} không được nằm trong lệnh delete`).not.toMatch(
         new RegExp(`delete\\s+from\\s+public\\.${t}\\b`, "i"),
