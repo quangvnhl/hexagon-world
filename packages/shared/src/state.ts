@@ -33,6 +33,7 @@ import type { EntitySnap, TerritoryCell } from "./protocol";
 import {
   createTotems,
   effectiveSpeedWithTotems,
+  seededRandom,
   type EntityGameplayModifiers,
   type TotemState,
 } from "./totems";
@@ -200,6 +201,15 @@ export class GameState {
   /** [doc 35] Ô KHỞI ĐỘNG người chơi (chỉ dùng cho lần spawn ĐẦU; hồi sinh sau vẫn ngẫu nhiên). */
   private startSpawn?: Axial;
   private startSpawnUsed = false;
+  /**
+   * Nguồn ngẫu nhiên của CẢ ván: spawn, hướng bot, lang thang, quyết định săn mồi.
+   *
+   * `Math.random` là mặc định và **vẫn là mặc định** — `config.seed = 0` (giá trị khi không ai
+   * truyền seed) giữ nguyên hành vi cũ của `/play`, `/netplay` và mọi cấp campaign đã có.
+   * Seed KHÁC 0 ⇒ thay bằng PRNG theo seed, và khi đó cùng seed + cùng chuỗi input cho ra cùng
+   * một ván. Đó là ĐIỀU KIỆN của `a3.3` (server chạy lại input để xác minh), không phải tiện ích
+   * cho test: trước lát t1 tài liệu nói `GameState` tất định còn thực tế thì không.
+   */
   private rng: () => number = Math.random;
 
   /** [doc 34 B] Cứ điểm bot: ô hợp lệ + số bot. `capturedStrongholds` = index đã bị người chơi chiếm
@@ -250,6 +260,13 @@ export class GameState {
   constructor(options: GameStateOptions = {}) {
     // Cấu hình + hình học PER-INSTANCE (default = giá trị CONFIG ⇒ hành vi cũ y hệt).
     this.config = resolveMatchConfig(options.config);
+    // Đặt NGAY sau config và TRƯỚC mọi thứ tiêu ngẫu nhiên (spawn ở cuối constructor). `seed = 0`
+    // là giá trị khi không ai truyền seed ⇒ giữ `Math.random`, hành vi cũ y hệt.
+    //
+    // Hiện thực RIÊNG so với `createTotems`: cả hai cùng seed nhưng mỗi bên một bộ đếm, nên số
+    // totem rải được KHÔNG làm lệch chuỗi ngẫu nhiên của ván. Dùng chung một bộ đếm thì thêm/bớt
+    // một totem sẽ đổi toàn bộ ván phía sau — tất định trên giấy, vô dụng khi cần chạy lại.
+    if (this.config.seed !== 0) this.rng = seededRandom(this.config.seed);
     this.arena = new ArenaGeometry(
       this.config.map.radius,
       this.config.map.wallScale,

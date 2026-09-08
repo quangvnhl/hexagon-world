@@ -12,23 +12,23 @@ import {
   pixelToAxial,
 } from "../src/hex";
 import { captureEnclosed } from "../src/floodfill";
-import { GameState, Entity, Phase } from "../src/state";
+import { GameState, Entity, Phase, type GameStateOptions } from "../src/state";
 import { CONFIG, PLAYER_COLORS } from "../src/config";
 import { insideArena, ARENA_INRADIUS, ARENA_R, WALL_LIMIT } from "../src/arena";
 
-// [doc 36 R1] GHIM RNG cho tất định.
-// `GameState` vẫn gọi thẳng `Math.random` cho vị trí spawn và hành vi bot (`config.seed` hiện CHỈ
-// dùng để rải totem), nên chạy lại script cho kết quả khác nhau — không dùng làm cổng CI được.
-// Ghim ở đây thay vì sửa `state.ts` để không đụng code nóng mỗi-tick.
-// TODO(BACKLOG): nối `config.seed` vào `GameState.rng` — đây là ĐIỀU KIỆN của doc 35 §A3 lớp 3
-// (server chạy lại input để xác minh kết quả Campaign) chứ không chỉ là dọn dẹp test.
-let __rngState = 0x2f6e2b1;
-Math.random = () => {
-  __rngState ^= __rngState << 13;
-  __rngState ^= __rngState >>> 17;
-  __rngState ^= __rngState << 5;
-  return ((__rngState >>> 0) % 1_000_000) / 1_000_000;
-};
+// [doc 36 R1] GHIM RNG cho tất định — qua `config.seed`, KHÔNG đè `Math.random` toàn cục nữa.
+//
+// Bản trước ghi đè `Math.random` ngay ở đầu file, kèm TODO trỏ đúng vào lát t1. Cách đó cho kết
+// quả lặp lại được, nhưng nó kiểm một đường mà sản phẩm KHÔNG đi: `GameState` thật vẫn dùng
+// `Math.random`, nên script xanh cũng không chứng minh được ván có tất định hay không. Từ lát t1
+// `config.seed` khác 0 thay hẳn nguồn ngẫu nhiên của ván, nên ở đây chỉ cần truyền seed — và khi
+// đó script kiểm đúng cơ chế mà `a3.3` sẽ dựa vào để chạy lại input.
+const SEED = 0x2f6e2b1;
+
+/** `new GameState` + seed cố định. Mọi ván trong script này phải đi qua đây. */
+function newGame(options: GameStateOptions = {}): GameState {
+  return new GameState({ ...options, config: { ...options.config, seed: SEED } });
+}
 
 /** Cho game qua hết pha chuẩn bị (đứng yên 3s) để bắt đầu di chuyển. */
 function skipPrep(g: GameState) {
@@ -82,7 +82,7 @@ console.log("[3] captureEnclosed: bao vây 1 ô (1,0)");
 
 console.log("[4] GameState (liên tục): đi vòng khép kín → chiếm đất");
 {
-  const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 } } }); // spawn cố định tại gốc cho test
+  const g = newGame({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 } } }); // spawn cố định tại gốc cho test
   g.owned = new Set([key(0, 0)]); // ép về 1 ô để dựng vòng nhỏ
   // Đi vòng quanh ô (1,0) rồi về (0,0).
   for (const [q, r] of [
@@ -104,7 +104,7 @@ console.log("[4] GameState (liên tục): đi vòng khép kín → chiếm đấ
 
 console.log("[5] GameState: tự cắt đuôi → chết (mất đất, chờ hồi sinh)");
 {
-  const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 } } });
+  const g = newGame({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 } } });
   g.owned = new Set([key(0, 0)]);
   const before = g.deaths;
   for (const [q, r] of [
@@ -141,7 +141,7 @@ console.log("[6] mapRect: sân chữ nhật có ô, biên trong khung");
 
 console.log("[7] GameState: chạm biên LỤC GIÁC → trượt mượt, không lọt/đứng");
 {
-  const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 } } });
+  const g = newGame({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 } } });
   g.setHeadingTarget(0.3); // chếch lên phải → ép vào 1 cạnh rồi trượt dọc cạnh
   skipPrep(g);
   // Chạy tới khi VỪA chạm biên (còn sống). Ngân sách bước co giãn theo bán kính sân
@@ -172,7 +172,7 @@ console.log("[7] GameState: chạm biên LỤC GIÁC → trượt mượt, khôn
 
 console.log("[8] GameState: pha chuẩn bị đứng yên, chỉ xoay hướng");
 {
-  const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 } } });
+  const g = newGame({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 } } });
   const p0 = { x: g.pos.x, y: g.pos.y };
   g.setHeadingTarget(1.2);
   for (let i = 0; i < 30; i++) g.update(1 / 60); // 0.5s trong pha prep
@@ -188,7 +188,7 @@ console.log("[8] GameState: pha chuẩn bị đứng yên, chỉ xoay hướng")
 
 console.log("[9] Bots: khởi tạo & hoạt động (đa thực thể)");
 {
-  const g = new GameState({ config: { bots: { count: 3 } } });
+  const g = newGame({ config: { bots: { count: 3 } } });
   check("tổng 4 thực thể (1 người + 3 bot)", g.players.length === 4);
   check("players[0] là người", !g.players[0].isBot);
   check(
@@ -218,7 +218,7 @@ console.log("[9] Bots: khởi tạo & hoạt động (đa thực thể)");
 
 console.log("[10] Spawn tránh xa lãnh thổ đã chiếm (SPAWN_CLEARANCE)");
 {
-  const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 } } }); // người chơi giữ cụm 7 ô quanh gốc
+  const g = newGame({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 } } }); // người chơi giữ cụm 7 ô quanh gốc
   const e = new Entity(9, true, PLAYER_COLORS[1]);
   let ok = true;
   for (let t = 0; t < 20; t++) {
@@ -235,7 +235,7 @@ console.log("[11] Khoá phòng khi có KING (không cho hồi sinh tới khi m�
 {
   // 2 bot: hạ 1 bot vẫn còn bot khác sống → KHÔNG kích hoạt thắng-đấu-loại,
   // để kiểm tra riêng luật khoá/​mở phòng.
-  const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 2 } } });
+  const g = newGame({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 2 } } });
   const bot = g.players[1];
   const half = [...g.playable].slice(0, Math.ceil(g.playable.size * 0.5));
   g.owned = new Set(half); // người chơi thành KING
@@ -255,7 +255,7 @@ console.log("[11] Khoá phòng khi có KING (không cho hồi sinh tới khi m�
 
 console.log("[12] Người chơi bị chặn hồi sinh khi đối thủ đang là KING");
 {
-  const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 1 } } });
+  const g = newGame({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 1 } } });
   const human = g.players[0];
   const bot = g.players[1];
   for (const k of [...g.playable].slice(0, Math.ceil(g.playable.size * 0.5))) {
@@ -269,7 +269,7 @@ console.log("[12] Người chơi bị chặn hồi sinh khi đối thủ đang l
 
 console.log("[13] Đâm đuôi đối thủ nằm TRONG đất của mình → đối thủ chết");
 {
-  const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 1 } } });
+  const g = newGame({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 1 } } });
   const human = g.players[0];
   const bot = g.players[1];
   const K = key(1, 0); // ô người chơi sở hữu (thuộc cụm 7 ô quanh gốc)
@@ -287,7 +287,7 @@ console.log("[13] Đâm đuôi đối thủ nằm TRONG đất của mình → �
 
 console.log("[14] Va chạm ĐẦU: kẻ xâm nhập đứng trên đất mình bị hạ");
 {
-  const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 1 } } });
+  const g = newGame({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 1 } } });
   const human = g.players[0];
   const bot = g.players[1];
   human.phase = "playing" as Phase;
@@ -310,7 +310,7 @@ console.log("[14] Va chạm ĐẦU: kẻ xâm nhập đứng trên đất mình 
 
 console.log("[15] Hạ đối thủ → toàn bộ đất của đối thủ về tay người hạ");
 {
-  const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 1 } } });
+  const g = newGame({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 1 } } });
   const human = g.players[0];
   const bot = g.players[1];
   const humanBefore = human.owned.size; // 7
@@ -330,7 +330,7 @@ console.log("[15] Hạ đối thủ → toàn bộ đất của đối thủ v�
 
 console.log("[16] Thắng do ĐẤU LOẠI: có KING và chỉ còn 1 người sống");
 {
-  const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 1 } } });
+  const g = newGame({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 1 } } });
   const bot = g.players[1];
   g.owned = new Set([...g.playable].slice(0, Math.ceil(g.playable.size * 0.5)));
   check("phòng có KING", g.roomLocked());
@@ -342,7 +342,7 @@ console.log("[16] Thắng do ĐẤU LOẠI: có KING và chỉ còn 1 người s
 
 console.log("[17] Va đầu ở ô TRUNG LẬP → cả hai chết & mất sạch đất");
 {
-  const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 1 } } });
+  const g = newGame({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 1 } } });
   const human = g.players[0];
   const bot = g.players[1];
   human.phase = "playing" as Phase;
@@ -364,7 +364,7 @@ console.log("[17] Va đầu ở ô TRUNG LẬP → cả hai chết & mất sạc
 
 console.log("[18] Hồi sinh strict: hết chỗ hợp lệ → không spawn; giải phóng → spawn lại");
 {
-  const g = new GameState({ config: { bots: { count: 1 } } }); // không fixedSpawn để test đúng logic
+  const g = newGame({ config: { bots: { count: 1 } } }); // không fixedSpawn để test đúng logic
   const bot = g.players[1];
   for (const k of g.playable) (g as any).claimCell(k, bot); // lấp đầy bản đồ
   check("bản đồ đầy → pickSpawnHex = null", (g as any).pickSpawnHex(g.human) === null);
@@ -399,7 +399,7 @@ console.log("[18] Hồi sinh strict: hết chỗ hợp lệ → không spawn; gi
 
 console.log("[19] Khán giả: chọn XEM → không hồi sinh nữa; restart mới chơi lại");
 {
-  const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 1 } } });
+  const g = newGame({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 1 } } });
   g.die(); // người chơi chết
   check("trước khi xem: có thể hồi sinh", g.canRevive() === true);
   g.spectate();
@@ -418,7 +418,7 @@ console.log("[19] Khán giả: chọn XEM → không hồi sinh nữa; restart m
 console.log("[20] Đường line bắt đầu TRONG ô trung lập đầu tiên (không phải ô đất)");
 {
   // (a) Bước nhảy nhiều ô một lần → lùi về tâm ô trung lập đầu (fallback an toàn).
-  const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 } } });
+  const g = newGame({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 } } });
   // human giữ cụm dist≤1 quanh gốc → đi sang (3,0): (1,0)=đất, (2,0)=ô trung lập đầu.
   go(g, 3, 0);
   const first = g.trailPoints[0];
@@ -435,7 +435,7 @@ console.log("[20] Đường line bắt đầu TRONG ô trung lập đầu tiên 
 
   // (b) Di chuyển LIÊN TỤC bước nhỏ ra ô trung lập đầu → điểm neo là vị trí đầu thực
   //     (bắt đầu "bình thường"), vẫn nằm trong ô trung lập đầu và KHÔNG snap về tâm.
-  const g2 = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 } } });
+  const g2 = newGame({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 } } });
   const c2 = axialToPixel({ q: 2, r: 0 }, CONFIG.HEX_SIZE);
   const step = CONFIG.HEX_SIZE * 0.25;
   for (let x = step; x <= c2.x + 1e-6; x += step) g2.moveTo(x, 0);
@@ -454,7 +454,7 @@ console.log("[20] Đường line bắt đầu TRONG ô trung lập đầu tiên 
 console.log("[21] Ghi LÝ DO CHẾT + ảnh chụp lãnh thổ");
 {
   // (a) Tự cắt đuôi → "self". Đặt đầu ở ô trung lập (2,0), đuôi mình ở (3,0), bước vào.
-  const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 } } });
+  const g = newGame({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 } } });
   const human = g.players[0];
   human.phase = "playing" as Phase;
   const start = axialToPixel({ q: 2, r: 0 }, CONFIG.HEX_SIZE);
@@ -479,7 +479,7 @@ console.log("[21] Ghi LÝ DO CHẾT + ảnh chụp lãnh thổ");
   check("lastTerritory có ô (ảnh chụp đất)", human.lastTerritory.length > 0);
 
   // (b) Bị đối thủ cắt đuôi → "cut" + killerId là kẻ cắt.
-  const g2 = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 1 } } });
+  const g2 = newGame({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 1 } } });
   const h2 = g2.players[0];
   const bot = g2.players[1];
   const K2 = key(1, 0); // đuôi người chơi đặt trên đất mình
@@ -494,7 +494,7 @@ console.log("[21] Ghi LÝ DO CHẾT + ảnh chụp lãnh thổ");
   check("killerId = id bot cắt đuôi", h2.killerId === bot.id);
 
   // (c) Va đầu ngoài sân nhà → "headMutual".
-  const g3 = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 1 } } });
+  const g3 = newGame({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 1 } } });
   const h3 = g3.players[0];
   const b3 = g3.players[1];
   h3.phase = "playing" as Phase;
@@ -513,7 +513,7 @@ console.log("[21] Ghi LÝ DO CHẾT + ảnh chụp lãnh thổ");
 
 console.log("[22] Húc thẳng vào TƯỜNG/GÓC (đang mang đuôi) → KHÔNG chết oan 'tự đâm đuôi'");
 {
-  const g = new GameState({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 } } });
+  const g = newGame({ spawnAt: { q: 0, r: 0 }, config: { bots: { count: 0 } } });
   const human = g.players[0];
   human.phase = "playing" as Phase;
   // Đặt đầu sát ĐỈNH phải (góc 0°, nơi 2 tường gặp nhau) và 1 ô đuôi ngay phía sau.

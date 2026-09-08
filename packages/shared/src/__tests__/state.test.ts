@@ -531,3 +531,84 @@ describe("GameState: Campaign — bot King KHÔNG khoá hồi sinh người chơ
     expect(g.revive()).toBe(false);
   });
 });
+
+// ---- [lát t1] config.seed → GameState.rng ------------------------------------------------------
+//
+// Trước lát này `GameState` gọi thẳng `Math.random` cho spawn và hành vi bot, còn `config.seed` chỉ
+// dùng để rải totem — nghĩa là tài liệu nói "tất định" trong khi thực tế thì không. Đây là ĐIỀU
+// KIỆN của `a3.3` (server chạy lại inputTrace để đối chiếu kết quả campaign): chạy lại một ván mà
+// mỗi lần ra một kết quả thì không xác minh được gì cả.
+
+/** Chụp trạng thái ván thành chuỗi so sánh được. Lấy đúng những trường mà ngẫu nhiên chạm tới. */
+function digest(g: GameState): string {
+  return g.players
+    .map((e) =>
+      [
+        e.id,
+        e.pos.x.toFixed(6),
+        e.pos.y.toFixed(6),
+        e.heading.toFixed(6),
+        e.botState,
+        e.deaths,
+        e.owned.size,
+        e.trailHexes.length,
+      ].join(","),
+    )
+    .join("|");
+}
+
+function run(seed: number | undefined, ticks = 600): string {
+  const g = new GameState({ config: { bots: { count: 3 }, ...(seed === undefined ? {} : { seed }) } });
+  for (let i = 0; i < ticks; i++) g.update(1 / 60);
+  return digest(g);
+}
+
+describe("GameState: config.seed làm ván TẤT ĐỊNH", () => {
+  it("cùng seed ⇒ cùng kết quả sau 600 tick (10 giây, 3 bot)", () => {
+    // Bài chính. 3 bot để ngẫu nhiên thật sự được tiêu: spawn, hướng đầu, lang thang, quyết định săn.
+    expect(run(12345)).toBe(run(12345));
+  });
+
+  it("seed KHÁC ⇒ kết quả KHÁC — nếu không thì bài trên xanh vặt", () => {
+    // Không có bài này thì bài trên vẫn xanh kể cả khi `rng` bị bỏ qua hoàn toàn.
+    expect(run(12345)).not.toBe(run(999));
+  });
+
+  it("KHÔNG truyền seed ⇒ vẫn dùng Math.random (hành vi cũ của /play và /netplay)", () => {
+    // Kiểm bằng cách đếm lời gọi chứ không so hai lần chạy: hai lần chạy Math.random khác nhau là
+    // gần như chắc chắn, nhưng "gần như" không phải thứ nên đặt vào một cổng CI.
+    const original = Math.random;
+    let calls = 0;
+    Math.random = () => {
+      calls++;
+      return original();
+    };
+    try {
+      new GameState({ config: { bots: { count: 3 } } });
+      expect(calls, "seed mặc định phải còn gọi Math.random").toBeGreaterThan(0);
+
+      calls = 0;
+      new GameState({ config: { bots: { count: 3 }, seed: 12345 } });
+      expect(calls, "seed khác 0 thì KHÔNG được gọi Math.random nữa").toBe(0);
+    } finally {
+      Math.random = original;
+    }
+  });
+
+  it("seed 0 truyền tường minh = không truyền — 0 là giá trị 'chưa đặt'", () => {
+    // `resolveMatchConfig` đặt `seed: input.seed ?? 0`, nên 0 không phân biệt được với vắng mặt.
+    // Ghi lại thành test để lần sau ai muốn dùng seed 0 thật thì phải đổi hợp đồng, không lặng lẽ.
+    const original = Math.random;
+    let calls = 0;
+    Math.random = () => {
+      calls++;
+      return original();
+    };
+    try {
+      new GameState({ config: { bots: { count: 3 }, seed: 0 } });
+      expect(calls).toBeGreaterThan(0);
+    } finally {
+      Math.random = original;
+    }
+  });
+});

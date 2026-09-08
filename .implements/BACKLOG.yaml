@@ -230,6 +230,10 @@ slices:
       - packages/shared/src/state.ts
       - packages/shared/src/__tests__/state.test.ts
       - packages/shared/scripts/verify-logic.ts
+      # THÊM so với kế hoạch — MỘT dòng: `function seededRandom` -> `export function`.
+      # Chép tay bản thứ hai của cùng một PRNG là cách chắc chắn nhất để tất định lặng lẽ trôi
+      # khỏi nhau, tức là hỏng đúng thứ lát này dựng ra để bảo đảm.
+      - packages/shared/src/totems.ts
     depends_on: []
     dod:
       - "pnpm --filter @hexagon/shared test"
@@ -241,7 +245,7 @@ slices:
       nên state KHÔNG tất định dù tài liệu nói vậy. Đây là ĐIỀU KIỆN của A3.3 (server chạy lại
       input để xác minh Campaign), không phải dọn dẹp test. Chạm code nóng mỗi-tick ⇒ phải chứng
       minh cùng seed cho cùng kết quả, và seed mặc định giữ hành vi ngẫu nhiên như cũ.
-    status: todo
+    status: done
     commit: null
 
   - id: r7-auto-review

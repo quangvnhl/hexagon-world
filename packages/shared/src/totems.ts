@@ -73,7 +73,11 @@ export function effectiveSpeedWithTotems(
     Math.max(0, Math.floor(speedTotemCount)) * cfg.speedBonus;
 }
 
-function seededRandom(seed: number): () => number {
+/**
+ * LCG (Numerical Recipes). Xuất ra để `state.ts` dùng CHUNG một hiện thực — hai bản chép tay của
+ * cùng một PRNG là cách chắc chắn nhất để tất định lặng lẽ trôi khỏi nhau (lát t1).
+ */
+export function seededRandom(seed: number): () => number {
   let state = seed >>> 0;
   return () => {
     state = (Math.imul(state, 1664525) + 1013904223) >>> 0;
