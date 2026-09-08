@@ -28,3 +28,7 @@ packages/*/dist/
 # thể bị commit khi chạy `git add .`.
 deploy/*.env
 deploy/**/*.env
+
+# Playwright (dong bo voi main sau lat r2.1)
+test-results/
+playwright-report/
