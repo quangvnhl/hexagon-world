@@ -4,7 +4,7 @@ import { useMemo, useRef, useState, useCallback, useEffect } from "react";
 import { Canvas, useFrame, useThree } from "@react-three/fiber";
 import { OrthographicCamera, PerspectiveCamera } from "@react-three/drei";
 import * as THREE from "three";
-import { GameState } from "@hexagon/shared";
+import { GameState, TraceRecorder } from "@hexagon/shared";
 import { CONFIG } from "@hexagon/shared";
 import type { PlayerAppearance, MatchConfigInput, CampaignOutcomeFacts, Axial } from "@hexagon/shared";
 import { axialToPixel, parseKey } from "@hexagon/shared";
@@ -130,6 +130,7 @@ function GameLoop({
   spectateTargetRef,
   steered,
   onStats,
+  recorder,
 }: {
   game: GameState;
   pointer: React.MutableRefObject<PointerRef>;
@@ -139,6 +140,8 @@ function GameLoop({
    *  không được phép kéo theo một lần render. FTUE đọc nó qua `onStats`. */
   steered: React.MutableRefObject<boolean>;
   onStats: (s: Stats) => void;
+  /** [doc 35 §A3 lớp 3] Bộ ghi input; vắng ⇒ không ghi gì và vòng lặp chạy y như cũ. */
+  recorder?: TraceRecorder;
 }) {
   const camera = useThree((s) => s.camera);
   const { width, height } = useThree((s) => s.size);
@@ -175,10 +178,15 @@ function GameLoop({
 
     // Joystick ảo (chạm) ưu tiên hơn chuột: khi đang giữ, dùng thẳng góc của nó
     // và BỎ QUA block chuột trong frame này.
+    // Gom hướng mong muốn của khung này TRƯỚC, chưa đẩy vào game: khi có `recorder`, giá trị thật
+    // sự được mô phỏng phải là giá trị ĐÃ LÀM TRÒN mà bộ ghi trả về (doc 35 §A3 lớp 3). Mô phỏng
+    // bằng số thô rồi ghi bản làm tròn thì sai lệch tích luỹ qua hàng nghìn khung, và ván server
+    // chạy lại sẽ khác hẳn — mọi người chơi lương thiện đều bị đánh dấu nghi vấn.
+    let desired: number | null = null;
     const j = joystick.current;
     if (j.active) {
       steered.current = true;
-      game.setHeadingTarget(j.angle);
+      desired = j.angle;
     } else {
       // Hướng mong muốn = góc từ đầu người chơi tới điểm con trỏ chiếu xuống mặt đất.
       const p = pointer.current;
@@ -190,7 +198,7 @@ function GameLoop({
           const dy = hitPoint.y - game.pos.y;
           if (Math.hypot(dx, dy) > 0.4) {
             steered.current = true;
-            game.setHeadingTarget(Math.atan2(dy, dx));
+            desired = Math.atan2(dy, dx);
           }
         }
       }
@@ -200,7 +208,15 @@ function GameLoop({
     // chơi xem lại tình huống (camera đứng yên, bot không chạy tiếp). Bấm Hồi sinh/Xem sẽ
     // chạy lại. Khoảnh khắc chết vẫn được xử lý xong ở frame cuối (frozen tính trước update).
     const frozen = game.human.phase === "dead" && !game.spectating;
-    if (!frozen) game.update(dt);
+    if (frozen) {
+      // Không mô phỏng ⇒ KHÔNG ghi khung. Trace chỉ chứa những khung thật sự chạy, nên bên chạy
+      // lại chỉ việc áp tuần tự mà không cần biết gì về trạng thái đóng băng.
+      if (desired !== null) game.setHeadingTarget(desired);
+    } else {
+      const q = recorder ? recorder.record(dt, desired) : { dt, heading: desired };
+      if (q.heading !== null) game.setHeadingTarget(q.heading);
+      game.update(q.dt);
+    }
 
     // Camera perspective: rotation cố định, chỉ PAN (tịnh tiến) theo người chơi.
     const [ox, oy, oz] = CONFIG.CAMERA.OFFSET;
@@ -326,6 +342,7 @@ export default function GameScene({
   onStatsChange,
   onExit,
   showMenu = true,
+  recorder,
 }: {
   playerName?: string;
   appearance?: PlayerAppearance;
@@ -348,6 +365,8 @@ export default function GameScene({
   onStatsChange?: (s: Stats) => void;
   onExit?: () => void;
   showMenu?: boolean;
+  /** [doc 35 §A3 lớp 3] Bộ ghi input để server chạy lại và đối chiếu. Vắng ⇒ không ghi gì. */
+  recorder?: TraceRecorder;
 } = {}) {
   // Luyện tập: endless (win.kind="none") + số bot chỉnh được. Không truyền botCount
   // ⇒ mặc định CONFIG.BOT_COUNT, hành vi y hệt bản cũ (chỉ khác ở chỗ không bao giờ thắng).
@@ -494,6 +513,7 @@ export default function GameScene({
           spectateTargetRef={spectateTargetRef}
           steered={steered}
           onStats={onStats}
+          recorder={recorder}
         />
         <HexGridView game={game} />
         {CONFIG.DISPLAY.TERRITORY_BORDERS && <TerritoryBorders game={game} />}

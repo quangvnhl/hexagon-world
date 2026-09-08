@@ -17,6 +17,7 @@ import {
   type MatchConfigInput,
   type PlayerAppearance,
 } from "@hexagon/shared";
+import { TraceRecorder, type InputTrace } from "@hexagon/shared";
 import {
   getEnergy,
   getCampaignLevels,
@@ -102,7 +103,13 @@ export default function CampaignScene({ playerName, appearance, onExit, showMenu
   const [error, setError] = useState<string | null>(null);
   const [picks, setPicks] = useState<PowerupKind[]>([]);
   const [selected, setSelected] = useState<CampaignLevel | null>(null);
-  const [playing, setPlaying] = useState<{ level: CampaignLevel; config: MatchConfigInput; playId: string } | null>(null);
+  const [playing, setPlaying] = useState<{
+    level: CampaignLevel;
+    config: MatchConfigInput;
+    playId: string;
+    /** [doc 35 §A3 lớp 3] Ghi input để server chạy lại. `null` khi server chưa cấp seed. */
+    recorder: TraceRecorder | null;
+  } | null>(null);
   const submitting = useRef(false);
 
   const cleared = useMemo(() => new Set(progress.filter((p) => p.status === "cleared").map((p) => p.level_id)), [progress]);
@@ -139,7 +146,17 @@ export default function CampaignScene({ playerName, appearance, onExit, showMenu
     try {
       const res = await startCampaignLevel(level.id);
       setEnergy(res.energy);
-      setPlaying({ level, config: applyPowerups(level.config, picks), playId: res.playId });
+      // Seed do SERVER cấp phải đi vào chính `MatchConfig` của ván, nếu không thì ván chạy bằng
+      // `Math.random` và server chạy lại sẽ ra một ván khác hẳn (doc 35 §A3 lớp 3 + lát t1).
+      // Server chưa có lát a3.3 ⇒ không có seed ⇒ chơi như cũ, không ghi trace.
+      const withPowerups = applyPowerups(level.config, picks);
+      const seed = typeof res.seed === "number" && res.seed !== 0 ? res.seed : null;
+      setPlaying({
+        level,
+        config: seed === null ? withPowerups : { ...withPowerups, seed },
+        playId: res.playId,
+        recorder: seed === null ? null : new TraceRecorder(seed),
+      });
       setSelected(null);
       // doc 35 §A1 — phát SAU khi server đã nhận và trừ năng lượng. Phát trước thì mỗi lần bấm
       // hụt vì hết năng lượng cũng thành một "lượt bắt đầu", và tỉ lệ hoàn thành cấp sẽ sai.
@@ -155,7 +172,7 @@ export default function CampaignScene({ playerName, appearance, onExit, showMenu
 
   // [doc 35 §A3] Chỉ NỘP dữ kiện thô; sao/điểm/đạt-hay-không do server chấm. `won` chỉ để quyết
   // định có nộp hay không (thua thì khỏi nộp) — server vẫn chấm lại độc lập.
-  const onOutcome = useCallback(async (won: boolean, playId: string, levelId: string, facts: CampaignOutcomeFacts) => {
+  const onOutcome = useCallback(async (won: boolean, playId: string, levelId: string, facts: CampaignOutcomeFacts, trace: InputTrace | null) => {
     if (!won) {
       // Thua cũng phải đo: phễu campaign chỉ đọc được khi biết cả mẫu số (bao nhiêu lượt thua ở
       // cấp nào), không chỉ tử số.
@@ -165,7 +182,7 @@ export default function CampaignScene({ playerName, appearance, onExit, showMenu
     if (submitting.current) return;
     submitting.current = true;
     try {
-      await completeCampaignLevel(playId, facts);
+      await completeCampaignLevel(playId, facts, trace);
       track("campaign_level_complete", { level_id: levelId, deaths: facts.deaths, territory_pct: Math.round(facts.territoryPct) });
       await refresh();
     } catch (err) {
@@ -188,7 +205,8 @@ export default function CampaignScene({ playerName, appearance, onExit, showMenu
         appearance={appearance}
         config={playing.config}
         endMode="campaign"
-        onOutcome={(won, result) => void onOutcome(won, playing.playId, playing.level.id, result)}
+        recorder={playing.recorder ?? undefined}
+        onOutcome={(won, result) => void onOutcome(won, playing.playId, playing.level.id, result, playing.recorder?.build() ?? null)}
         onExit={() => { setPlaying(null); void refresh(); }}
         showMenu={showMenu}
       />
