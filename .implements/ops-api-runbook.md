@@ -128,3 +128,29 @@ Khoá bị thu hồi **không bị xoá** — hàng vẫn còn để vết kiể
 
 Liên quan: [35-product-depth-plan.md](35-product-depth-plan.md) §C2 · [38-lo-trinh-dai-han.md](38-lo-trinh-dai-han.md) ·
 `supabase/migrations/202609070001_ops_api_keys.sql` · `packages/server/src/admin/`
+
+## Giới hạn đã biết (viết ra để không ai nhầm là đã được bảo vệ)
+
+Ba chỗ dưới đây là lựa chọn có chủ ý, không phải sót. Ai siết lại thì siết ở đúng chỗ này.
+
+**1. Hạn mức ngày là kiểm TRƯỚC, ghi SAU.** Guard đọc mức tiêu dùng trước khi handler chạy, còn
+interceptor ghi vết sau khi handler xong. Hai lời gọi đồng thời vì thế đều có thể qua cửa và vượt
+trần một chút. Chấp nhận: trần ngày là hàng rào chống thiệt hại tích luỹ, không phải khoá tương
+tranh. Cần chặt tuyệt đối thì phải đếm bằng một câu lệnh nguyên tử trong database, không phải ở
+tầng ứng dụng.
+
+**2. Chống lặp bảo vệ lần thử lại TUẦN TỰ, không bảo vệ lời gọi ĐỒNG THỜI.** Vết kiểm toán được
+ghi bằng `void` (không chờ), và `findReplay` chỉ thấy hàng `status = 'ok'` đã commit. Hai lời gọi
+cùng `Idempotency-Key` chạy song song — hoặc một lần thử lại đến trước khi vết kịp ghi — sẽ thực
+hiện hai lần. Kiểu hỏng thật mà nó chặn được là kiểu hay xảy ra: hết thời gian chờ mạng rồi gửi
+lại. Chỉ số unique một phần `(key_id, idempotency_key) where status = 'ok'` là lưới cuối, nhưng nó
+chặn *bản ghi thứ hai*, không hoàn tác *thao tác thứ hai*.
+
+**3. Khoá bootstrap KHÔNG có chống lặp.** `findReplay` cần `key_id`, mà tác nhân bootstrap có
+`keyId = null`. Cố ý: bootstrap chỉ sống tới khi khoá thật đầu tiên được tạo, và việc duy nhất nó
+cần làm là tạo khoá đó. Đừng dùng nó cho gì khác.
+
+**4. Hỏng database ⇒ ĐÓNG, ở cả ba đường.** `resolve()` từ chối thẳng khi truy vấn lỗi;
+`hasActiveKey()` trả `true` (coi như đã có khoá thật) nên chuỗi cũ vẫn chết; `dailyUsage()` trả về
+mức tiêu dùng vô hạn nên mọi trần đều coi như đã chạm. Hướng hỏng này làm mất đường vào tạm thời và
+tự khỏi khi database trở lại — hướng ngược lại mở toàn quyền và không tự khỏi.

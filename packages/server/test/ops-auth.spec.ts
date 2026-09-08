@@ -47,7 +47,12 @@ afterEach(() => {
 
 interface Tables { ops_api_keys: Record<string, unknown>[]; ops_audit_log: Record<string, unknown>[] }
 
-function fakeDb(seed: Partial<Tables> = {}, opts: { rpcThrows?: boolean; usage?: { calls: number; units: number } } = {}) {
+function fakeDb(
+  seed: Partial<Tables> = {},
+  // `selectError` mo phong dung hanh vi that cua supabase-js: truy van hong KHONG nem, no tra ve
+  // `{ data: null, error }`. Do la ly do mot loi database co the bi doc nham thanh "khong co du lieu".
+  opts: { rpcThrows?: boolean; usage?: { calls: number; units: number }; selectError?: boolean } = {},
+) {
   const tables: Tables = { ops_api_keys: seed.ops_api_keys ?? [], ops_audit_log: seed.ops_audit_log ?? [] };
   function builder(name: keyof Tables) {
     let rows = [...tables[name]];
@@ -64,7 +69,8 @@ function fakeDb(seed: Partial<Tables> = {}, opts: { rpcThrows?: boolean; usage?:
       or: () => api,
       insert: (row: Record<string, unknown>) => chain(() => { mode = "insert"; patch = { id: `id-${tables[name].length + 1}`, ...row }; }),
       update: (row: Record<string, unknown>) => chain(() => { mode = "update"; patch = row; }),
-      maybeSingle: async () => ({ data: rows[0] ?? null, error: null }),
+      maybeSingle: async () =>
+        opts.selectError ? { data: null, error: { message: "mat ket noi" } } : { data: rows[0] ?? null, error: null },
       single: async () => {
         if (mode === "insert") { tables[name].push(patch); return { data: patch, error: null }; }
         return { data: rows[0] ?? null, error: null };
@@ -72,6 +78,7 @@ function fakeDb(seed: Partial<Tables> = {}, opts: { rpcThrows?: boolean; usage?:
       then: (resolve: (v: { data: unknown; error: null }) => unknown) => {
         if (mode === "insert") { tables[name].push(patch); return Promise.resolve({ data: [patch], error: null }).then(resolve); }
         if (mode === "update") { for (const r of rows) Object.assign(r, patch); return Promise.resolve({ data: rows, error: null }).then(resolve); }
+        if (opts.selectError) return Promise.resolve({ data: null, error: { message: "mat ket noi" } } as unknown as { data: unknown; error: null }).then(resolve);
         return Promise.resolve({ data: rows, error: null }).then(resolve);
       },
     });
@@ -148,6 +155,22 @@ describe("overDailyLimit — hai trần tách nhau", () => {
   });
 });
 
+describe("overDailyLimit — trần ghi nhầm kiểu vẫn phải là trần", () => {
+  // `daily_limits` là jsonb do người gọi API đặt. Trước khi ép kiểu, `"50"` trượt `Number.isFinite`
+  // và biến thành KHÔNG CÓ TRẦN — im lặng, và đúng hướng nguy hiểm.
+  it("trần calls dạng chuỗi vẫn chặn", () => {
+    expect(overDailyLimit({ calls: "50" } as unknown as Record<string, number>, { calls: 50, units: 0 }, { isWrite: true })).toBe("daily_call_limit");
+  });
+
+  it("trần đơn vị dạng chuỗi vẫn chặn", () => {
+    expect(overDailyLimit({ coin_granted: "1000" } as unknown as Record<string, number>, { calls: 0, units: 900 }, { isWrite: true, unitKind: "coin_granted", units: 200 })).toBe("daily_unit_limit");
+  });
+
+  it("không đặt trần thì vẫn là không có trần", () => {
+    expect(overDailyLimit({}, { calls: 999_999, units: 999_999 }, { isWrite: true, unitKind: "coin_granted", units: 10 })).toBeNull();
+  });
+});
+
 describe("payloadHash", () => {
   it("KHÔNG phụ thuộc thứ tự khoá — nếu không thì chống lặp vô dụng", () => {
     expect(payloadHash({ a: 1, b: { c: 2, d: 3 } })).toBe(payloadHash({ b: { d: 3, c: 2 }, a: 1 }));
@@ -218,6 +241,26 @@ describe("resolve — chuỗi x-admin-key cũ TỰ CHẾT", () => {
     const svc = new OpsKeysService(fakeDb().service);
     expect(await svc.resolve("")).toBeNull();
     expect(await svc.resolve("bat-ky-chuoi-nao")).toBeNull();
+  });
+
+  // Ba bài dưới đây khoá lại một lỗ MỞ ra do `db.from(...)` không ném khi truy vấn hỏng: nó trả
+  // `{ data: null, error }`. Bản đầu của lát này bỏ qua `error`, nên "không đọc được bảng khoá"
+  // trông y hệt "không có khoá nào khớp" — và rơi thẳng xuống nhánh bootstrap.
+  it("database hỏng + khoá THẬT hợp lệ ⇒ null, KHÔNG cấp gì cả", async () => {
+    const svc = new OpsKeysService(fakeDb({ ops_api_keys: [liveKey()] }, { selectError: true }).service);
+    expect(await svc.resolve("hxops_live")).toBeNull();
+  });
+
+  it("database hỏng + chuỗi CŨ ⇒ null: hỏng không được làm chuỗi đã chết sống lại với quyền *", async () => {
+    // Đây là hướng hỏng đáng sợ nhất của lát này. Nếu ở đây trả về tác nhân bootstrap thì mỗi lần
+    // database chập là một cửa sổ toàn quyền cho một chuỗi lẽ ra đã bị gỡ.
+    const svc = new OpsKeysService(fakeDb({ ops_api_keys: [liveKey()] }, { selectError: true }).service);
+    expect(await svc.resolve("legacy-shared-key")).toBeNull();
+  });
+
+  it("hasActiveKey hỏng ⇒ true (đóng bootstrap), không phải false (mở)", async () => {
+    const svc = new OpsKeysService(fakeDb({ ops_api_keys: [] }, { selectError: true }).service);
+    expect(await svc.hasActiveKey()).toBe(true);
   });
 });
 

@@ -112,11 +112,14 @@ export function overDailyLimit(
   usage: DailyUsage,
   opts: { isWrite: boolean; unitKind?: string; units?: number },
 ): string | null {
-  const callCap = limits.calls;
-  if (opts.isWrite && Number.isFinite(callCap) && usage.calls >= Number(callCap)) return "daily_call_limit";
+  // ÉP KIỂU trước khi kiểm hữu hạn. `daily_limits` là jsonb do người gọi API đặt: một trần ghi
+  // nhầm thành chuỗi `"50"` sẽ trượt `Number.isFinite` và biến thành KHÔNG CÓ TRẦN — im lặng, đúng
+  // hướng nguy hiểm. `Number(undefined)` vẫn là NaN nên "không đặt trần" vẫn hiểu đúng.
+  const callCap = Number(limits.calls);
+  if (opts.isWrite && Number.isFinite(callCap) && usage.calls >= callCap) return "daily_call_limit";
   if (opts.unitKind) {
-    const unitCap = limits[opts.unitKind];
-    if (Number.isFinite(unitCap) && usage.units + Number(opts.units ?? 0) > Number(unitCap)) return "daily_unit_limit";
+    const unitCap = Number(limits[opts.unitKind]);
+    if (Number.isFinite(unitCap) && usage.units + Number(opts.units ?? 0) > unitCap) return "daily_unit_limit";
   }
   return null;
 }
@@ -173,10 +176,15 @@ export class OpsKeysService {
     if (!raw) return null;
     const hash = sha256(raw);
 
-    const { data } = await this.db.from("ops_api_keys")
+    const { data, error } = await this.db.from("ops_api_keys")
       .select("id,name,actor_kind,scopes,daily_limits,expires_at,revoked_at")
       .eq("key_hash", hash)
       .maybeSingle();
+    // `db.from(...)` KHÔNG ném khi truy vấn hỏng — nó trả `{ data: null, error }`. Bỏ qua `error`
+    // sẽ biến "không đọc được bảng khoá" thành "không có khoá nào khớp", rồi rơi xuống nhánh
+    // bootstrap bên dưới và cấp phạm vi `*`. Tức là database hỏng ⇒ chuỗi cũ SỐNG LẠI với toàn
+    // quyền, đúng thứ mà lát này sinh ra để dập tắt. Từ chối thẳng.
+    if (error) return null;
     const row = data as OpsKeyRow | null;
     if (row) {
       if (keyUnusableReason(row)) return null;
@@ -206,11 +214,15 @@ export class OpsKeysService {
 
   /** Có khoá thật nào còn sống không — quyết định chuỗi bootstrap còn hiệu lực hay không. */
   async hasActiveKey(now = new Date()): Promise<boolean> {
-    const { data } = await this.db.from("ops_api_keys")
+    const { data, error } = await this.db.from("ops_api_keys")
       .select("id")
       .is("revoked_at", null)
       .or(`expires_at.is.null,expires_at.gt.${now.toISOString()}`)
       .limit(1);
+    // Không đọc được ⇒ trả `true` = "coi như đã có khoá thật" = chuỗi bootstrap ĐÓNG. Hướng hỏng
+    // này được chọn có chủ ý: hỏng kiểu này làm mất đường vào tạm thời (phiền, tự khỏi khi database
+    // trở lại), còn hướng ngược lại mở toàn quyền cho một chuỗi lẽ ra đã chết (không tự khỏi).
+    if (error) return true;
     return Array.isArray(data) && data.length > 0;
   }
 
