@@ -28,3 +28,7 @@ packages/*/dist/
 # thể bị commit khi chạy `git add .`.
 deploy/*.env
 deploy/**/*.env
+
+# Kết quả chạy Playwright (lát r2.1) — sinh lại được, và trace có thể vài MB mỗi lần đỏ.
+test-results/
+playwright-report/
