@@ -1,4 +1,5 @@
-import { CallHandler, ConflictException, ExecutionContext, Injectable, NestInterceptor } from "@nestjs/common";
+import { BadRequestException, CallHandler, ConflictException, ExecutionContext, Injectable, NestInterceptor } from "@nestjs/common";
+import { hintFor } from "./ops-errors";
 import { Observable, from, of, switchMap, tap, catchError, throwError } from "rxjs";
 import { OpsKeysService } from "./ops-keys.service";
 import type { OpsRequest } from "./ops-auth.guard";
@@ -28,6 +29,24 @@ export class OpsAuditInterceptor implements NestInterceptor {
 
     const action = `${req.method} ${(req as { route?: { path?: string } }).route?.path ?? req.path}`;
     const params = (req.params ?? {}) as Record<string, string>;
+    const dryRun = req.opsDryRun === true;
+
+    // doc 35 §C2.5 — MẶC ĐỊNH TỪ CHỐI, và từ chối TRƯỚC KHI handler chạy.
+    //
+    // Đây là bất biến an toàn quan trọng nhất của lát này. Nếu `?dry_run=true` rơi xuống nhánh thật
+    // trên một endpoint chưa cài, thì một agent làm ĐÚNG quy trình — luôn thử khô trước khi làm
+    // thật — sẽ cấp coin hoặc xoá tài khoản trong khi tin rằng mình chỉ đang xem trước. Hỏng theo
+    // hướng "người cẩn thận bị phạt" là hướng tệ nhất.
+    if (dryRun && !meta.dryRun) {
+      const body = { code: "dry_run_unsupported", message: `endpoint này chưa cài dry_run`, hint: hintFor("dry_run_unsupported"), retryable: false };
+      void this.keys.record({
+        keyId: actor.keyId, actorKind: actor.actorKind, actorName: actor.name, action,
+        scope: meta.scope, targetId: String(params.id ?? params.itemId ?? "") || null,
+        payloadHash: req.opsPayloadHash ?? "", idempotencyKey: headerOf(req, "idempotency-key"),
+        isWrite: meta.isWrite, dryRun: true, status: "denied", result: body,
+      });
+      return throwError(() => new BadRequestException(body));
+    }
     const base = {
       keyId: actor.keyId,
       actorKind: actor.actorKind,
@@ -38,10 +57,23 @@ export class OpsAuditInterceptor implements NestInterceptor {
       payloadHash: req.opsPayloadHash ?? "",
       idempotencyKey: headerOf(req, "idempotency-key"),
       isWrite: meta.isWrite,
-      dryRun: false,
+      dryRun,
       units: req.opsUnits ?? 0,
       unitKind: meta.unitKind ?? null,
     };
+
+    // Thử khô KHÔNG đi qua chống lặp: nó không thực hiện gì nên không có gì để khử trùng, và nếu
+    // nó ghi một hàng `ok` mang khoá idempotency thì lần gọi THẬT sau đó sẽ bị coi là lặp lại và
+    // không bao giờ chạy — im lặng nuốt mất chính thao tác mà người ta vừa xem trước xong.
+    if (dryRun) {
+      return next.handle().pipe(
+        tap({ next: (result) => { void this.keys.record({ ...base, idempotencyKey: null, status: "ok", result: asRecord(result) }); } }),
+        catchError((err: unknown) => {
+          void this.keys.record({ ...base, idempotencyKey: null, status: "error", result: { message: messageOf(err) } });
+          return throwError(() => err);
+        }),
+      );
+    }
 
     return from(this.keys.findReplay(base.keyId, base.idempotencyKey)).pipe(
       switchMap((prior) => {
