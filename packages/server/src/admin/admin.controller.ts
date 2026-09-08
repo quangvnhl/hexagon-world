@@ -1,6 +1,6 @@
-import { BadRequestException, Body, Controller, Delete, Get, NotFoundException, Param, Post, Put, Query, Req, UseFilters, UseGuards, UseInterceptors } from "@nestjs/common";
+import { BadRequestException, ConflictException, Body, Controller, Delete, Get, NotFoundException, Param, Post, Put, Query, Req, UseFilters, UseGuards, UseInterceptors } from "@nestjs/common";
 import { randomUUID } from "node:crypto";
-import { validateLevelDraft, type CampaignLevelDraft } from "@hexagon/shared";
+import { REMOTE_CONFIG_DEFAULTS, validateLevelDraft, type CampaignLevelDraft } from "@hexagon/shared";
 import { SupabaseService } from "../database/supabase.service";
 import { runtimeConfig } from "../runtime-config";
 import { Ops, OpsAuthGuard, type OpsRequest } from "./ops-auth.guard";
@@ -71,6 +71,97 @@ export class AdminController {
     }
     const deleted = await this.db.rpc<number>("purge_old_match_history", { p_retention_days: days });
     return { deleted };
+  }
+
+  // ---- Remote config (doc 35 §A2 — lát a2.3) ----------------------------------------------------
+  //
+  // `a2.1` dựng bảng + đường ĐỌC cho client (`GET /v1/config`), nhưng không có đường GHI nào cả:
+  // đổi một tham số kinh tế vẫn phải vào SQL Editor. Gate đóng Pha 6 đòi "đổi 1 tham số kinh tế
+  // không cần deploy" — vào database bằng tay thì đúng chữ mà sai tinh thần: không có vết, không
+  // có xác nhận, và người bấm lúc 2 giờ sáng là người dễ gõ nhầm nhất.
+  //
+  // Lịch sử KHÔNG ghi ở đây: `202609030002` đã có trigger `remote_config_write_audit()` ghi cả giá
+  // trị TRƯỚC và SAU. Ghi thêm một lần nữa ở tầng ứng dụng là tạo ra hai nguồn sự thật cho cùng một
+  // câu hỏi, và chúng sẽ lệch nhau vào đúng lúc cần tra.
+
+  @Get("config")
+  @Ops({ scope: "config:write", isWrite: false })
+  async listConfig() {
+    const { data } = await this.db.from("remote_config")
+      .select("key,value,audience,version,updated_at,updated_by").order("key");
+    return { rows: (data as unknown[]) ?? [] };
+  }
+
+  @Get("config/:key/history")
+  @Ops({ scope: "config:write", isWrite: false })
+  async configHistory(@Param("key") key: string) {
+    const { data } = await this.db.from("remote_config_audit")
+      .select("id,key,old_value,new_value,old_audience,new_audience,changed_at,changed_by")
+      .eq("key", key).order("changed_at", { ascending: false }).limit(20);
+    return { history: (data as unknown[]) ?? [] };
+  }
+
+  /**
+   * Ghi một khoá. `version` là bắt buộc và phải khớp bản đang có — cột đó tồn tại từ `a2.1` với
+   * đúng ghi chú "để trang admin phát hiện ghi đè lẫn nhau", và đây là chỗ nó được dùng.
+   *
+   * Vì sao khoá lạc quan chứ không phải "ai ghi sau thắng": hai người cùng mở trang trong một sự
+   * cố là chuyện thường, và mất một thay đổi kill-switch vì người kia bấm sau nửa giây là kiểu
+   * hỏng không ai truy ra được.
+   */
+  @Put("config/:key")
+  @Ops({ scope: "config:write", isWrite: true, dryRun: true })
+  async setConfig(
+    @Req() req: OpsRequest,
+    @Param("key") key: string,
+    @Body() body: { value?: unknown; audience?: unknown; version?: number },
+  ) {
+    if (!key || key.length > 128) {
+      throw new BadRequestException({ code: "invalid_config_key", message: "khoá rỗng hoặc quá dài", retryable: false });
+    }
+    if (body.value === undefined) {
+      throw new BadRequestException({ code: "missing_value", message: "thiếu `value`", retryable: false });
+    }
+
+    const { data } = await this.db.from("remote_config")
+      .select("key,value,audience,version").eq("key", key).maybeSingle();
+    const current = data as { value?: unknown; audience?: unknown; version?: number } | null;
+
+    if (req.opsDryRun) {
+      return {
+        dryRun: true, key, exists: current !== null,
+        currentVersion: current?.version ?? null,
+        currentValue: current?.value ?? null,
+        nextValue: body.value,
+        // Khoá chưa có trong `REMOTE_CONFIG_DEFAULTS` KHÔNG bị chặn — thêm cấu hình trước khi phát
+        // hành client dùng nó là việc hợp lệ. Nhưng nói ra, vì gõ nhầm tên khoá thì im lặng và
+        // không bao giờ có tác dụng gì.
+        knownKey: Object.prototype.hasOwnProperty.call(REMOTE_CONFIG_DEFAULTS, key),
+      };
+    }
+
+    // Khoá lạc quan. Khoá CHƯA có ⇒ đòi `version` là 0 để người gọi phải cố ý tạo mới.
+    const expected = current?.version ?? 0;
+    if (Number(body.version) !== expected) {
+      throw new ConflictException({
+        code: "config_version_conflict",
+        message: `bản đang có là version ${expected}, bạn gửi ${body.version}`,
+        retryable: false,
+        currentVersion: expected,
+      });
+    }
+
+    const patch = {
+      key,
+      value: body.value,
+      audience: body.audience ?? null,
+      version: expected + 1,
+      updated_at: new Date().toISOString(),
+      updated_by: req.opsActor?.name ?? "ops",
+    };
+    const { error } = await this.db.from("remote_config").upsert(patch, { onConflict: "key" });
+    if (error) throw new BadRequestException({ code: "config_write_failed", message: error.message, retryable: true });
+    return { ok: true, key, version: patch.version };
   }
 
   // ---- Catalog ----------------------------------------------------------------------------------
