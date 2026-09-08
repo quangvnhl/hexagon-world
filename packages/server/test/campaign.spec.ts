@@ -293,6 +293,29 @@ describe("CampaignController.complete — lớp chặn phi lý", () => {
     expect(rpc).toHaveBeenCalledTimes(1);
   });
 
+  it("nộp LẠI lượt đã hoàn thành sau 5 GIỜ vẫn cho qua — `elapsedSec` lớn dần, đừng biến nó thành cáo buộc", async () => {
+    // `elapsedSec` đo từ `created_at` nên nó tăng mãi. Không có lối thoát này thì mọi lần đồng bộ
+    // lại một cấp đã xong, muộn hơn MAX_PLAY_SECONDS, sẽ nhận `play_too_old` — tức là người chơi
+    // bị nói là gian lận vì đã hoàn thành cấp đó quá lâu về trước.
+    const rpc = vi.fn(async () => ({}));
+    const d = db({
+      campaign_plays: { single: play(5 * 60 * 60, new Date().toISOString()) },
+      campaign_levels: { single: LEVEL },
+    }, rpc);
+    await new CampaignController(sessions(), d, analyticsStub().service)
+      .complete({} as never, { playId: "p1", facts: WIN_FACTS });
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("lượt CHƯA hoàn thành sau 5 giờ VẪN bị chặn — lối thoát trên không được nới rộng hơn thế", async () => {
+    const rpc = vi.fn(async () => ({}));
+    const d = db({ campaign_plays: { single: play(5 * 60 * 60) }, campaign_levels: { single: LEVEL } }, rpc);
+    await expect(new CampaignController(sessions(), d, analyticsStub().service)
+      .complete({} as never, { playId: "p1", facts: WIN_FACTS }))
+      .rejects.toMatchObject({ response: { code: "play_too_old" } });
+    expect(rpc).not.toHaveBeenCalled();
+  });
+
   it("đếm trần HỎNG ⇒ cho qua, KHÔNG chặn — nghiêng về phía người chơi", async () => {
     // Ngược hướng với hạn mức Ops API (ở đó hỏng thì đóng). Chặn nhầm một người vận hành chỉ gây
     // phiền; chặn nhầm người chơi là lấy mất năng lượng và khoá đường mở cấp kế tiếp.

@@ -112,8 +112,10 @@ export class CampaignController {
   // nếu play đã tiêu, nên gọi lại không thưởng thêm lần nào.
   @Post("campaign/complete") async complete(@Req() req: Request, @Body() body: { playId?: string; facts?: Partial<CampaignOutcomeFacts> }) {
     const player = await this.sessions.resolve(req);
-    // Chặn trước MỌI thứ khác: một vòng lặp farm không được phép làm ta tốn một truy vấn database
-    // nào. Đây cũng là lớp duy nhất còn tác dụng khi kẻ tấn công gửi `playId` rác hàng loạt.
+    // Chặn NGAY sau khi biết danh tính, trước mọi truy vấn nghiệp vụ: một vòng lặp farm không được
+    // phép làm ta tốn một lượt đọc `campaign_plays` + `campaign_levels` nào. (Không đặt được trước
+    // `sessions.resolve` vì trần này theo người chơi — mà biết người chơi là ai thì phải resolve đã.)
+    // Đây cũng là lớp duy nhất còn tác dụng khi kẻ tấn công gửi `playId` rác hàng loạt.
     if (!this.completeLimiter.allow(player.id)) {
       throw new ForbiddenException({ code: "rate_limited", message: "gửi kết quả quá nhanh", retryable: true });
     }
@@ -150,7 +152,13 @@ export class CampaignController {
     // Chạy SAU evaluator có chủ ý. Một lượt chơi thất bại thật (mới sống 5 giây trong cấp cần 60)
     // phải nhận đúng lý do "chưa đạt mục tiêu", không phải một cáo buộc gian lận. Bảo mật không
     // mất gì: cả hai đều chặn trước khi RPC cấp thưởng chạy.
-    const verdict = checkElapsed(lvl.config ?? {}, elapsedSec);
+    //
+    // BỎ QUA hoàn toàn khi lượt chơi ĐÃ hoàn thành. `elapsedSec` đo từ `created_at` nên nó LỚN DẦN
+    // mãi mãi: nộp lại một lượt đã xong sau 4 giờ sẽ dính `play_too_old`, và người chơi nhận một
+    // cáo buộc gian lận thay vì bản tiến độ đã có. Lần nộp lại đó không cấp thêm gì (RPC idempotent,
+    // play đã tiêu), nên ở đây không có gì để bảo vệ — chỉ có một người chơi thật để làm phiền.
+    // Cùng lý do đã dùng cho trần ngày ngay bên dưới; thiếu ở đây là thiếu nhất quán.
+    const verdict = row.completed_at ? { ok: true as const } : checkElapsed(lvl.config ?? {}, elapsedSec);
     if (!verdict.ok) {
       // Ghi lại MỌI lần chặn. doc 35 §9 rủi ro #6 cảnh báo "từ chối oan khi siết A3"; không có
       // dòng log này thì không có cách nào biết ngưỡng đang chặn nhầm người chơi thật.
@@ -171,7 +179,6 @@ export class CampaignController {
         });
       }
     }
-
 
     const progress = await this.db.rpc("complete_campaign_level", {
       p_play_id: body.playId,
