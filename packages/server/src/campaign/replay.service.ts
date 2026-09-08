@@ -1,8 +1,8 @@
 import { Injectable } from "@nestjs/common";
 import {
+  Replay,
   compareFacts,
   parseTrace,
-  replayTrace,
   type CampaignOutcomeFacts,
   type FactDiff,
   type MatchConfigInput,
@@ -28,6 +28,9 @@ import { createLogger } from "../logging";
 
 /** `pending` không bao giờ được ghi ra DB — nó chỉ là trạng thái trong bộ nhớ trước khi có kết quả. */
 export type VerifyStatus = "ok" | "mismatch" | "skipped" | "error";
+
+/** Số khung chạy mỗi đoạn trước khi trả quyền cho vòng lặp sự kiện. ~8,5 ms mỗi đoạn. */
+export const REPLAY_FRAME_BUDGET = 500;
 
 export interface VerifyInput {
   playId: string;
@@ -66,7 +69,7 @@ export class ReplayService {
 
   /** Không bao giờ ném. Tách khỏi `schedule` để test gọi thẳng và đợi được. */
   async verify(input: VerifyInput): Promise<VerifyResult> {
-    const result = this.evaluate(input);
+    const result = await this.evaluate(input);
     await this.record(input.playId, result);
     if (result.status === "mismatch") {
       // Ghi log ở mức warn: đây là thứ cần người nhìn, và cũng là nguồn duy nhất để biết ngưỡng
@@ -83,7 +86,7 @@ export class ReplayService {
    * lượt chơi cũ chưa có seed — không cái nào là bằng chứng gian lận, và gộp chúng vào `mismatch`
    * sẽ chôn vùi những lần lệch thật giữa một đống nhiễu.
    */
-  evaluate(input: VerifyInput): VerifyResult {
+  async evaluate(input: VerifyInput): Promise<VerifyResult> {
     if (!Number.isInteger(input.seed) || input.seed === 0) {
       return { status: "skipped", reason: "no_seed" };
     }
@@ -94,8 +97,14 @@ export class ReplayService {
     if (!parsed) return { status: "skipped", reason: "bad_trace" };
 
     try {
-      // LUẬT 1: seed của server ghi đè seed trong trace.
-      const out = replayTrace(input.config, { ...parsed, seed: input.seed });
+      // LUẬT 1: seed của server, truyền tường minh; `parsed.seed` không được dùng ở đâu cả.
+      const replay = new Replay(input.config, parsed, input.seed);
+      // Chạy theo đoạn và TRẢ QUYỀN giữa các đoạn: 500 khung ~ 8,5 ms (đo được: 5.400 khung mất
+      // 91,8 ms), đủ nhỏ để không lỡ một tick 41,7 ms của server game chạy chung tiến trình.
+      while (!replay.step(REPLAY_FRAME_BUDGET)) {
+        await new Promise<void>((resolve) => setImmediate(resolve));
+      }
+      const out = replay.result();
       const cmp = compareFacts(input.claimed, out.facts);
       return cmp.ok
         ? { status: "ok", frames: out.frames }

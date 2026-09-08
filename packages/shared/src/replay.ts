@@ -35,13 +35,18 @@ export const HEADING_SCALE = 1_000_000;
 export const NO_INPUT = -2_147_483_648;
 
 /**
- * Trần số khung một trace được phép mang.
+ * Trần số khung một trace được phép mang. Con số này ĐO ĐƯỢC chứ không chọn cho tròn.
  *
- * 90 giây ở 60fps là 5.400 khung; `MAX_PLAY_SECONDS` của lớp 2 là 4 giờ. Trần này ứng với ~40 phút
- * ở 60fps — rộng hơn mọi cấp campaign, nhưng vẫn chặn một payload dựng để làm kiệt CPU của server.
- * Vượt trần ⇒ trace bị bỏ, KHÔNG phải người chơi bị buộc tội.
+ * Một ván 90 giây ở 60fps là 5.400 khung, và thân request `campaign/complete` khi đó nặng
+ * **79,1 KB**. Giới hạn mặc định của body-parser trong Express là 100 KB, nên bản đầu của lát này
+ * làm mọi ván dài hơn ~115 giây nhận HTTP 413: người chơi hoàn thành cấp và KHÔNG được thưởng.
+ * Đó là hồi quy nặng hơn hẳn thứ mà lớp 3 định bịt.
+ *
+ * 20.000 khung ~ 5,6 phút ở 60fps => thân request tối đa 307,2 KB (đo được), nằm dưới trần 512 KB mà
+ * `main.ts` đặt tường minh. Ván dài hơn thế thì KHÔNG gửi trace (`build()` trả `null`) và server
+ * ghi `skipped/no_trace` — mất một lượt xác minh, không mất phần thưởng của ai.
  */
-export const MAX_TRACE_FRAMES = 150_000;
+export const MAX_TRACE_FRAMES = 20_000;
 
 export interface InputTrace {
   v: number;
@@ -149,30 +154,64 @@ export interface ReplayResult {
 }
 
 /**
- * Dựng lại ván từ cấu hình cấp + trace, rồi ĐỌC kết quả thay vì nhận lời khai.
+ * Ván đang được dựng lại, chạy được THEO TỪNG ĐOẠN.
  *
- * Thuần và không ném: mọi thứ hỏng đã bị `parseTrace` chặn từ trước.
+ * Vì sao không chỉ là một vòng lặp: chạy lại 5.400 khung tốn **91,8 ms** đo được, trong khi một
+ * tick của server game 24 Hz là 41,7 ms — và `main.ts` gắn NetServer vào CÙNG tiến trình với tầng
+ * HTTP khi `SERVER_ROLE` không phải `control`. Chạy liền một mạch nghĩa là mỗi lần có người hoàn
+ * thành một cấp campaign thì cả phòng online khựng hơn hai tick. Một phép kiểm chống gian lận
+ * không được phép làm hỏng trải nghiệm của những người không gian lận.
  */
-export function replayTrace(config: MatchConfigInput, trace: InputTrace): ReplayResult {
-  const game = new GameState({ config: { ...config, seed: trace.seed } });
-  let elapsed = 0;
-  for (let i = 0; i < trace.dt.length; i++) {
-    const h = trace.hdg[i];
-    if (h !== NO_INPUT) game.setHeadingTarget(dequantizeHeading(h));
-    const dt = dequantizeDt(trace.dt[i]);
-    game.update(dt);
-    elapsed += dt;
+export class Replay {
+  private readonly game: GameState;
+  private cursor = 0;
+  private elapsed = 0;
+
+  constructor(config: MatchConfigInput, private readonly trace: InputTrace, seed: number) {
+    this.game = new GameState({ config: { ...config, seed } });
   }
-  return {
-    facts: {
-      deaths: game.human.deaths,
-      territoryPct: game.territoryPct(),
-      totemsCaptured: game.human.totemsCaptured,
-      kingHeldSec: 0,
-    },
-    elapsedSec: elapsed,
-    frames: trace.dt.length,
-  };
+
+  get done(): boolean {
+    return this.cursor >= this.trace.dt.length;
+  }
+
+  /** Chạy tối đa `budget` khung rồi TRẢ QUYỀN. `true` khi đã hết trace. */
+  step(budget: number): boolean {
+    const end = Math.min(this.cursor + Math.max(1, budget), this.trace.dt.length);
+    for (; this.cursor < end; this.cursor++) {
+      const h = this.trace.hdg[this.cursor];
+      if (h !== NO_INPUT) this.game.setHeadingTarget(dequantizeHeading(h));
+      const dt = dequantizeDt(this.trace.dt[this.cursor]);
+      this.game.update(dt);
+      this.elapsed += dt;
+    }
+    return this.done;
+  }
+
+  result(): ReplayResult {
+    return {
+      facts: {
+        deaths: this.game.human.deaths,
+        territoryPct: this.game.territoryPct(),
+        totemsCaptured: this.game.human.totemsCaptured,
+        kingHeldSec: 0,
+      },
+      elapsedSec: this.elapsed,
+      frames: this.cursor,
+    };
+  }
+}
+
+/**
+ * Dựng lại trọn ván trong một lượt. Tiện cho test; ở server dùng `Replay` theo từng đoạn.
+ *
+ * `seed` truyền RIÊNG chứ không lấy từ `trace.seed`: trace do client gửi. Bắt bên gọi nói rõ seed
+ * mình tin là cách khiến không ai lỡ tin nhầm seed của client.
+ */
+export function replayTrace(config: MatchConfigInput, trace: InputTrace, seed: number = trace.seed): ReplayResult {
+  const r = new Replay(config, trace, seed);
+  while (!r.step(4096));
+  return r.result();
 }
 
 // ---- Đối chiếu ---------------------------------------------------------------------------------
