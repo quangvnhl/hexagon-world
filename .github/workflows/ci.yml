@@ -62,6 +62,11 @@ jobs:
       - name: DB migrate self-test
         run: pnpm test:db-migrate
 
+      # Cùng lý do: phần thuần của db-seed (cổng target, bản đếm) + hai luật ĐỌC TỪ seed.sql
+      # (không có câu xoá nào, mọi insert có ON CONFLICT). Không chạm database.
+      - name: DB seed self-test
+        run: pnpm test:db-seed
+
       # Cổng review chạy ở workflow `Review` (nó cần diff), nhưng LUẬT của nó phải được test ở đây —
       # một cổng chặn viết sai sẽ hoặc bỏ lọt, hoặc chặn nhầm rồi bị vô hiệu hoá cả cụm.
       - name: Review guard self-test

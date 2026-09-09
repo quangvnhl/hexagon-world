@@ -12,6 +12,8 @@
     "test:release-gate": "node --test scripts/release-gate.test.mjs",
     "test:db-migrate": "node --test scripts/db-migrate.test.mjs",
     "db:migrate": "node scripts/db-migrate.mjs",
+    "test:db-seed": "node --test scripts/db-seed.test.mjs",
+    "db:seed": "node scripts/db-seed.mjs",
     "test:review-guard": "node --test scripts/review-guard.test.mjs",
     "review:guard": "node scripts/review-guard.mjs",
     "review:collect": "node scripts/review-collect.mjs",
