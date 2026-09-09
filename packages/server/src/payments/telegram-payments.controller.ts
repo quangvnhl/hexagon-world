@@ -1,3 +1,4 @@
+import { opsMetrics } from "../ops-metrics";
 import {
   BadRequestException,
   Body,
@@ -336,8 +337,25 @@ export class TelegramPaymentsController {
     };
   }
 
+  /**
+   * doc 35 §C1 — đếm NGOẠI LỆ thoát ra khỏi webhook, và chỉ ngoại lệ.
+   *
+   * Một pre-checkout bị từ chối (`ok = false`) KHÔNG tính là lỗi: order hết hạn hoặc sai tài khoản
+   * là kết quả nghiệp vụ đúng đắn, và đếm nó sẽ làm alert kêu vì chuyện bình thường rồi bị tắt đi.
+   * Ngoại lệ thì khác — Telegram sẽ GỬI LẠI webhook, tức người chơi đã bị trừ Stars mà coin chưa
+   * vào, và vòng lặp gửi lại là thứ phải có người nhìn.
+   */
   @Post("webhooks/telegram")
   async webhook(@Headers("x-telegram-bot-api-secret-token") secret: string, @Body() update: TelegramPaymentUpdate) {
+    try {
+      return await this.handleWebhook(secret, update);
+    } catch (error) {
+      opsMetrics.recordTelegramWebhookFailure();
+      throw error;
+    }
+  }
+
+  private async handleWebhook(secret: string, update: TelegramPaymentUpdate) {
     if (secret !== runtimeConfig().telegram.webhookSecret) {
       throw new UnauthorizedException("invalid_telegram_webhook_secret");
     }

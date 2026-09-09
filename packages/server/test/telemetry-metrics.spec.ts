@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it } from "vitest";
+import { opsMetrics } from "../src/ops-metrics";
 import { ServerTelemetry, serverTelemetry } from "../src/net/telemetry";
 import { collectProcessMetrics, renderPrometheus } from "../src/net/prometheus";
 import { NetworkMetrics } from "../src/net/network-transport";
@@ -50,6 +51,7 @@ describe("Prometheus renderer", () => {
       net.snapshot(262144),
       serverTelemetry.snapshot(),
       collectProcessMetrics(),
+      opsMetrics.snapshot(),
     );
 
     // Metric có khối HELP/TYPE riêng (summary _max/_count là sub-line, không có HELP/TYPE).

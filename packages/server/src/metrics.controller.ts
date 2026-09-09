@@ -3,6 +3,7 @@ import { gameNetworkMetrics } from "./net/network-transport";
 import { serverTelemetry } from "./net/telemetry";
 import { collectProcessMetrics, renderPrometheus } from "./net/prometheus";
 import { WS_BACKPRESSURE_BYTES } from "./config";
+import { opsMetrics } from "./ops-metrics";
 
 /**
  * Pha 5 · B3 — Endpoint Prometheus text ở `GET /metrics`.
@@ -19,6 +20,7 @@ export class MetricsController {
       gameNetworkMetrics.snapshot(WS_BACKPRESSURE_BYTES),
       serverTelemetry.snapshot(),
       collectProcessMetrics(),
+      opsMetrics.snapshot(),
     );
   }
 }

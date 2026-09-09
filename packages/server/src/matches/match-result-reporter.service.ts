@@ -4,18 +4,25 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, renameSync, rmSync, w
 import { join, resolve } from "node:path";
 import type { MatchResultEnvelope } from "../net/net-server";
 import { runtimeConfig } from "../runtime-config";
+import { opsMetrics } from "../ops-metrics";
 
 @Injectable()
 export class MatchResultReporter implements OnModuleInit {
   private readonly logger = new Logger(MatchResultReporter.name);
   private readonly attempts = new Map<string, number>();
   private readonly timers = new Set<NodeJS.Timeout>();
+  /** Số file kết quả trận chưa gửi được. Xem `opsMetrics.setSpoolPending`. */
+  private pending = 0;
 
   onModuleInit(): void {
     const cfg = runtimeConfig();
     if (!cfg.gameResultSecret) return;
     mkdirSync(this.root(), { recursive: true });
-    for (const name of readdirSync(this.root()).filter((v) => v.endsWith(".json"))) {
+    const backlog = readdirSync(this.root()).filter((v) => v.endsWith(".json"));
+    // doc 35 §C1 — số này là XP và tiền của người chơi đang nằm chờ. Đếm ở lúc KHỞI ĐỘNG là quan
+    // trọng nhất: nó chính là số trận đã mất khi tiến trình chết lần trước.
+    opsMetrics.setSpoolPending(backlog.length);
+    for (const name of backlog) {
       try { const result = JSON.parse(readFileSync(join(this.root(), name), "utf8")) as MatchResultEnvelope; void this.deliver(result); }
       catch { this.logger.warn(`Bỏ qua match spool hỏng: ${name}`); }
     }
@@ -30,6 +37,8 @@ export class MatchResultReporter implements OnModuleInit {
       const temp = `${target}.tmp`;
       writeFileSync(temp, JSON.stringify(result), { encoding: "utf8", flag: "wx" });
       renameSync(temp, target);
+      this.pending++;
+      opsMetrics.setSpoolPending(this.pending);
     }
     await this.deliver(result);
   }
@@ -46,6 +55,10 @@ export class MatchResultReporter implements OnModuleInit {
       if (!response.ok) throw new Error(`HTTP ${response.status}`);
       rmSync(this.file(result.eventId), { force: true });
       this.attempts.delete(result.eventId);
+      // Đếm ở đây chứ không quét thư mục mỗi lần scrape: quét đĩa trên đường scrape là tự tạo tải
+      // mỗi 15 giây, mãi mãi.
+      this.pending = Math.max(0, this.pending - 1);
+      opsMetrics.setSpoolPending(this.pending);
     } catch (error) {
       const attempt = (this.attempts.get(result.eventId) ?? 0) + 1;
       this.attempts.set(result.eventId, attempt);

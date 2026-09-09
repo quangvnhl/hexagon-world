@@ -1,4 +1,5 @@
 import { Controller, Get } from "@nestjs/common";
+import { opsMetrics } from "./ops-metrics";
 import { SupabaseService } from "./database/supabase.service";
 import { runtimeConfig } from "./runtime-config";
 import { gameNetworkMetrics } from "./net/network-transport";
@@ -20,5 +21,11 @@ export class HealthController {
       regions: cfg.regions,
     };
   }
-  @Get("ready") async ready() { const database = runtimeConfig().role === "game" ? true : await this.db.health(); return { ok: database, database }; }
+  @Get("ready") async ready() {
+    const database = runtimeConfig().role === "game" ? true : await this.db.health();
+    // doc 35 §C1 — `/health/ready` là MỘT LẦN HỎI; alert cần một CHUỖI THỜI GIAN. Ghi lại đây để
+    // `hexworld_db_ready` trong `/metrics` phản ánh lần kiểm gần nhất.
+    opsMetrics.setDbReady(database);
+    return { ok: database, database };
+  }
 }
