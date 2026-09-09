@@ -45,10 +45,13 @@ function line(name: string, value: number, labels?: Record<string, string>): str
 }
 
 /** Dựng chuỗi Prometheus text đầy đủ từ các snapshot đã lấy. */
+import type { OpsMetricsSnapshot } from "../ops-metrics";
+
 export function renderPrometheus(
   network: NetworkMetricsSnapshot,
   telemetry: TelemetrySnapshot,
   proc: ProcessMetrics,
+  ops: OpsMetricsSnapshot,
 ): string {
   const out: string[] = [];
 
@@ -143,6 +146,19 @@ export function renderPrometheus(
   out.push("# HELP hexworld_process_uptime_seconds Process uptime in seconds.");
   out.push("# TYPE hexworld_process_uptime_seconds gauge");
   out.push(line("hexworld_process_uptime_seconds", proc.uptimeSeconds));
+
+  // ---- Vận hành (doc 35 §C1) — ba tín hiệu hỏng theo kiểu IM LẶNG ----
+  out.push("# HELP hexworld_spool_pending Match results written to disk but not yet accepted by the control plane.");
+  out.push("# TYPE hexworld_spool_pending gauge");
+  out.push(line("hexworld_spool_pending", ops.spoolPending));
+
+  out.push("# HELP hexworld_telegram_webhook_failures_total Telegram webhook deliveries that failed to process.");
+  out.push("# TYPE hexworld_telegram_webhook_failures_total counter");
+  out.push(line("hexworld_telegram_webhook_failures_total", ops.telegramWebhookFailures));
+
+  out.push("# HELP hexworld_db_ready 1 = database reachable, 0 = not, -1 = never checked.");
+  out.push("# TYPE hexworld_db_ready gauge");
+  out.push(line("hexworld_db_ready", ops.dbReady));
 
   return out.join("\n") + "\n";
 }
