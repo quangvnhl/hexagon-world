@@ -35,21 +35,20 @@ const DB_URL = process.env.SUPABASE_DB_URL ?? "";
 const PLAYER = "seed-e2e-money";
 const LEVEL = "c1";
 
-// Thiếu `SUPABASE_DB_URL` thì BỎ QUA khi chạy tay, nhưng ĐỎ khi chạy trong CI.
+// Thiếu `SUPABASE_DB_URL` ⇒ ĐỎ NGAY, không bỏ qua.
 //
-// Bỏ qua ở cả hai nơi là cái bẫy: job thủ công sẽ xanh mà không kiểm một đồng nào nếu ai đó quên
-// gắn secret — và "xanh" là tín hiệu người ta dùng để quyết định phát hành. Với một bài kiểm TIỀN,
-// im lặng không kiểm gì còn tệ hơn đỏ, vì đỏ thì có người đi sửa.
-if (!DB_URL && process.env.CI) {
-  throw new Error("Thiếu SUPABASE_DB_URL. Job này tồn tại để kiểm tiền; chạy mà không có database thì nó không kiểm gì.");
+// Bản đầu dùng `test.skip(!DB_URL, …)` và cổng review của repo chặn đúng — nó chặn mọi `test.skip`.
+// Ở đây cổng nói đúng chứ không phải chặn nhầm: file này KHÔNG nằm trong CI mỗi PR (nó chỉ chạy
+// qua `pnpm test:e2e:money`, tức job thủ công), nên không có tình huống nào mà bỏ qua im lặng giúp
+// được ai. Ngược lại: quên gắn secret sẽ cho ra một job XANH không kiểm một đồng nào — mà "xanh"
+// là tín hiệu người ta dùng để quyết định phát hành. Với một bài kiểm TIỀN, im lặng không kiểm gì
+// còn tệ hơn đỏ, vì đỏ thì có người đi sửa.
+if (!DB_URL) {
+  throw new Error("Thiếu SUPABASE_DB_URL. Bài này kiểm tiền trên database thật; chạy mà không có database thì nó không kiểm gì. Đặt biến trong .env hoặc trong secret của môi trường CI.");
 }
-test.skip(!DB_URL, "Cần SUPABASE_DB_URL — tầng này chạy thủ công, không nằm trong CI mỗi PR.");
 
 let db: pg.Client;
 test.beforeAll(async () => {
-  // `test.skip` ở phạm vi file vẫn chạy `beforeAll`; không có nhánh này thì nó cố nối tới localhost
-  // rồi đỏ vì lỗi kết nối, che mất lý do thật là "chưa cấu hình".
-  if (!DB_URL) return;
   db = new pg.Client({ connectionString: DB_URL, ssl: { rejectUnauthorized: false } });
   await db.connect();
 });
