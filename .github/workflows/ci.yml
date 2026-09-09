@@ -81,6 +81,13 @@ jobs:
       - name: Compose + Caddyfile self-test
         run: pnpm test:compose
 
+      # `.env.example` la file DAU TIEN nguoi moi chep ra. No tung ghi
+      # GAME_PROTOCOL_VERSION=5 trong khi shared da len 6, va vi env GHI DE phien ban cua
+      # server nen cua so thanh 6..5 (rong) => moi client bi dong 4002. CI khong co file
+      # `.env` nen khong bao gio doc toi cho nay; bai test doc thang file mau.
+      - name: .env.example self-test
+        run: pnpm test:env-example
+
       # Cổng review chạy ở workflow `Review` (nó cần diff), nhưng LUẬT của nó phải được test ở đây —
       # một cổng chặn viết sai sẽ hoặc bỏ lọt, hoặc chặn nhầm rồi bị vô hiệu hoá cả cụm.
       - name: Review guard self-test
