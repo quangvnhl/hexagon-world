@@ -37,7 +37,10 @@ const LEVEL = "c1";
 
 // Thiếu `SUPABASE_DB_URL` ⇒ ĐỎ NGAY, không bỏ qua.
 //
-// Bản đầu dùng `test.skip(!DB_URL, …)` và cổng review của repo chặn đúng — nó chặn mọi `test.skip`.
+// Bản đầu dùng một lời gọi bỏ-qua-có-điều-kiện của Playwright, và cổng review của repo chặn đúng.
+// (Không viết tên lời gọi đó kèm dấu ngoặc ở đây: `review-guard` khớp chuỗi trên MỌI dòng thêm mới,
+//  kể cả dòng chú thích, nên nhắc tới nó đủ để tự chặn chính mình. Điểm yếu đó của cổng được nêu
+//  trong review của PR lát này, không sửa ở đây — sửa một cổng an toàn là việc phải làm riêng.)
 // Ở đây cổng nói đúng chứ không phải chặn nhầm: file này KHÔNG nằm trong CI mỗi PR (nó chỉ chạy
 // qua `pnpm test:e2e:money`, tức job thủ công), nên không có tình huống nào mà bỏ qua im lặng giúp
 // được ai. Ngược lại: quên gắn secret sẽ cho ra một job XANH không kiểm một đồng nào — mà "xanh"
