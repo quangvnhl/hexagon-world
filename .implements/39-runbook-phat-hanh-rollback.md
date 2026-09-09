@@ -74,6 +74,12 @@ Khi đã chọn xong nơi chạy, workflow chỉ cần đúng các bước sau, 
 9. kiểm khói: mở trang, chơi hết FTUE
 ```
 
+Bước 1-3 và 5 đã có sẵn trong repo và không phụ thuộc nhà cung cấp. Bước 6/8 dựng image: workflow
+`.github/workflows/image.yml` dựng THẬT cả hai stage `server` và `client` rồi kiểm đúng đường dẫn mà
+`CMD` trỏ tới — nó không đẩy lên registry nào, vì chọn registry là một phần của việc chọn nơi chạy.
+Nói cách khác: tới lúc bạn chốt nhà cung cấp, thứ còn phải viết chỉ là "đẩy image đi đâu", không phải
+"image có dựng nổi không".
+
 Bước 4 có rào cứng trong `db-migrate.mjs`: `--target production` bị **từ chối** trừ khi có biến môi
 trường `ALLOW_PRODUCTION_MIGRATE=yes-i-know`. Agent không bao giờ có biến đó (AGENTS.md §1).
 

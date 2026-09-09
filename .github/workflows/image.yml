@@ -1,0 +1,100 @@
+# Dựng image Docker thật — bước còn thiếu giữa "CI xanh" và "deploy được" (doc 35 §C5).
+#
+# ┌─ VÌ SAO CẦN JOB NÀY ────────────────────────────────────────────────────────────────────────┐
+# │ `Dockerfile` là artifact triển khai DUY NHẤT của repo, và cho tới lát này nó CHƯA TỪNG được  │
+# │ dựng ở đâu cả. Job `CI` chạy typecheck/test/build trên runner, không qua Docker — nên mọi     │
+# │ thứ chỉ hỏng bên trong image đều đi lọt tới lần deploy đầu tiên.                              │
+# │                                                                                              │
+# │ Đó không phải rủi ro giả định: `packages/admin` thiếu manifest trong Dockerfile đã nằm im     │
+# │ trong repo cho tới khi có người ĐỌC ra nó (PR #48). Một bài test tĩnh giữ đúng lỗi ĐÓ, nhưng  │
+# │ nó chỉ đọc chữ trong Dockerfile — nó không biết `pnpm install` có chạy nổi không, `next       │
+# │ build` trong image có ra `.next/standalone` không, hay `COPY --from` có đặt file đúng chỗ      │
+# │ `CMD` trỏ tới không. Ba thứ đó chỉ có một cách biết: dựng thật.                                │
+# └─────────────────────────────────────────────────────────────────────────────────────────────┘
+#
+# KHÔNG đẩy lên registry (`push: false`), không secret, không chạm nhà cung cấp nào. Job này chỉ
+# trả lời một câu: image có dựng được và có đúng hình dạng không.
+name: Docker image
+
+on:
+  push:
+    branches: [main]
+  # Chỉ chạy trên PR đụng tới thứ ẢNH HƯỞNG tới image. Dựng hai image tốn vài phút, và mã nguồn
+  # thường đã được `pnpm build` trong job CI che rồi — thứ job CI KHÔNG che là đúng danh sách này.
+  pull_request:
+    paths:
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'pnpm-lock.yaml'
+      - 'pnpm-workspace.yaml'
+      - '.npmrc'
+      - '**/package.json'
+      - 'packages/client/next.config.mjs'
+      - '.github/workflows/image.yml'
+  workflow_dispatch:
+
+concurrency:
+  group: image-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      # Hai stage đích được dựng RIÊNG chứ không dựng cả file: chúng chia chung stage
+      # `dependencies`, nên lần thứ hai lấy lại từ cache thay vì cài lại phụ thuộc.
+      - name: Dựng image server
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: server
+          tags: hexworld-server:ci
+          push: false
+          load: true
+          cache-from: type=gha,scope=server
+          cache-to: type=gha,mode=max,scope=server
+
+      - name: Dựng image client
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: client
+          tags: hexworld-client:ci
+          push: false
+          load: true
+          cache-from: type=gha,scope=client
+          cache-to: type=gha,mode=max,scope=client
+
+      # Dựng được KHÔNG có nghĩa là chạy được. `COPY --from` đặt file sai chỗ thì image vẫn dựng
+      # xanh và chỉ chết lúc khởi động, với một dòng MODULE_NOT_FOUND trên production.
+      # Hai bước dưới kiểm đúng đường dẫn mà `CMD` sẽ gọi tới.
+      # Đường dẫn `@hexagon/shared` là đường dẫn pnpm thật, không phải chỗ đoán: pnpm KHÔNG đặt
+      # gói workspace ở `node_modules` gốc mà đặt link trong `node_modules` của chính gói dùng nó
+      # (`packages/server/node_modules/@hexagon/shared -> ../../../shared`). Đây cũng đúng đường
+      # Node sẽ giải khi chạy, nên nó bắt luôn cả trường hợp `shared` chưa được build.
+      - name: Server — file mà CMD trỏ tới phải tồn tại
+        run: |
+          docker run --rm hexworld-server:ci node -e "
+            require('node:fs').statSync('/app/packages/server/dist/main.js');
+            require('node:fs').statSync('/app/packages/server/node_modules/@hexagon/shared/dist/index.js');
+            console.log('ok');
+          "
+
+      # `output: "standalone"` + `outputFileTracingRoot` ở gốc workspace đặt server của client tại
+      # packages/client/server.js trong cây standalone. `.next/static` và `public` KHÔNG nằm trong
+      # cây đó — Next cố ý để người dựng image tự copy, và quên là image chạy được nhưng mất sạch
+      # CSS/JS/asset. Không có bước này thì lỗi đó trông giống hệt một trang trắng.
+      - name: Client — server.js, static và public phải tồn tại
+        run: |
+          docker run --rm hexworld-client:ci node -e "
+            const fs = require('node:fs');
+            fs.statSync('/app/packages/client/server.js');
+            fs.statSync('/app/packages/client/.next/static');
+            fs.statSync('/app/packages/client/public');
+            console.log('ok');
+          "
