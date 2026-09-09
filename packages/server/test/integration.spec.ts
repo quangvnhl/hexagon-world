@@ -463,8 +463,16 @@ describe("NetServer integration (real ws, deterministic ticks)", () => {
     expect(server.roomCount).toBe(2);
     expect(server.roomStats.map((room) => room.humanCount).sort((a, b) => b - a)).toEqual([8, 1]);
     expect(server.roomStats.some((room) => room.capacityFull)).toBe(true);
-    expect(clients.slice(0, 8).map((client) => client.welcome!.playerId).sort((a, b) => a - b)).toEqual([0, 1, 2, 3, 4, 5, 6, 7]);
-    expect(clients[8].welcome!.playerId).toBe(0);
+    // Kiểm trên TẬP HỢP id, không theo chỉ số client: 8 ghế 0..7 trong phòng đầy, cộng một ghế 0
+    // trong phòng mới ⇒ không ai bị từ chối, và phòng mới cấp ghế lại từ đầu.
+    //
+    // Bản trước khẳng định `clients[0..7]` đúng là 8 người vào phòng đầu và `clients[8]` là người
+    // sang phòng mới. Chín `join` đi trên CHÍN socket khác nhau; TCP chỉ bảo đảm thứ tự TRONG một
+    // kết nối, nên "gửi trước" không kéo theo "được xử lý trước".
+    // Đo được (30 lượt mỗi nhánh, bằng một probe tạm): gửi tuần tự thì khẳng định cũ xanh 30/30;
+    // gửi theo thứ tự ngẫu nhiên thì nó chỉ còn 5/30 — trong khi bất biến dưới đây xanh 30/30 ở
+    // CẢ HAI nhánh. Tức phần thừa kia không đo hành vi mà bài này đặt tên, nó chỉ đo thứ tự xử lý.
+    expect(clients.map((client) => client.welcome!.playerId).sort((a, b) => a - b)).toEqual([0, 0, 1, 2, 3, 4, 5, 6, 7]);
   });
 
   it("filters minimap payload without Radar and reveals the room with Radar", async () => {
