@@ -96,7 +96,7 @@ test("parseArgs: mặc định an toàn (staging, không ghi)", () => {
 
 test("parseArgs: đọc đủ cờ", () => {
   const a = parseArgs(["--target", "production", "--env-file", "deploy/x.env", "--dry-run", "--yes", "--baseline", "001_x"]);
-  assert.deepEqual(a, { target: "production", envFile: "deploy/x.env", dryRun: true, yes: true, baseline: "001_x", repairChecksums: false });
+  assert.deepEqual(a, { target: "production", envFile: "deploy/x.env", dryRun: true, yes: true, baseline: "001_x", repairChecksums: false, check: false });
 });
 
 test("targetGuard: staging luôn cho, production TỪ CHỐI khi thiếu biến xác nhận", () => {
@@ -109,4 +109,14 @@ test("targetGuard: staging luôn cho, production TỪ CHỐI khi thiếu biến 
 test("targetGuard: target lạ bị từ chối", () => {
   assert.match(targetGuard("prod", {}), /không hợp lệ/);
   assert.match(targetGuard("", {}), /không hợp lệ/);
+});
+
+test("parseArgs: --check là cờ riêng, mặc định tắt", () => {
+  // Cổng deploy phải có cờ RIÊNG chứ không dùng lại `--dry-run`: `--dry-run` luôn thoát 0, nên một
+  // bước CI dùng nó sẽ xanh kể cả khi còn migration chưa áp. Một cổng luôn xanh không phải là cổng.
+  assert.equal(parseArgs([]).check, false);
+  assert.equal(parseArgs(["--check"]).check, true);
+  // `--check` KHÔNG được kéo theo `--yes`: một cổng mà tự ghi là một cổng tự mở cho chính nó.
+  assert.equal(parseArgs(["--check"]).yes, false);
+  assert.equal(parseArgs(["--check"]).dryRun, false);
 });
