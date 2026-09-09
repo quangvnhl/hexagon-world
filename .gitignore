@@ -28,6 +28,11 @@ packages/*/dist/
 # thể bị commit khi chạy `git add .`.
 deploy/*.env
 deploy/**/*.env
+# ...và ở BẤT KỲ đâu khác. Ngày 2026-09-09 hai file `control.env`/`game.env` sinh ra để kiểm
+# `release-gate.mjs` đã lọt vào một commit ở GỐC repo: `.env*` chỉ khớp tên BẮT ĐẦU bằng ".env",
+# còn hai dòng trên chỉ che thư mục `deploy/`. Cổng review-guard chặn được, nhưng cổng đó chạy
+# SAU khi đã commit — `.gitignore` phải chặn TRƯỚC đó.
+*.env
 
 # Kết quả chạy Playwright (lát r2.1) — sinh lại được, và trace có thể vài MB mỗi lần đỏ.
 test-results/
