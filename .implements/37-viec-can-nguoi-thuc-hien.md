@@ -284,9 +284,30 @@ Lý do chúng là `high`: chạm tiền, tài khoản người chơi, schema dat
 
 ---
 
-## Việc 9 — QUYẾT ĐỊNH: mua năng lượng khi đầy bình vẫn bị trừ coin 🔴
+## Việc 9 — Mua năng lượng khi đầy bình vẫn bị trừ coin ✅ XONG (2026-09-09)
 
-**Lát `r2.2` phát hiện. Đây là lỗi tiền, chưa sửa — vì cách sửa là một quyết định sản phẩm.**
+**Lát `r2.2` phát hiện. Chủ dự án chốt **phương án B — cho tràn trên trần**; đã sửa bằng
+migration `202609090001_energy_purchase_overflow.sql`.**
+
+Sau khi sửa, đo lại trên DB dev (giao dịch rollback):
+
+| tình huống | coin | năng lượng |
+|---|---|---|
+| đầy bình 50/50 | −100 | **+20** (50 → 70, vượt trần) |
+| gần đầy 45/50 | −100 | **+20** (45 → 65) |
+| thưởng campaign +20 từ 45 | — | 45 → **50** (vẫn kẹp — chỉ đường MUA được tràn) |
+
+**Hai chỗ suýt làm phương án B thành vô nghĩa**, đã sửa cùng: `read_energy` và `spend_energy` đều
+kẹp `least(max, …)` trong bước hồi lười. Thiếu một trong hai thì người chơi trả tiền, thấy số tăng,
+rồi số tự tụt — tệ hơn lỗi ban đầu. Đo sau khi sửa: đọc ở 70/50 trả về 70; tiêu 1 điểm từ 70 còn 69
+(trước đó sẽ còn 49, mất 20 điểm vừa mua).
+
+Giữ cho nó không quay lại: một bước trong `tests/e2e/money-flow.spec.ts` kiểm đúng tình huống đầy
+bình. Đã chứng minh bài đó BẮT được lỗi — khôi phục thân hàm cũ trong một giao dịch rollback thì
+`delta = 0` và cả hai assert đều đỏ.
+
+<details><summary>Bối cảnh gốc khi phát hiện</summary>
+
 
 Đo trong một giao dịch rollback trên database dev (không commit gì):
 
@@ -314,8 +335,10 @@ lên vì server không được tin client.
 Tôi nghiêng về **A**: nó không đổi thiết kế kinh tế nào, và "không bán thứ không giao được" là quy
 tắc dễ giải thích cho người chơi nhất. Nhưng đây là tiền của anh, không phải quyết định kỹ thuật.
 
-Sửa xong cần **migration mới** (không được sửa file đã áp — AGENTS.md §1) và một bài test cho
-đường vừa chọn.
+</details>
+
+**Còn lại, không chặn gì:** nút mua trong client (`CampaignScene.tsx:80`) không bị vô hiệu khi đầy
+bình. Với phương án B điều đó nay là ĐÚNG — mua khi đầy vẫn nhận đủ 20 điểm, nên không cần sửa.
 
 ---
 

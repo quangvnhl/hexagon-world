@@ -4,10 +4,14 @@
 // File này là BẢN SAO THUẦN cho client hiển thị thanh + đếm ngược tới điểm hồi kế, và là "spec"
 // để đối chiếu logic SQL trong test. Cả hai PHẢI cùng công thức:
 //
-//   current = min(max, stored + floor((now - lastRefill) / interval))
+//   current = stored >= max ? stored : min(max, stored + floor((now - lastRefill) / interval))
 //
-// Khi đạt `max`, đồng hồ hồi coi như dừng (không tích lũy quá max). `nextAtMs` = thời điểm điểm
-// năng lượng KẾ TIẾP xuất hiện (null nếu đã đầy).
+// HỒI chỉ LẤP TỚI trần, và KHÔNG BAO GIỜ kéo xuống số đang có. Vế `stored >= max ? stored` là bắt
+// buộc kể từ migration 202609090001: MUA năng lượng bằng coin được phép vượt trần (doc 37 Việc 9,
+// chủ dự án chốt phương án B), nên `energy_current` có thể LỚN HƠN `max`. Công thức cũ ghi ở đây
+// là `min(max, ...)` — nó kẹp phần vượt xuống, tức xoá mất số điểm người chơi ĐÃ TRẢ TIỀN.
+//
+// `nextAtMs` = thời điểm điểm năng lượng KẾ TIẾP xuất hiện; `null` khi đang ở hoặc trên trần.
 
 /** Tham số kinh tế năng lượng (khớp bảng `energy_rules`). CHỐT P2: max 50, hồi 1 điểm/180s. */
 export interface EnergyRules {
@@ -45,8 +49,9 @@ export function computeEnergy(
   const intervalMs = rules.regenIntervalSeconds * 1000;
   const base = { max, regenIntervalSeconds: rules.regenIntervalSeconds };
 
-  if (stored >= max) return { current: max, nextAtMs: null, ...base };
-  if (intervalMs <= 0) return { current: max, nextAtMs: null, ...base };
+  // Ở hoặc TRÊN trần: đứng yên, giữ nguyên `stored`. Trả `max` ở đây là kẹp mất phần đã mua.
+  if (stored >= max) return { current: stored, nextAtMs: null, ...base };
+  if (intervalMs <= 0) return { current: Math.max(stored, max), nextAtMs: null, ...base };
 
   const elapsed = Math.max(0, nowMs - lastRefillMs);
   const gained = Math.floor(elapsed / intervalMs);

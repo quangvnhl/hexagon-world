@@ -229,12 +229,14 @@ slices:
       campaign_levels.rewards, giá nạp từ GET /v1/energy, thời gian phải chờ tính bằng CHÍNH
       minPlausibleSeconds × SAFETY_FACTOR mà server dùng để chặn (c1 hiện = 13,04 s).
 
-      LỖI TIỀN BÀI TEST NÀY BẮT ĐƯỢC — chưa sửa, xem doc 37:
+      LỖI TIỀN BÀI TEST NÀY BẮT ĐƯỢC — ĐÃ SỬA 2026-09-09 (doc 37 Việc 9):
       Mua năng lượng khi BÌNH ĐẦY vẫn trừ coin nhưng cộng 0 năng lượng.
       Đo trong giao dịch rollback: 50/50 ⇒ coin −100, năng lượng +0, sổ cái ghi khoản trừ.
-      10/50 ⇒ coin −100, năng lượng +20 (đúng). Nguyên nhân:
-      purchase_energy_with_coin trừ coin VÔ ĐIỀU KIỆN rồi mới gọi grant_energy, mà
-      grant_energy chặn trần ở energy_max. Sửa cần migration mới ⇒ ngoài phạm vi lát này.
+      Nguyên nhân: purchase_energy_with_coin trừ coin VÔ ĐIỀU KIỆN rồi mới gọi
+      grant_energy, mà grant_energy chặn trần ở energy_max.
+      Sửa bằng migration 202609090001_energy_purchase_overflow.sql — chủ dự án chốt
+      phương án B (cho tràn trên trần) ở đường MUA; thưởng campaign vẫn kẹp.
+      Bài test đã thêm một bước "bình đầy" để giữ cho lỗi không quay lại.
 
       Chạy tại máy: 2/2 xanh, 47 s. Đo thêm: chạy với PLAYWRIGHT_BROWSERS_PATH rỗng vẫn
       2/2 xanh (32,3 s) ⇒ workflow KHÔNG cần bước playwright install.
