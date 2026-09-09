@@ -1,0 +1,83 @@
+# doc 36 §R2 tầng 2 — E2E luồng tiền, chạy THỦ CÔNG (lát r2.2).
+#
+# ┌─ VÌ SAO KHÔNG CHẠY MỖI PR ───────────────────────────────────────────────────────────────────┐
+# │ Job này GHI vào database thật: trừ coin, cộng năng lượng, ghi sổ cái, mở tiến độ cấp. Gắn nó  │
+# │ vào mỗi PR nghĩa là mỗi lần ai đó sửa một dòng README thì dữ liệu lại đổi — và nghĩa là mọi   │
+# │ fork đều cần secret của database, tức secret sẽ bị lộ hoặc job sẽ đỏ vĩnh viễn ở fork.        │
+# │                                                                                              │
+# │ `workflow_dispatch` là lựa chọn có chủ ý: chạy khi NGƯỜI quyết định chạy, trước một lần phát │
+# │ hành hoặc sau khi đụng vào luồng tiền.                                                        │
+# └──────────────────────────────────────────────────────────────────────────────────────────────┘
+#
+# TRẦN CẦN BIẾT: `DAILY_COMPLETIONS_PER_LEVEL = 20` — hoàn thành cùng một cấp quá 20 lần trong một
+# ngày UTC sẽ bị từ chối. Mỗi lần chạy job này tiêu 1 lượt của `seed-e2e-money` ở cấp c1, nên chạy
+# quá 20 lần một ngày sẽ đỏ vì đúng cái trần đang bảo vệ ta, không phải vì hỏng.
+
+name: E2E money flow (thủ công)
+
+on:
+  workflow_dispatch:
+    inputs:
+      reseed:
+        description: "Chạy db-seed trước (dựng lại người chơi thử + ví)"
+        type: boolean
+        default: true
+
+# Không cho hai lần chạy chồng nhau: chúng dùng CHUNG một người chơi và cùng ghi vào ví đó, nên
+# chạy song song sẽ cho ra những con số không ai giải thích được.
+concurrency:
+  group: e2e-money
+  cancel-in-progress: false
+
+jobs:
+  money:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    # Môi trường `staging` — chỗ để gắn secret và, nếu muốn, bắt buộc duyệt tay trước khi chạy.
+    environment: staging
+    env:
+      SUPABASE_URL: ${{ secrets.SUPABASE_URL }}
+      SUPABASE_SECRET_KEY: ${{ secrets.SUPABASE_SECRET_KEY }}
+      SUPABASE_DB_URL: ${{ secrets.SUPABASE_DB_URL }}
+      PLAYER_SESSION_SECRET: ${{ secrets.PLAYER_SESSION_SECRET }}
+      # `runtimeConfig` đòi các khoá này khi role = control (mặc định `all` cũng là control).
+      # Chúng KHÔNG được bài test dùng tới, nhưng thiếu thì server không khởi động được.
+      GOOGLE_OAUTH_CLIENT_ID: ${{ secrets.GOOGLE_OAUTH_CLIENT_ID }}
+      GOOGLE_OAUTH_CLIENT_SECRET: ${{ secrets.GOOGLE_OAUTH_CLIENT_SECRET }}
+      GOOGLE_OAUTH_STATE_SECRET: ${{ secrets.GOOGLE_OAUTH_STATE_SECRET }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_WEBHOOK_SECRET: ${{ secrets.TELEGRAM_WEBHOOK_SECRET }}
+
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Cài phụ thuộc
+        run: pnpm install --frozen-lockfile
+
+      # Dựng lại người chơi thử. Idempotent theo khoá tự nhiên nên chạy lại vô hại; lần chạy trước
+      # có thể đã tiêu hết coin của `seed-e2e-money`, và bước này trả nó về mốc biết trước.
+      - name: Seed database
+        if: ${{ inputs.reseed }}
+        run: node scripts/db-seed.mjs --target staging --yes
+
+      # KHÔNG có bước `playwright install`. Tầng này dùng `request` (APIRequestContext) nên không
+      # mở trình duyệt nào. Đã ĐO chứ không suy: chạy với `PLAYWRIGHT_BROWSERS_PATH` trỏ vào một
+      # thư mục rỗng ⇒ vẫn 2/2 xanh trong 32,3 giây. Thêm bước cài là thêm ~1 phút và một nguồn đỏ
+      # (tải Chromium hỏng) vào một job chẳng dùng tới nó.
+      - name: E2E luồng tiền
+        run: pnpm test:e2e:money
+
+      - name: Lưu trace khi đỏ
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: money-flow-trace
+          path: test-results/
+          retention-days: 7
