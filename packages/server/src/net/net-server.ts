@@ -6,6 +6,8 @@ import { randomUUID } from "node:crypto";
 import {
   CONFIG,
   GAME_PROTOCOL_VERSION,
+  MIN_SUPPORTED_GAME_PROTOCOL,
+  isProtocolSupported,
   decodeControl,
   decodeInput,
   encodeControl,
@@ -131,6 +133,7 @@ interface NetOpts {
   /** Bán kính entity AoI; mặc định lấy từ ENTITY_AOI_RADIUS. */
   entityAoiRadius?: number;
   protocolVersion?: number;
+  minProtocolVersion?: number;
   backpressureBytes?: number;
   maxHumans?: number;
   onlineBots?: number;
@@ -166,6 +169,8 @@ export class NetServer {
   private readonly onMatchResult?: (result: MatchResultEnvelope) => void | Promise<void>;
   private readonly entityAoiRadius: number;
   private readonly protocolVersion: number;
+  /** Phiên bản CŨ NHẤT còn nhận — xem `MIN_SUPPORTED_GAME_PROTOCOL`. */
+  private readonly minProtocolVersion: number;
   private readonly transport: NetworkTransport;
   private readonly maxHumans: number;
   private readonly onlineBotsOverride: number | null;
@@ -207,6 +212,7 @@ export class NetServer {
     this.onMatchResult = opts.onMatchResult;
     this.entityAoiRadius = opts.entityAoiRadius ?? ENTITY_AOI_RADIUS;
     this.protocolVersion = opts.protocolVersion ?? GAME_PROTOCOL_VERSION;
+    this.minProtocolVersion = opts.minProtocolVersion ?? MIN_SUPPORTED_GAME_PROTOCOL;
     this.transport = new NetworkTransport(opts.backpressureBytes ?? WS_BACKPRESSURE_BYTES, gameNetworkMetrics);
     this.maxHumans = opts.maxHumans ?? MAX_HUMAN_PLAYERS;
     this.onlineBotsOverride = opts.onlineBots === undefined
@@ -775,8 +781,11 @@ export class NetServer {
     if (msg.t === "join") {
       if (conn.entityId !== null) return; // đã có ghế.
       const requestedVersion = Number(msg.protocolVersion);
-      if (!Number.isInteger(requestedVersion) || requestedVersion !== this.protocolVersion) {
-        ws.close(4002, `protocol mismatch client=${Number.isInteger(requestedVersion) ? requestedVersion : "missing"} server=${this.protocolVersion}`);
+      // doc 35 §C5 — nhận cả CỬA SỔ, không chỉ đúng một phiên bản. So bằng nhau tuyệt đối nghĩa là
+      // mỗi lần deploy ngắt mọi client đang mở giữa ván, mà Telegram Mini App không ép cập nhật
+      // được nên nhiều bản client chạy cùng lúc là trạng thái bình thường (doc 35 §A8).
+      if (!isProtocolSupported(requestedVersion, this.protocolVersion, this.minProtocolVersion)) {
+        ws.close(4002, `protocol mismatch client=${Number.isInteger(requestedVersion) ? requestedVersion : "missing"} server=${this.minProtocolVersion}..${this.protocolVersion}`);
         return;
       }
       let identity: AuthenticatedJoin | null = null;

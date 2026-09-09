@@ -20,6 +20,7 @@
 //   node scripts/db-migrate.mjs --baseline <version> --yes   # đánh dấu đã áp tới version này
 //   node scripts/db-migrate.mjs --env-file deploy/staging.env --yes
 //   node scripts/db-migrate.mjs --repair-checksums --yes  # ghi lai checksum da chuan hoa
+//   node scripts/db-migrate.mjs --check                # CONG DEPLOY: thoat 1 neu con migration cho
 
 import { createHash } from "node:crypto";
 import { readdir, readFile } from "node:fs/promises";
@@ -95,10 +96,11 @@ export function projectRefOf(supabaseUrl) {
 
 /** Phân tích tham số dòng lệnh. */
 export function parseArgs(argv) {
-  const args = { target: "staging", envFile: ".env", dryRun: false, yes: false, baseline: null, repairChecksums: false };
+  const args = { target: "staging", envFile: ".env", dryRun: false, yes: false, baseline: null, repairChecksums: false, check: false };
   for (let i = 0; i < argv.length; i++) {
     const a = argv[i];
-    if (a === "--dry-run") args.dryRun = true;
+    if (a === "--check") args.check = true;
+    else if (a === "--dry-run") args.dryRun = true;
     else if (a === "--yes") args.yes = true;
     else if (a === "--repair-checksums") args.repairChecksums = true;
     else if (a === "--target") args.target = argv[++i];
@@ -251,6 +253,25 @@ async function main() {
       }
       console.log("Xong.");
       return;
+    }
+
+    // ---- CỔNG DEPLOY (doc 35 §C5) -------------------------------------------------------------
+    // `--check` KHÔNG ghi gì; nó chỉ trả mã thoát. Dùng làm bước chặn trong đường phát hành:
+    // migration phải áp XONG rồi mới deploy code đọc schema mới.
+    //
+    // Vì sao cần cờ riêng thay vì đọc log của `--dry-run`: `--dry-run` luôn thoát 0, nên một bước
+    // CI dùng nó sẽ XANH kể cả khi còn migration chưa áp. Một cổng luôn xanh không phải là cổng.
+    //
+    // Thứ tự đúng là MIGRATION TRƯỚC, CODE SAU — và chỉ đúng khi migration tương thích NGƯỢC với
+    // code đang chạy. Migration PHÁ VỠ phải tách làm hai lần phát hành (thêm cột mới → deploy code
+    // đọc cả hai → bỏ cột cũ); cổng này không cứu được trường hợp đó, và không giả vờ là cứu được.
+    if (args.check) {
+      if (pending.length === 0) { console.log("\nCỔNG DEPLOY: không còn migration nào chờ — được phép deploy code."); return; }
+      console.error(`\nCỔNG DEPLOY — CHẶN: còn ${pending.length} migration CHƯA ÁP.`);
+      for (const f of pending) console.error(`  ${f.version}`);
+      console.error("Áp migration TRƯỚC rồi mới deploy code đọc schema mới:");
+      console.error("  node scripts/db-migrate.mjs --target staging --yes");
+      process.exit(1);
     }
 
     if (pending.length === 0) { console.log("\nKhông có migration nào cần áp."); return; }
