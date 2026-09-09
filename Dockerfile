@@ -10,9 +10,14 @@ RUN corepack enable && corepack prepare pnpm@11.20.0 --activate
 
 # Copy package manifests first so the dependency layer remains cacheable.
 COPY package.json pnpm-lock.yaml pnpm-workspace.yaml .npmrc ./
+# MOI workspace package trong pnpm-lock.yaml phai co manifest o day, ke ca package khong
+# duoc build trong image nay. `pnpm install --frozen-lockfile` doi chieu lockfile voi cac
+# manifest THAY DUOC; thieu mot cai la ERR_PNPM_OUTDATED_LOCKFILE va build chet ngay tu buoc
+# cai dat. `scripts/dockerfile.test.mjs` giu rang buoc nay.
 COPY packages/shared/package.json packages/shared/package.json
 COPY packages/client/package.json packages/client/package.json
 COPY packages/server/package.json packages/server/package.json
+COPY packages/admin/package.json packages/admin/package.json
 
 RUN pnpm install --frozen-lockfile
 
