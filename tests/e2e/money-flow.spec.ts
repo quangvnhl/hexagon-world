@@ -35,10 +35,21 @@ const DB_URL = process.env.SUPABASE_DB_URL ?? "";
 const PLAYER = "seed-e2e-money";
 const LEVEL = "c1";
 
+// Thiếu `SUPABASE_DB_URL` thì BỎ QUA khi chạy tay, nhưng ĐỎ khi chạy trong CI.
+//
+// Bỏ qua ở cả hai nơi là cái bẫy: job thủ công sẽ xanh mà không kiểm một đồng nào nếu ai đó quên
+// gắn secret — và "xanh" là tín hiệu người ta dùng để quyết định phát hành. Với một bài kiểm TIỀN,
+// im lặng không kiểm gì còn tệ hơn đỏ, vì đỏ thì có người đi sửa.
+if (!DB_URL && process.env.CI) {
+  throw new Error("Thiếu SUPABASE_DB_URL. Job này tồn tại để kiểm tiền; chạy mà không có database thì nó không kiểm gì.");
+}
 test.skip(!DB_URL, "Cần SUPABASE_DB_URL — tầng này chạy thủ công, không nằm trong CI mỗi PR.");
 
 let db: pg.Client;
 test.beforeAll(async () => {
+  // `test.skip` ở phạm vi file vẫn chạy `beforeAll`; không có nhánh này thì nó cố nối tới localhost
+  // rồi đỏ vì lỗi kết nối, che mất lý do thật là "chưa cấu hình".
+  if (!DB_URL) return;
   db = new pg.Client({ connectionString: DB_URL, ssl: { rejectUnauthorized: false } });
   await db.connect();
 });
