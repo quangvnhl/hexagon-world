@@ -177,14 +177,31 @@ slices:
       - scripts/db-seed.mjs
       - supabase/seed.sql
       - package.json
+      # LỆCH so với kế hoạch, thêm khi làm:
+      - scripts/db-seed.test.mjs      # phần thuần + hai luật đọc từ seed.sql
+      - .github/workflows/ci.yml      # chạy test đó ở CI
     depends_on: [r3.1-db-migrate]
     dod:
       - "node scripts/db-seed.mjs --target staging --dry-run"
     risk: medium
-    requires_human: true
-    human_note: "Cần staging đã migrate."
-    note: "Players mẫu + catalog + giá + 5 cấp campaign đã publish. Idempotent theo khoá tự nhiên."
-    status: todo
+    requires_human: false
+    human_note: "Đã seed vào DB dev (chủ dự án cho phép). Không còn việc cho người."
+    note: |
+      Idempotent theo khoá tự nhiên; id TÍNH ĐƯỢC bằng md5(khoá)::uuid nên mọi hàng seed
+      nhận ra được mà không cần thêm cột đánh dấu vào bảng thật.
+
+      HAI CHỖ KẾ HOẠCH NÓI SAI so với DB thật, đã hỏi và chủ dự án chốt:
+      - "5 cấp campaign đã publish": DB dev ĐÃ có 9 cấp published. Chốt KHÔNG seed cấp nào —
+        E2E dùng c1 thật và đọc `campaign_levels.rewards` từ DB thay vì gán cứng. Lý do kỹ
+        thuật: `campaign.controller.ts:294` liệt kê MỌI cấp published, nên cấp seed (bắt buộc
+        publish thì `start` mới nhận) sẽ hiện trong game dev, và tôi không được xoá chúng sau.
+      - "catalog + giá": coin_packages (4) và shop_items (17) đã có dữ liệu thật. Chủ dự án
+        vẫn chốt seed đầy đủ, nên seed chép ĐÚNG giá trị đang chạy — đo được: ghi đè không đổi
+        một giá trị nào. shop_prices thì rỗng thật và được lấp: 14 món tính phí × 3 platform.
+
+      Đã chạy: dry-run (chạy trọn rồi rollback) → thật 1 lần → thật lần 2 ra delta 0 toàn bộ.
+      +2 players / +2 identities / +2 wallets / +2 energy / +42 shop_prices; catalog delta 0.
+    status: done
     commit: null
 
   - id: r2.2-e2e-money
