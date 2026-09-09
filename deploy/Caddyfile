@@ -1,0 +1,36 @@
+# Cổng vào duy nhất của hệ — doc 39 §2 bước 6/8. Caddy tự xin và tự gia hạn chứng chỉ.
+#
+# ┌─ HAI ĐƯỜNG PHẢI CHẶN ─────────────────────────────────────────────────────────────────────┐
+# │ `/metrics` và `/health/network` là số liệu vận hành. `health.controller.ts` ghi rõ:        │
+# │ "expose only behind the deployment's admin/proxy ACL". Không chặn thì bất kỳ ai cũng đọc   │
+# │ được số phòng, số kết nối, tồn đọng spool — tức đọc được lúc nào hệ đang yếu.              │
+# │ Chặn ở ĐÂY chứ không ở ứng dụng vì đây là nơi duy nhất biết đâu là Internet, đâu là mạng   │
+# │ nội bộ của compose. Prometheus chạy trong cùng mạng đó và gọi thẳng control:8910/metrics,  │
+# │ không đi qua Caddy. `scripts/compose.test.mjs` giữ hai luật chặn này.                      │
+# └─────────────────────────────────────────────────────────────────────────────────────────┘
+
+(chan-so-lieu) {
+	@noi_bo {
+		path /metrics /metrics/* /health/network
+	}
+	respond @noi_bo 404
+}
+
+# ── Control plane: OAuth, thanh toán, admin API ────────────────────────────────────────────
+{$API_DOMAIN} {
+	import chan-so-lieu
+	reverse_proxy control:8910
+}
+
+# ── Node game: WebSocket /game và /health/ping mà region ticket công bố ─────────────────────
+{$GAME_DOMAIN} {
+	import chan-so-lieu
+	# Caddy nâng cấp WebSocket sẵn, không cần cấu hình riêng. Trận đấu chạy 24Hz nên đừng đặt
+	# thêm timeout đọc/ghi ở đây — một kết nối im vài giây là chuyện bình thường giữa hai ván.
+	reverse_proxy game:8910
+}
+
+# ── Client Next.js ─────────────────────────────────────────────────────────────────────────
+{$DOMAIN} {
+	reverse_proxy client:3890
+}

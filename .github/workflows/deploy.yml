@@ -1,0 +1,147 @@
+# Phát hành lên VPS — doc 39 §2 bước 6 và 8.
+#
+# ┌─ WORKFLOW NÀY KHÔNG GIỮ MỘT SECRET ỨNG DỤNG NÀO ───────────────────────────────────────────┐
+# │ Không SUPABASE_*, không TELEGRAM_BOT_TOKEN, không khoá OAuth, không cả SUPABASE_DB_URL.     │
+# │ Toàn bộ secret nằm trong `control.env`/`game.env` TRÊN MÁY CHỦ, do người vận hành tạo, và    │
+# │ deploy không bao giờ đọc hay ghi đè chúng. GitHub Actions chỉ cần đủ quyền để: đẩy image     │
+# │ lên GHCR, và SSH vào máy chủ bảo nó kéo image mới về.                                        │
+# │                                                                                              │
+# │ Hệ quả cố ý: một lần rò log của workflow này KHÔNG làm lộ tiền hay dữ liệu người chơi.        │
+# └────────────────────────────────────────────────────────────────────────────────────────────┘
+#
+# ┌─ MIGRATION KHÔNG CHẠY Ở ĐÂY ───────────────────────────────────────────────────────────────┐
+# │ AGENTS.md §1 và `db-migrate.mjs` đòi `ALLOW_PRODUCTION_MIGRATE=yes-i-know` cho production —  │
+# │ một rào cứng để chỉ NGƯỜI mới áp được migration lên production. Đặt biến đó vào secret của   │
+# │ workflow là vô hiệu hoá đúng cái rào đó, nên ở đây không có.                                 │
+# │                                                                                              │
+# │ Doc 39 §2 bước 4 và 5 là việc của người, làm TRƯỚC khi bấm workflow này:                     │
+# │   node scripts/db-migrate.mjs --target production --yes                                      │
+# │   node scripts/db-migrate.mjs --check                                                        │
+# └────────────────────────────────────────────────────────────────────────────────────────────┘
+#
+# Secret/variable cần có trong environment `production`:
+#   secrets:    DEPLOY_SSH_KEY · DEPLOY_KNOWN_HOSTS
+#   variables:  DEPLOY_HOST · DEPLOY_USER · DEPLOY_PATH · DOMAIN · API_DOMAIN · GAME_DOMAIN
+name: Deploy
+
+on:
+  push:
+    tags: ['v*']
+  workflow_dispatch:
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false # Huỷ giữa chừng một lần deploy là để lại hệ ở trạng thái nửa vời.
+
+permissions:
+  contents: read
+  packages: write
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    # Bảo vệ bằng environment để bật được reviewer bắt buộc trong Settings — đó là chỗ duy nhất
+    # đặt được "phải có người duyệt trước khi chạm production".
+    environment: production
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: docker/setup-buildx-action@v3
+
+      - name: Đăng nhập GHCR
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Tag theo SHA chứ không theo `latest`: `latest` làm rollback thành chuyện đoán mò, còn
+      # SHA thì luôn nói chính xác máy chủ đang chạy commit nào.
+      - name: Tính tag image
+        id: tag
+        run: echo "sha=${GITHUB_SHA::12}" >> "$GITHUB_OUTPUT"
+
+      - name: Dựng và đẩy image server
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: server
+          push: true
+          tags: ghcr.io/${{ github.repository }}/server:${{ steps.tag.outputs.sha }}
+          cache-from: type=gha,scope=server
+
+      # NEXT_PUBLIC_* được nhúng vào bundle trình duyệt LÚC BUILD, nên chúng phải đúng ở đây —
+      # sửa trên máy chủ sau khi build là không có tác dụng.
+      - name: Dựng và đẩy image client
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          target: client
+          push: true
+          tags: ghcr.io/${{ github.repository }}/client:${{ steps.tag.outputs.sha }}
+          cache-from: type=gha,scope=client
+          build-args: |
+            NEXT_PUBLIC_SERVER_URL=wss://${{ vars.GAME_DOMAIN }}
+            NEXT_PUBLIC_API_URL=https://${{ vars.API_DOMAIN }}
+
+      # Secret đi qua `env:` chứ không nội suy `${{ }}` thẳng vào thân script: khoá riêng là
+      # chuỗi NHIỀU DÒNG, và nội suy thẳng thì nội dung của nó trở thành mã shell.
+      - name: Chuẩn bị SSH
+        env:
+          SSH_KEY: ${{ secrets.DEPLOY_SSH_KEY }}
+          KNOWN_HOSTS: ${{ secrets.DEPLOY_KNOWN_HOSTS }}
+        run: |
+          install -d -m 700 ~/.ssh
+          install -m 600 /dev/null ~/.ssh/id_deploy
+          printf '%s\n' "$SSH_KEY" > ~/.ssh/id_deploy
+          # Ghim khoá máy chủ từ secret, KHÔNG dùng ssh-keyscan: keyscan tin bất cứ thứ gì trả
+          # lời, nên nó biến việc xác thực máy chủ thành một thủ tục trang trí.
+          printf '%s\n' "$KNOWN_HOSTS" > ~/.ssh/known_hosts
+          chmod 600 ~/.ssh/known_hosts
+
+      # Chỉ chép hai file MÔ TẢ hệ. Không chép env, không chép mã nguồn — máy chủ chạy image đã
+      # dựng sẵn, nên nó không cần và không nên có mã nguồn.
+      - name: Chép compose và Caddyfile lên máy chủ
+        run: |
+          scp -i ~/.ssh/id_deploy deploy/docker-compose.yml deploy/Caddyfile \
+            "${{ vars.DEPLOY_USER }}@${{ vars.DEPLOY_HOST }}:${{ vars.DEPLOY_PATH }}/"
+
+      # `.env` này chỉ chứa tag image và tên miền — không có secret. `control.env` và `game.env`
+      # nằm sẵn trên máy chủ và KHÔNG bị đụng tới.
+      - name: Cập nhật tag image rồi khởi động
+        run: |
+          ssh -i ~/.ssh/id_deploy "${{ vars.DEPLOY_USER }}@${{ vars.DEPLOY_HOST }}" bash -eu <<EOF
+          cd "${{ vars.DEPLOY_PATH }}"
+          cat > .env <<ENV
+          IMAGE_SERVER=ghcr.io/${{ github.repository }}/server:${{ steps.tag.outputs.sha }}
+          IMAGE_CLIENT=ghcr.io/${{ github.repository }}/client:${{ steps.tag.outputs.sha }}
+          DOMAIN=${{ vars.DOMAIN }}
+          API_DOMAIN=${{ vars.API_DOMAIN }}
+          GAME_DOMAIN=${{ vars.GAME_DOMAIN }}
+          ENV
+          docker compose pull
+          docker compose up -d --wait --wait-timeout 180
+          EOF
+
+      # `--wait` ở trên đã đợi healthcheck của compose, nhưng nó kiểm TỪ BÊN TRONG mạng compose.
+      # Bước này kiểm từ Internet, qua Caddy — tức kiểm luôn cả TLS, DNS và định tuyến, ba thứ
+      # hỏng độc lập với container.
+      - name: Kiểm khói từ ngoài Internet
+        run: |
+          set -eu
+          curl -fsS --retry 5 --retry-delay 5 --retry-connrefused \
+            "https://${{ vars.API_DOMAIN }}/health/ready" | tee /tmp/ready.json
+          grep -q '"database":true' /tmp/ready.json
+          curl -fsS --retry 5 --retry-delay 5 "https://${{ vars.GAME_DOMAIN }}/health/ping" > /dev/null
+          curl -fsS --retry 5 --retry-delay 5 "https://${{ vars.DOMAIN }}/" > /dev/null
+
+      # Số liệu vận hành KHÔNG được lộ ra Internet (health.controller.ts). Luật chặn nằm trong
+      # Caddyfile và `scripts/compose.test.mjs` giữ nó ở mức văn bản — bước này kiểm nó có thật
+      # sự chặn trên hệ đang chạy hay không.
+      - name: Xác nhận /metrics KHÔNG lộ ra ngoài
+        run: |
+          for host in "${{ vars.API_DOMAIN }}" "${{ vars.GAME_DOMAIN }}"; do
+            code=$(curl -s -o /dev/null -w '%{http_code}' "https://$host/metrics")
+            test "$code" = "404" || { echo "https://$host/metrics trả $code, lẽ ra phải 404"; exit 1; }
+          done
