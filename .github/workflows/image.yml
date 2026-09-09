@@ -89,6 +89,49 @@ jobs:
       # packages/client/server.js trong cây standalone. `.next/static` và `public` KHÔNG nằm trong
       # cây đó — Next cố ý để người dựng image tự copy, và quên là image chạy được nhưng mất sạch
       # CSS/JS/asset. Không có bước này thì lỗi đó trông giống hệt một trang trắng.
+      # ┌─ BAI DUY NHAT O DAY CHAY CA HE, VA NO KIEM DUNG MOT THU ─────────────────────────────┐
+      # │ `scripts/compose.test.mjs` khang dinh volume spool la volume CO TEN — nhung no doc     │
+      # │ VAN BAN cua file compose. "File con do sau khi deploy lai" thi chi Docker moi tra loi  │
+      # │ duoc, va do la bat bien dat nhat trong he: moi file trong thu muc do la XP va tien cua │
+      # │ mot nguoi choi chua ghi duoc vao control plane.                                        │
+      # │                                                                                       │
+      # │ Buoc nay chung minh CA HAI CHIEU: `down` giu file lai, `down -v` xoa no. Neu chi kiem  │
+      # │ chieu giu thi mot bai test doc nham thu muc khac cung se xanh.                         │
+      # └─────────────────────────────────────────────────────────────────────────────────────┘
+      - name: Volume spool sống sót qua một lần deploy lại
+        working-directory: deploy
+        env:
+          IMAGE_SERVER: hexworld-server:ci
+          IMAGE_CLIENT: hexworld-client:ci
+          DOMAIN: localhost
+          API_DOMAIN: api.localhost
+          GAME_DOMAIN: game.localhost
+        run: |
+          set -eu
+          # env rỗng từ file mẫu: bước này không khởi động ứng dụng, chỉ dùng chính service
+          # `game` làm chỗ đứng để ghi/đọc trong volume.
+          cp control.env.example control.env
+          cp game.env.example game.env
+
+          ghi() { docker compose run --rm --entrypoint sh game -c "$1"; }
+
+          ghi 'mkdir -p /app/data/match-results && echo tien-cua-nguoi-choi > /app/data/match-results/tran-1.json'
+
+          # `down` không kèm -v = đúng thứ một lần deploy lại làm.
+          docker compose down
+          noi_dung=$(ghi 'cat /app/data/match-results/tran-1.json')
+          test "$noi_dung" = "tien-cua-nguoi-choi" || { echo "MAT DU LIEU: đọc ra '$noi_dung'"; exit 1; }
+          echo "giữ được sau khi deploy lại"
+
+          # Chiều ngược lại: `down -v` PHẢI xoá. Không kiểm chiều này thì một bài đọc nhầm
+          # đường dẫn cũng sẽ xanh.
+          docker compose down -v
+          if ghi 'test -f /app/data/match-results/tran-1.json'; then
+            echo "down -v lẽ ra phải xoá volume — phép kiểm trên không chứng minh được gì"
+            exit 1
+          fi
+          echo "down -v xoá đúng như mong đợi ⇒ phép kiểm trên có nghĩa"
+
       - name: Client — server.js, static và public phải tồn tại
         run: |
           docker run --rm hexworld-client:ci node -e "
