@@ -102,12 +102,15 @@ test("luồng tiền: nạp năng lượng bằng coin → chơi c1 → nhận t
   await login(request);
 
   await test.step("mua năng lượng bằng coin: ví giảm ĐÚNG giá, sổ cái ghi đúng một dòng", async () => {
-    // Tự dựng tiền đề, KHÔNG tin vào giá trị seed. Hai lý do, cái thứ hai quan trọng hơn:
-    //  1. Năng lượng hồi theo thời gian, nên giá trị seed trôi ngay sau lần chạy đầu.
-    //  2. Ở BÌNH ĐẦY, `purchase_energy_with_coin` vẫn trừ coin nhưng `grant_energy` cộng được 0 —
-    //     người chơi trả tiền và không nhận gì. Đo được: 50/50 ⇒ coin −100, năng lượng +0.
-    //     Đó là một lỗi THẬT (xem PR của lát này), không phải thứ bước này đang kiểm. Bước này
-    //     kiểm đường mua BÌNH THƯỜNG, nên nó phải bắt đầu từ chỗ còn dư địa để nhận.
+    // Tự dựng tiền đề, KHÔNG tin vào giá trị seed: năng lượng hồi theo thời gian nên giá trị seed
+    // trôi ngay sau lần chạy đầu.
+    //
+    // LỊCH SỬ — đừng gỡ bước "bình đầy" ở dưới. Khi lát r2.2 viết bước này, ở BÌNH ĐẦY
+    // `purchase_energy_with_coin` vẫn trừ coin nhưng cộng được 0 điểm: 50/50 ⇒ coin −100, năng
+    // lượng +0. Bước này đặt năng lượng về 0 để kiểm đường mua BÌNH THƯỜNG, nên nó KHÔNG bao giờ
+    // chạm tới lỗi đó — chính vì vậy lỗi sống sót. Migration 202609090001 đã sửa (cho tràn trên
+    // trần, doc 37 Việc 9 phương án B), và bước "bình đầy" phía dưới là thứ giữ cho nó không quay
+    // lại.
     await db.query("update player_energy set energy_current = 0, last_refill_at = now() where player_id = $1", [playerId]);
 
     const status = await (await request.get("/v1/energy")).json();
@@ -133,6 +136,37 @@ test("luồng tiền: nạp năng lượng bằng coin → chơi c1 → nhận t
     const row = await lastLedger(playerId);
     expect(row?.delta, "dòng sổ phải ghi khoản trừ đúng bằng giá").toBe(-cost);
     expect(row?.balance_after, "balance_after phải khớp số dư thật").toBe(coinBefore - cost);
+
+    await test.step("BÌNH ĐẦY: đã trả tiền thì phải nhận ĐỦ, kể cả khi vượt trần", async () => {
+      // Bài giữ lỗi mà lát r2.2 phát hiện. Trước migration 202609090001: coin −100, năng lượng +0.
+      //
+      // Kiểm ở ĐẦY BÌNH CHÍNH XÁC chứ không phải "gần đầy": đây là chỗ phần thưởng bị kẹp hoàn
+      // toàn, tức chỗ mất mát lớn nhất và cũng là chỗ dễ lọt nhất khi ai đó sửa lại công thức.
+      const max = Number((await (await request.get("/v1/energy")).json()).max);
+      await db.query(
+        "update player_energy set energy_current = $2, last_refill_at = now() where player_id = $1",
+        [playerId, max]);
+
+      const truoc = await (await request.get("/v1/energy")).json();
+      expect(Number(truoc.current), "tiền đề: phải đang ở đúng trần").toBe(max);
+      const coinTruoc = await coinBalance(playerId);
+      const soTruoc = await ledgerCount(playerId);
+
+      const res = await request.post("/v1/energy/purchase", { data: { idempotencyKey: randomUUID() } });
+      expect(res.ok(), `mua khi đầy bình phải thành công: ${res.status()} ${await res.text()}`).toBeTruthy();
+      const sau = await res.json();
+
+      expect(Number(sau.current) - Number(truoc.current),
+        "đầy bình vẫn phải nhận ĐỦ gói — đây chính là lỗi cũ").toBe(Number(truoc.refill_energy_amount));
+      expect(Number(sau.current), "và số điểm được phép VƯỢT trần").toBeGreaterThan(max);
+      expect(await coinBalance(playerId), "trừ đúng một lần giá nạp").toBe(coinTruoc - Number(truoc.refill_coin_cost));
+      expect(await ledgerCount(playerId), "đúng một dòng sổ cái").toBe(soTruoc + 1);
+
+      // Phần vượt trần phải SỐNG SÓT qua lần đọc kế. `read_energy` từng kẹp `least(max, ...)`, nên
+      // nếu ai đó khôi phục phép kẹp đó thì người chơi trả tiền, thấy số tăng, rồi số tự tụt.
+      const docLai = await (await request.get("/v1/energy")).json();
+      expect(Number(docLai.current), "đọc lại KHÔNG được kéo phần vượt xuống trần").toBe(Number(sau.current));
+    });
 
     await test.step("GỌI LẠI cùng khoá idempotency ⇒ không trừ thêm đồng nào", async () => {
       const coinNow = await coinBalance(playerId);
