@@ -1,5 +1,6 @@
 import {
   GameState,
+  sanitizeDisplayName,
   tournamentConfig,
   type PlayerAppearance,
   type Snapshot,
@@ -90,7 +91,11 @@ export class GameRoom {
         this.seats[id] = true;
         this.lastSeq[id] = 0;
         this.pending[id] = null;
-        this.gs.setName(id, name.trim() || `Người ${id + 1}`);
+        // doc 35 §C3 — CHỐT CHẶN CUỐI cho tên hiển thị. Đặt ở đây chứ không chỉ ở tầng xác thực
+        // vì ba đường vào đều đổ về đúng dòng này, và hai trong ba KHÔNG qua xác thực:
+        // WS `join` không ticket lấy thẳng `msg.name` do client gửi, còn `game-tickets/guest`
+        // lấy `body.displayName`. Lọc ở `IdentityService` thôi sẽ bỏ sót cả hai.
+        this.gs.setName(id, sanitizeDisplayName(name, id).name);
         this.gs.setAppearance(id, appearance);
         // Ghế có thể đang ở trạng thái CHẾT (người trước để lại) → hồi sinh cho người mới.
         if (this.gs.players[id]?.phase === "dead") this.gs.respawn(id);

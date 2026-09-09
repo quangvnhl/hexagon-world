@@ -329,6 +329,77 @@ export class AdminController {
     return cachedSpec;
   }
 
+  // ---- Cấm người chơi (doc 35 §C3) ---------------------------------------------------------------
+  //
+  // Scope `bans:write` đã có trong `OPS_SCOPES` từ lát c2.1 nhưng CHƯA endpoint nào dùng — tức là
+  // một quyền cấp được mà không làm được gì. Đây là chỗ nó có nghĩa.
+  //
+  // Thi hành KHÔNG nằm ở đây: `ban_player` đặt `players.status = 'suspended'`, và
+  // `SessionService.resolve` vốn đã từ chối mọi phiên không `active`. RPC còn thu hồi phiên đang mở
+  // ngay lập tức — không có bước đó thì lệnh cấm chỉ có hiệu lực khi phiên hết hạn, tức tới 24 giờ sau.
+
+  @Get("bans")
+  @Ops({ scope: "players:read", isWrite: false })
+  async listBans(@Query("active") active?: string) {
+    let q = this.db.from("player_bans")
+      .select("id,player_id,reason,until,actor,created_at,lifted_at,lifted_by")
+      .order("created_at", { ascending: false }).limit(100);
+    if (active !== "false") q = q.is("lifted_at", null);
+    const { data, error } = await q;
+    if (error) throw new BadRequestException({ code: "bans_read_failed", message: error.message, retryable: true });
+    return { bans: data ?? [] };
+  }
+
+  @Post("players/:id/ban")
+  @Ops({ scope: "bans:write", isWrite: true, dryRun: true })
+  async ban(@Req() req: OpsRequest, @Param("id") playerId: string, @Body() body: { reason?: string; until?: string | null }) {
+    const reason = String(body.reason ?? "").trim();
+    if (!reason) throw new BadRequestException({ code: "reason_required", message: "reason bắt buộc — một lệnh cấm không có lý do là một lệnh cấm không bảo vệ được khi bị khiếu nại", retryable: false });
+
+    // `until` vắng mặt HOẶC null ⇒ vĩnh viễn. Chuỗi rỗng cũng vậy — agent hay gửi "" thay cho null.
+    let until: string | null = null;
+    if (body.until !== undefined && body.until !== null && String(body.until).trim() !== "") {
+      const t = Date.parse(String(body.until));
+      if (!Number.isFinite(t)) throw new BadRequestException({ code: "invalid_until", message: "until phải là mốc thời gian ISO, hoặc bỏ trống để cấm vĩnh viễn", retryable: false });
+      if (t <= Date.now()) throw new BadRequestException({ code: "until_in_past", message: "until nằm trong quá khứ ⇒ lệnh cấm hết hiệu lực ngay khi tạo", retryable: false });
+      until = new Date(t).toISOString();
+    }
+
+    if (req.opsDryRun) {
+      // Xem trước phải kiểm ĐÚNG những gì lời gọi thật kiểm (ở trên) rồi mới đọc trạng thái.
+      const { data } = await this.db.from("players").select("id,display_name,status").eq("id", playerId).maybeSingle();
+      const row = data as { display_name?: string; status?: string } | null;
+      const { data: cur } = await this.db.from("player_bans").select("id,reason,until").eq("player_id", playerId).is("lifted_at", null).maybeSingle();
+      return {
+        dryRun: true, playerId, playerFound: row !== null,
+        displayName: row?.display_name ?? null, currentStatus: row?.status ?? null,
+        // `deleted` KHÔNG cấm được: lật nó sang suspended là dựng lại một tài khoản người ta đã
+        // yêu cầu xoá, và `purge_deleted_players` sẽ không còn nhận ra nó.
+        wouldFail: row === null ? "player_not_found" : row.status === "deleted" ? "player_deleted" : null,
+        replacesActiveBan: cur ?? null,
+        until, permanent: until === null,
+      };
+    }
+    return this.db.rpc("ban_player", { p_player_id: playerId, p_reason: reason.slice(0, 500), p_until: until, p_actor: actorTag(req) });
+  }
+
+  @Delete("players/:id/ban")
+  @Ops({ scope: "bans:write", isWrite: true, dryRun: true })
+  async unban(@Req() req: OpsRequest, @Param("id") playerId: string) {
+    if (req.opsDryRun) {
+      const { data } = await this.db.from("players").select("id,status").eq("id", playerId).maybeSingle();
+      const row = data as { status?: string } | null;
+      const { data: cur } = await this.db.from("player_bans").select("id,reason,until,created_at").eq("player_id", playerId).is("lifted_at", null).maybeSingle();
+      return {
+        dryRun: true, playerId, playerFound: row !== null, currentStatus: row?.status ?? null,
+        activeBan: cur ?? null,
+        // Nói rõ "không có gì để gỡ" thay vì trả ổn — agent cần phân biệt được hai chuyện đó.
+        noop: cur === null,
+      };
+    }
+    return this.db.rpc("unban_player", { p_player_id: playerId, p_actor: actorTag(req) });
+  }
+
   /** Dùng chung cho publish và unpublish — hai endpoint, một phép xem trước. */
   private async previewPublish(id: string, next: boolean) {
     const { data } = await this.db.from("campaign_levels").select("id,published,name").eq("id", id).maybeSingle();
