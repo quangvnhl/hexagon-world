@@ -50,7 +50,6 @@ WORKDIR /app/packages/client
 # Với outputFileTracingRoot là gốc monorepo, Next đặt server standalone của
 # package client tại packages/client/server.js trong cây standalone.
 COPY --from=client-build --chown=node:node /app/packages/client/.next/standalone /app
-COPY --from=client-build --chown=node:node /app/packages/client/.next/static ./.next/static
 COPY --from=client-build --chown=node:node /app/packages/client/public ./public
 
 EXPOSE 3890
