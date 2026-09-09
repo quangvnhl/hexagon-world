@@ -38,6 +38,8 @@ class TestClient {
   territoryDeltas = 0;
   worldUi: WorldUiEntity[] = [];
   minimapUi: MinimapUiEntity[] = [];
+  /** Đếm số bản tin `minimap_ui` ĐÃ NHẬN — để chờ đúng sự kiện thay vì chờ đồng hồ. */
+  minimapUiCount = 0;
   radarActive = false;
   minimapTerritory: TerritoryCell[] = [];
   totems: TotemWireState[] = [];
@@ -73,6 +75,7 @@ class TestClient {
         else if (msg?.t === "minimap_ui") {
           this.radarActive = msg.radarActive;
           this.minimapUi = msg.entities;
+          this.minimapUiCount++;
         } else if (msg?.t === "totems") this.totems = msg.items;
         else if (msg?.t === "revive_result") this.reviveResults.push(msg);
         else if (msg?.t === "event") this.events.push(msg);
@@ -494,8 +497,14 @@ describe("NetServer integration (real ws, deterministic ticks)", () => {
       { q: 2, r: 0, owner: idB, kind: 0 },
       { q: 2, r: 1, owner: idB, kind: 1 },
     ]);
+    // Chờ ĐÚNG bản tin mang câu trả lời, không chờ đồng hồ.
+    // Đo được: `delay(15)` và `delay(0)` đều xanh, nhưng BỎ HẲN await thì đỏ ngay
+    // (`radarActive` vẫn false). Tức thứ gánh việc là một lần nhường event-loop, còn 15ms là
+    // con số không có căn cứ — trên runner đang tải, một lần nhường có thể chưa đủ để bản tin
+    // đi hết socket thật, và bài test đỏ vì lý do không liên quan tới thứ nó đo.
+    const truocMinimap = a.minimapUiCount;
     for (let i = 0; i < 5; i++) server.tickOnce();
-    await delay(15);
+    await waitFor(() => a.minimapUiCount > truocMinimap, 3000, "minimap_ui khi chưa bật Radar");
 
     expect(a.radarActive).toBe(false);
     expect(a.minimapUi.map((entity) => entity.id)).toEqual([idA]);
@@ -504,8 +513,9 @@ describe("NetServer integration (real ws, deterministic ticks)", () => {
     expect(a.worldUi.every((entity) => !("x" in entity) && !("y" in entity))).toBe(true);
 
     vi.spyOn(game, "radarActiveFor").mockReturnValue(true);
+    const truocRadar = a.minimapUiCount;
     for (let i = 0; i < 5; i++) server.tickOnce();
-    await delay(15);
+    await waitFor(() => a.minimapUiCount > truocRadar, 3000, "minimap_ui sau khi bật Radar");
     expect(a.radarActive).toBe(true);
     expect(new Set(a.minimapUi.map((entity) => entity.id))).toEqual(new Set([idA, idB]));
     expect(new Set(a.minimapTerritory.map((cell) => cell.owner))).toEqual(new Set([idA, idB]));
