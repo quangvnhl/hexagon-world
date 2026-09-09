@@ -1145,7 +1145,10 @@ slices:
       - "node scripts/db-migrate.mjs --check"
     risk: medium
     requires_human: true
-    human_note: "Workflow deploy CHƯA viết — cần biết deploy đi đâu. Hình dạng 9 bước đã cố định trong doc 39."
+    human_note: |
+      Workflow deploy ĐÃ viết (lát c5.2, #51) sau khi chủ dự án chốt VPS + Docker Compose.
+      Việc còn lại của người: dựng VPS, trỏ domain, tạo control.env/game.env trên máy chủ,
+      và gắn secret/variable cho environment `production`.
     note: |
       `--check` là cờ RIÊNG chứ không dùng lại `--dry-run`: `--dry-run` luôn thoát 0 nên một
       bước CI dùng nó sẽ xanh kể cả khi còn migration chưa áp. Đã chứng minh cả hai chiều.
@@ -1153,8 +1156,62 @@ slices:
       `MIN_SUPPORTED_GAME_PROTOCOL` đặt BẰNG `GAME_PROTOCOL_VERSION` ⇒ hành vi không đổi.
       Cố ý: chưa kiểm chứng v5 đọc được bởi server v6, và khai một cửa sổ chưa kiểm chứng còn
       tệ hơn không có cửa sổ (client cũ kết nối được rồi giải mã sai).
-    status: partial
+    status: done
     commit: "65fc673"
+
+  - id: t5-ci-dung-image
+    doc: "35#C5"
+    title: "Dựng image Docker thật trong CI"
+    files:
+      - .github/workflows/image.yml
+    depends_on: [t4-dockerfile-thieu-manifest]
+    dod:
+      - "docker build hai stage server/client xanh trên runner"
+      - "docker run kiểm đúng đường dẫn mà CMD trỏ tới"
+    risk: low
+    note: |
+      Dockerfile là artifact triển khai DUY NHẤT của repo và trước lát này nó chưa từng được
+      dựng ở đâu. Bài test tĩnh ở #48 chỉ đọc chữ trong Dockerfile.
+
+      Đo A/B trên cùng workflow: gỡ một dòng `COPY .next/static` ⇒ `docker build` VẪN XANH,
+      chỉ bước `docker run` mới đỏ (ENOENT). `docker build` không có cách nào biết CMD sẽ cần
+      file gì — không có bước run thì lỗi này ra tới production thành một trang trắng.
+    status: done
+    commit: "c788139"
+
+  - id: c5.2-deploy-vps
+    doc: "35#C5"
+    title: "Đường phát hành lên VPS — compose, Caddy, workflow deploy"
+    files:
+      - deploy/docker-compose.yml
+      - deploy/Caddyfile
+      - deploy/control.env.example
+      - deploy/game.env.example
+      - .github/workflows/deploy.yml
+      - scripts/compose.test.mjs
+    depends_on: [c5-duong-phat-hanh, t5-ci-dung-image]
+    dod:
+      - "pnpm test:compose"
+      - "docker compose config giải được cả file"
+    risk: medium
+    requires_human: true
+    human_note: |
+      Chủ dự án chốt VPS + Docker Compose, client cùng chỗ (2026-09-09).
+      Workflow CHƯA TỪNG CHẠY — chưa có VPS, chưa có domain. Compose/Caddyfile đã được
+      `docker compose config` giải và test giữ ở mức văn bản, nhưng "chạy thật trên máy chủ"
+      chỉ lần deploy đầu tiên mới trả lời được.
+    note: |
+      Bốn tiến trình chứ không phải một, vì `release-gate.mjs` từ chối SERVER_ROLE=all ở
+      production và từ chối cấp secret control plane cho node game.
+
+      Workflow deploy KHÔNG giữ một secret ứng dụng nào và KHÔNG chạy migration — đặt
+      ALLOW_PRODUCTION_MIGRATE vào secret là vô hiệu hoá đúng cái rào đang bảo vệ production.
+
+      Ba luật giữ bằng test, mỗi luật kèm phép thử ngược: spool trên volume có tên (mỗi file
+      là tiền của một người chơi), node game không nhận secret control plane, /metrics không
+      lộ ra Internet.
+    status: done
+    commit: "cc3ff7b"
 
   - id: c1-alert-toi-thieu
     doc: "35#C1"

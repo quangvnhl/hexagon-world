@@ -134,8 +134,9 @@ Xen kẽ khi cần lát nhẹ: `r2.1-smoke-ui`, `a2.3-admin-config-ui`.
 > | Đường phát hành — **C5** cổng migration | ✅ `db-migrate --check` |
 > | Đường phát hành — **C5** cửa sổ protocol | ✅ `MIN_SUPPORTED_GAME_PROTOCOL` |
 > | Đường phát hành — **C5** sổ tay rollback | ✅ [doc 39](39-runbook-phat-hanh-rollback.md) |
-> | Đường phát hành — **C5** workflow deploy | ⏸️ cần biết deploy **đi đâu**; hình dạng 9 bước đã cố định ở doc 39 §2 |
-> | Hạ tầng (hosting, domain, Supabase production) | ⏸️ **chỉ chủ dự án** |
+> | Đường phát hành — dựng image | ✅ `t5-ci-dung-image` (#50) — trước đó `Dockerfile` chưa từng được dựng ở đâu |
+> | Đường phát hành — **C5** workflow deploy | ✅ `c5.2-deploy-vps` (#51) — VPS + Compose; **chưa từng chạy**, chưa có máy chủ |
+> | Hạ tầng (VPS, domain, Supabase production) | ⏸️ **chỉ chủ dự án** — nhà cung cấp đã chốt, máy chủ thì chưa có |
 > | Telegram thật (bot production, Mini App URL, webhook Stars) | ⏸️ **chỉ chủ dự án** |
 > | **C6** PITR + diễn tập khôi phục | ⏸️ **chỉ chủ dự án** — quyết định khôi phục phải do người bấm |
 >
