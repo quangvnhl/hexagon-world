@@ -1,0 +1,86 @@
+# Triển khai một VPS — doc 39 §2 bước 6 và 8.
+#
+# ┌─ VÌ SAO BA TIẾN TRÌNH CHỨ KHÔNG PHẢI MỘT ──────────────────────────────────────────────────┐
+# │ `scripts/release-gate.mjs` TỪ CHỐI `SERVER_ROLE=all` ở production, và từ chối cấp secret     │
+# │ của control plane cho node game. Đó không phải sở thích kiến trúc: node game nhận kết nối    │
+# │ WebSocket từ Internet, nên nó là thứ dễ bị chiếm nhất trong hệ — và nó KHÔNG cần khoá        │
+# │ Supabase, token Telegram hay OAuth secret để làm việc của mình.                              │
+# │ Chia vai trò ở đây là cách file compose tuân đúng cổng đó, thay vì lách nó.                  │
+# └───────────────────────────────────────────────────────────────────────────────────────────┘
+#
+# File env do NGƯỜI vận hành tạo trên máy chủ, không bao giờ nằm trong repo (`.gitignore` đã chặn
+# `deploy/*.env`). Sinh xong thì kiểm bằng:
+#   node scripts/release-gate.mjs --target production --control deploy/control.env --game deploy/game.env
+#
+# `scripts/compose.test.mjs` giữ những ràng buộc dưới đây bằng test, không bằng chú thích.
+
+name: hexworld
+
+services:
+  # ── Cổng vào duy nhất. Caddy tự xin và tự gia hạn chứng chỉ Let's Encrypt. ──────────────────
+  caddy:
+    image: caddy:2-alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:
+      - ./Caddyfile:/etc/caddy/Caddyfile:ro
+      # Chứng chỉ PHẢI nằm trên volume bền. Mất nó thì mỗi lần khởi động lại là một lần xin
+      # chứng chỉ mới, và Let's Encrypt có hạn mức — vài lần restart là bị khoá cả tuần.
+      - caddy-data:/data
+      - caddy-config:/config
+    environment:
+      DOMAIN: ${DOMAIN:?DOMAIN chưa được đặt}
+      API_DOMAIN: ${API_DOMAIN:?API_DOMAIN chưa được đặt}
+      GAME_DOMAIN: ${GAME_DOMAIN:?GAME_DOMAIN chưa được đặt}
+    depends_on: [control, game, client]
+
+  # ── Control plane: giữ TOÀN BỘ secret. Không mở cổng ra host. ───────────────────────────────
+  control:
+    image: ${IMAGE_SERVER:?IMAGE_SERVER chưa được đặt}
+    restart: unless-stopped
+    # KHÔNG có khối `ports`. Mở cổng ra host là mở một đường đi vòng qua Caddy — tức đi vòng qua
+    # cả TLS lẫn ACL chặn /metrics.
+    expose: ["8910"]
+    env_file: [./control.env]
+    healthcheck:
+      # /health/ready ở role control có hỏi database; đó chính là thứ cần biết trước khi Caddy
+      # đưa người dùng vào.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8910/health/ready').then(r=>r.json()).then(j=>process.exit(j.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 30s
+
+  # ── Node game: nhận WebSocket từ Internet. KHÔNG có secret của control plane. ───────────────
+  game:
+    image: ${IMAGE_SERVER:?IMAGE_SERVER chưa được đặt}
+    restart: unless-stopped
+    expose: ["8910"]
+    env_file: [./game.env]
+    volumes:
+      # ĐÂY LÀ TIỀN CỦA NGƯỜI CHƠI. Mỗi file trong thư mục này là kết quả một trận chưa ghi được
+      # vào control plane. Để nó trong lớp ghi của container thì một lần `docker compose up -d`
+      # là xoá sạch — im lặng, và alert SpoolBacklogGrowing sẽ tụt về 0 trông y như đã khỏi.
+      # Đường dẫn phải khớp GAME_RESULT_SPOOL_DIR trong game.env; compose.test.mjs giữ điều đó.
+      - game-spool:/app/data/match-results
+    healthcheck:
+      # Role game KHÔNG hỏi database (health.controller.ts), nên /health/ready ở đây chỉ nói
+      # tiến trình còn sống — đúng thứ cần cho một node không giữ trạng thái bền.
+      test: ["CMD", "node", "-e", "fetch('http://127.0.0.1:8910/health/live').then(r=>process.exit(r.ok?0:1)).catch(()=>process.exit(1))"]
+      interval: 15s
+      timeout: 5s
+      retries: 4
+      start_period: 20s
+
+  # ── Client Next.js standalone (stage `client` của chính Dockerfile này). ────────────────────
+  client:
+    image: ${IMAGE_CLIENT:?IMAGE_CLIENT chưa được đặt}
+    restart: unless-stopped
+    expose: ["3890"]
+
+volumes:
+  game-spool:
+  caddy-data:
+  caddy-config:

@@ -73,6 +73,14 @@ jobs:
       - name: Dockerfile self-test
         run: pnpm test:dockerfile
 
+      # Cung ly do voi bai tren, mot tang sau: `deploy/docker-compose.yml` va `deploy/Caddyfile`
+      # mo ta he that su chay o production, nhung khong cong nao doc chung. Bai nay giu ba dieu
+      # hong AM THAM: spool ket qua tran nam tren volume ben (moi file la tien cua mot nguoi
+      # choi), node game khong duoc cap secret cua control plane, va /metrics khong lo ra
+      # Internet. Khong chay Docker, khong cham mang.
+      - name: Compose + Caddyfile self-test
+        run: pnpm test:compose
+
       # Cổng review chạy ở workflow `Review` (nó cần diff), nhưng LUẬT của nó phải được test ở đây —
       # một cổng chặn viết sai sẽ hoặc bỏ lọt, hoặc chặn nhầm rồi bị vô hiệu hoá cả cụm.
       - name: Review guard self-test

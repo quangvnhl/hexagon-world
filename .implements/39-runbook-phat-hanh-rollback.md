@@ -74,11 +74,46 @@ Khi đã chọn xong nơi chạy, workflow chỉ cần đúng các bước sau, 
 9. kiểm khói: mở trang, chơi hết FTUE
 ```
 
-Bước 1-3 và 5 đã có sẵn trong repo và không phụ thuộc nhà cung cấp. Bước 6/8 dựng image: workflow
-`.github/workflows/image.yml` dựng THẬT cả hai stage `server` và `client` rồi kiểm đúng đường dẫn mà
-`CMD` trỏ tới — nó không đẩy lên registry nào, vì chọn registry là một phần của việc chọn nơi chạy.
-Nói cách khác: tới lúc bạn chốt nhà cung cấp, thứ còn phải viết chỉ là "đẩy image đi đâu", không phải
-"image có dựng nổi không".
+### Nơi chạy đã chốt: một VPS, Docker Compose, client ở cùng chỗ
+
+`deploy/docker-compose.yml` dựng bốn tiến trình: `caddy` (TLS + cổng vào duy nhất), `control`,
+`game`, `client`. **Ba tiến trình server chứ không phải một** là vì `release-gate.mjs` từ chối
+`SERVER_ROLE=all` ở production và từ chối cấp secret control plane cho node game — node game nhận
+WebSocket từ Internet nên nó là thứ dễ bị chiếm nhất, và nó không cần khoá Supabase để làm việc.
+
+Bước 6/8 nay là `.github/workflows/deploy.yml`. Hai tính chất cố ý của nó:
+
+* **Không giữ một secret ứng dụng nào.** `control.env` và `game.env` nằm trên máy chủ, do người
+  vận hành tạo, và deploy không đọc cũng không ghi đè. Workflow chỉ cần quyền đẩy image lên GHCR
+  và một khoá SSH. Một lần rò log của nó không làm lộ tiền hay dữ liệu người chơi.
+* **Không chạy migration.** Bước 4 và 5 dưới đây vẫn là việc của người, làm TRƯỚC khi bấm deploy.
+  Đặt `ALLOW_PRODUCTION_MIGRATE` vào secret của workflow chính là vô hiệu hoá cái rào đang bảo vệ
+  production.
+
+`scripts/compose.test.mjs` giữ ba điều hỏng âm thầm, mỗi điều kèm một phép thử ngược chứng minh
+luật bắt được bản đã phá: spool kết quả trận nằm trên volume bền (mỗi file là tiền của một người
+chơi), node game không nhận secret của control plane, và `/metrics` không lộ ra Internet.
+
+Trước lát này, bước dựng image chưa từng chạy ở đâu; `.github/workflows/image.yml` nay dựng thật
+cả hai stage rồi kiểm đúng đường dẫn `CMD` trỏ tới.
+
+Chuẩn bị một lần trên máy chủ:
+
+```
+mkdir -p /opt/hexworld && cd /opt/hexworld
+# chép deploy/control.env.example và deploy/game.env.example vào rồi điền
+node scripts/release-gate.mjs --target production --control control.env --game game.env
+```
+
+Trong GitHub, environment `production` cần:
+
+```
+secrets:    DEPLOY_SSH_KEY · DEPLOY_KNOWN_HOSTS
+variables:  DEPLOY_HOST · DEPLOY_USER · DEPLOY_PATH · DOMAIN · API_DOMAIN · GAME_DOMAIN
+```
+
+`DEPLOY_KNOWN_HOSTS` là khoá máy chủ đã ghim, KHÔNG dùng `ssh-keyscan` trong workflow: keyscan tin
+bất cứ thứ gì trả lời, nên nó biến việc xác thực máy chủ thành thủ tục trang trí.
 
 Bước 4 có rào cứng trong `db-migrate.mjs`: `--target production` bị **từ chối** trừ khi có biến môi
 trường `ALLOW_PRODUCTION_MIGRATE=yes-i-know`. Agent không bao giờ có biến đó (AGENTS.md §1).
