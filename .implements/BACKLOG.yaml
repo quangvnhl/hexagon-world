@@ -1088,3 +1088,120 @@ slices:
       giây" cần hai cách sửa ngược nhau, và không có trường này thì không phân biệt được.
     status: done
     commit: null
+
+  # ═════════════════════════════════════════════════════════════════════════
+  # CHẶNG 1 — PHÁT HÀNH (doc 38 §3). Chặng này doc 35 thiếu hẳn.
+  # Phần CODE đã xong; phần còn lại cần tài khoản của chủ dự án.
+  # ═════════════════════════════════════════════════════════════════════════
+
+  - id: c3-an-toan-cong-dong
+    doc: "35#C3"
+    title: "Lọc tên hiển thị + player_bans"
+    files:
+      - packages/shared/src/display-name.ts
+      - packages/shared/src/__tests__/display-name.test.ts
+      - packages/server/src/game/game-room.ts
+      - packages/server/src/auth/identity.service.ts
+      - packages/server/src/regions/regions.controller.ts
+      - packages/server/src/admin/admin.controller.ts
+      - packages/server/test/admin-bans.spec.ts
+      - packages/server/test/room-lifecycle.spec.ts
+      - supabase/migrations/202609090002_player_bans.sql
+    depends_on: [c2.1-ops-api-keys]
+    dod:
+      - "pnpm -r test"
+    risk: high
+    requires_human: false
+    note: |
+      Bề mặt rộng hơn kế hoạch mô tả: tên hiển thị có BA đường vào và HAI trong ba KHÔNG qua
+      xác thực — WS `join` không ticket lấy thẳng `msg.name` (mở trong deployment mặc định,
+      vì `requireTicket` chỉ bật khi role==="game"), và `game-tickets/guest` lấy
+      `body.displayName`. Cả ba đổ về `GameRoom.join` nên chốt chặn cuối đặt ở đó.
+
+      Chính sách THAY TÊN chứ không chặn người: tên Telegram do người chơi đặt ở nơi khác.
+
+      Danh sách chặn chia HAI MỨC (chuỗi con / nguyên từ) vì `foldForMatch` xoá dấu ngăn nên
+      không còn ranh giới từ — bản đầu so chuỗi con trơn và test bắt được: "Scunthorpe" dính
+      "cunt", "Ad Minh" dính "admin".
+
+      Thi hành lệnh cấm KHÔNG dựng cơ chế mới: `SessionService.resolve` vốn đã từ chối
+      status <> 'active'. RPC thu hồi phiên ngay — đo được: 7 phiên đang mở về 0.
+      CHỖ KHÔNG ĐÓNG: WS join ẩn danh không mang danh tính nào để cấm.
+    status: done
+    commit: "353e0a6"
+
+  - id: c5-duong-phat-hanh
+    doc: "35#C5"
+    title: "Cổng migration + cửa sổ tương thích protocol + sổ tay rollback"
+    files:
+      - scripts/db-migrate.mjs
+      - scripts/db-migrate.test.mjs
+      - packages/shared/src/protocol-version.ts
+      - packages/shared/src/__tests__/protocol-version.test.ts
+      - packages/server/src/net/net-server.ts
+      - .implements/39-runbook-phat-hanh-rollback.md
+    depends_on: [r3.1-db-migrate]
+    dod:
+      - "node scripts/db-migrate.mjs --check"
+    risk: medium
+    requires_human: true
+    human_note: "Workflow deploy CHƯA viết — cần biết deploy đi đâu. Hình dạng 9 bước đã cố định trong doc 39."
+    note: |
+      `--check` là cờ RIÊNG chứ không dùng lại `--dry-run`: `--dry-run` luôn thoát 0 nên một
+      bước CI dùng nó sẽ xanh kể cả khi còn migration chưa áp. Đã chứng minh cả hai chiều.
+
+      `MIN_SUPPORTED_GAME_PROTOCOL` đặt BẰNG `GAME_PROTOCOL_VERSION` ⇒ hành vi không đổi.
+      Cố ý: chưa kiểm chứng v5 đọc được bởi server v6, và khai một cửa sổ chưa kiểm chứng còn
+      tệ hơn không có cửa sổ (client cũ kết nối được rồi giải mã sai).
+    status: partial
+    commit: "65fc673"
+
+  - id: c1-alert-toi-thieu
+    doc: "35#C1"
+    title: "Ba tín hiệu cảnh báo còn thiếu + luật alert kèm runbook"
+    files:
+      - packages/server/src/ops-metrics.ts
+      - packages/server/src/net/prometheus.ts
+      - packages/server/src/matches/match-result-reporter.service.ts
+      - packages/server/src/payments/telegram-payments.controller.ts
+      - packages/server/src/health.controller.ts
+      - packages/server/test/ops-metrics.spec.ts
+      - deploy/alerts.yml
+    depends_on: []
+    dod:
+      - "pnpm -r test"
+    risk: low
+    requires_human: true
+    human_note: "Cần một Prometheus/Alertmanager đang chạy để nạp deploy/alerts.yml — thuộc phần hạ tầng."
+    note: |
+      Ba thứ hỏng IM LẶNG mà /metrics chưa đo: spool tồn đọng (XP+tiền đang nằm chờ), lỗi
+      webhook Stars (người chơi đã bị trừ tiền), db_ready.
+      `db_ready` khởi đầu -1 chứ không 0: gộp "chưa kiểm" với "hỏng" làm alert kêu mỗi lần deploy.
+      Webhook chỉ đếm NGOẠI LỆ, không đếm pre-checkout bị từ chối (đó là nghiệp vụ đúng).
+      Ràng buộc "mỗi alert kèm runbook" được giữ BẰNG TEST, và một bài đối chiếu mọi metric
+      alerts.yml tham chiếu với text thật ra /metrics — alert trỏ vào metric không tồn tại
+      thì im lặng mãi mãi.
+    status: done
+    commit: "ff22153"
+
+  - id: t4-dockerfile-thieu-manifest
+    doc: "35#C5"
+    title: "Dockerfile thiếu manifest packages/admin — build chết ở bước cài đặt"
+    files:
+      - Dockerfile
+      - .dockerignore
+      - scripts/dockerfile.test.mjs
+      - .github/workflows/ci.yml
+    depends_on: []
+    dod:
+      - "node --test scripts/dockerfile.test.mjs"
+    risk: medium
+    requires_human: false
+    note: |
+      lockfile có 4 importer, Dockerfile COPY 3 manifest ⇒ ERR_PNPM_OUTDATED_LOCKFILE.
+      KHÔNG cổng nào bắt được vì typecheck/test/build đều chạy trên máy, không qua Docker.
+      Không build được để xác nhận (Docker daemon không chạy trên máy dev) — bằng chứng là
+      đối chiếu trực tiếp lockfile với Dockerfile.
+    status: done
+    commit: "7c38b4c"
+

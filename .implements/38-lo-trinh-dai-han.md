@@ -123,6 +123,26 @@ Xen kẽ khi cần lát nhẹ: `r2.1-smoke-ui`, `a2.3-admin-config-ui`.
 
 ### Chặng 1 — PHÁT HÀNH *(chặng mới, doc 35 thiếu)*
 
+> **Cập nhật 2026-09-09 — phần CODE của chặng này đã xong.** Còn lại là những việc cần tài khoản
+> của chủ dự án. Chi tiết ở bảng dưới; các lát tương ứng nằm trong `BACKLOG.yaml`.
+>
+> | Nhóm | Trạng thái |
+> |---|---|
+> | An toàn cộng đồng — **C3** | ✅ `c3-an-toan-cong-dong` (#45) |
+> | Lưới an toàn — E2E tiền + seed | ✅ `r2.2` (#41) · `r3.2` (#40) |
+> | Lưới an toàn — **C1** alert tối thiểu | ✅ `c1-alert-toi-thieu` (#47) — cần Prometheus đang chạy để nạp `deploy/alerts.yml` |
+> | Đường phát hành — **C5** cổng migration | ✅ `db-migrate --check` |
+> | Đường phát hành — **C5** cửa sổ protocol | ✅ `MIN_SUPPORTED_GAME_PROTOCOL` |
+> | Đường phát hành — **C5** sổ tay rollback | ✅ [doc 39](39-runbook-phat-hanh-rollback.md) |
+> | Đường phát hành — **C5** workflow deploy | ⏸️ cần biết deploy **đi đâu**; hình dạng 9 bước đã cố định ở doc 39 §2 |
+> | Hạ tầng (hosting, domain, Supabase production) | ⏸️ **chỉ chủ dự án** |
+> | Telegram thật (bot production, Mini App URL, webhook Stars) | ⏸️ **chỉ chủ dự án** |
+> | **C6** PITR + diễn tập khôi phục | ⏸️ **chỉ chủ dự án** — quyết định khôi phục phải do người bấm |
+>
+> Một lỗi phát hiện khi soát: `Dockerfile` thiếu manifest `packages/admin` ⇒ `pnpm install
+> --frozen-lockfile` chết ngay ở bước cài đặt. Không cổng nào bắt được vì typecheck/test/build đều
+> chạy trên máy, không qua Docker. Đã sửa (#48) và khoá bằng `scripts/dockerfile.test.mjs`.
+
 Không có chặng này thì Pha 7 không có cổng để đóng.
 
 | Nhóm | Nội dung |
