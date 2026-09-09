@@ -512,6 +512,21 @@ describe("NetServer integration (real ws, deterministic ticks)", () => {
     clients = [a, b];
     await Promise.all([a.open(), b.open()]);
     a.join("King"); await a.waitWelcome();
+    // CHẬP CHỜN nếu thiếu dòng dưới, và nó đỏ TRÊN CI chứ không đỏ ở máy nhanh. `waitWelcome()`
+    // chỉ đảm bảo client ĐÃ NHẬN welcome; `lobby_ready` (autoReady) lúc đó mới vừa được GỬI ĐI,
+    // server chưa xử lý nên `r.started` còn false — mà `tickOnce()` BỎ QUA phòng chưa bắt đầu
+    // (net-server.ts:269). Không tick thì `step()` không chạy, `kingCountdownRunning` giữ false,
+    // và `kingAdmissionLocked` ra false: đúng "expected false to be true" của CI.
+    //
+    // Đo được (90 lượt dựng phòng tại máy dev, đọc thẳng `r.started` phía server ngay trước tick):
+    // 18 lượt chưa started, và ĐÚNG 18 lượt đó cho `kingAdmissionLocked === false` — tương quan
+    // tuyệt đối trong cả ba lần chạy (12/12, 3/3, 3/3). Tức máy dev cũng đỏ 10–40%, "xanh 3/3"
+    // trước đây chỉ là mẫu quá nhỏ.
+    //
+    // Chờ ĐÚNG TÍN HIỆU chứ không chờ thời gian: `lobby.started` chỉ được phát sau khi server đã
+    // đặt `r.started = true` trong `startGame`, nên nó là bằng chứng, không phải phỏng đoán.
+    // Phải chờ TRƯỚC khi đặt spy: `startGame` gọi `startMatch()`, mà hàm đó `resetKingCountdown()`.
+    await waitFor(() => a.lobby?.started === true, 3000, "phòng bắt đầu sau ready");
     const firstRoom = server.activeRoom!;
     vi.spyOn(firstRoom.gameState, "kingId").mockReturnValue(a.welcome!.playerId);
     server.tickOnce();
