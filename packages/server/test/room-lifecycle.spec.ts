@@ -85,3 +85,39 @@ describe("online room lifecycle", () => {
     expect(room.gameState.players[bot].phase).toBe("prep");
   });
 });
+
+describe("doc 35 §C3 — tên hiển thị không được tới roster nguyên trạng", () => {
+  // Chốt chặn đặt ở `GameRoom.join` chứ không chỉ ở tầng xác thực, vì hai trong ba đường vào KHÔNG
+  // qua xác thực: WS `join` không ticket lấy thẳng `msg.name`, và `game-tickets/guest` lấy
+  // `body.displayName`. Bài này giữ đúng chốt đó — nó đọc `roster()`, tức thứ người khác THẬT SỰ thấy.
+  const room = () => new GameRoom(4, 0);
+
+  it("tên có từ cấm bị THAY, không lọt vào roster", () => {
+    const r = room();
+    const id = r.join("fuck")!;
+    expect(r.roster().find((p) => p.id === id)!.name).not.toBe("fuck");
+  });
+
+  it("bắt được cả bản đã lách bằng ký tự vô hình và chữ nhìn giống nhau", () => {
+    const r = room();
+    for (const bad of ["f\u200Buck", "\u0455h\u0456t", "5h1t"]) {
+      const id = r.join(bad)!;
+      const shown = r.roster().find((p) => p.id === id)!.name;
+      expect(shown, bad).not.toBe(bad);
+    }
+  });
+
+  it("tên tiếng Việt bình thường đi qua nguyên vẹn", () => {
+    const r = room();
+    const id = r.join("Nguyễn Bảo Ngọc")!;
+    expect(r.roster().find((p) => p.id === id)!.name).toBe("Nguyễn Bảo Ngọc");
+  });
+
+  it("tên rỗng vẫn ra một tên dùng được, và tên quá dài bị cắt", () => {
+    const r = room();
+    const a = r.join("")!;
+    expect(r.roster().find((p) => p.id === a)!.name.length).toBeGreaterThan(0);
+    const b = r.join("x".repeat(200))!;
+    expect(r.roster().find((p) => p.id === b)!.name.length).toBeLessThanOrEqual(32);
+  });
+});

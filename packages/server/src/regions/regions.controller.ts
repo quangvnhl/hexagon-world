@@ -1,4 +1,5 @@
 import { BadRequestException, Body, Controller, Get, Post, Req } from "@nestjs/common";
+import { sanitizeDisplayName } from "@hexagon/shared";
 import type { Request } from "express";
 import { sanitizePlayerAppearance } from "@hexagon/shared";
 import type { PlayerAppearance } from "@hexagon/shared";
@@ -20,7 +21,7 @@ export class RegionsController {
     const guestId = String(body.guestId ?? "").trim();
     if (!/^[A-Za-z0-9_-]{16,128}$/.test(guestId)) throw new BadRequestException("invalid_guest_id");
     const appearance = sanitizePlayerAppearance(body.appearance);
-    return { ticket: this.tickets.issue({ playerId: null, guestId, isGuest: true, platform: "web", displayName: String(body.displayName || "Guest").slice(0, 32), region, appearance }), region };
+    return { ticket: this.tickets.issue({ playerId: null, guestId, isGuest: true, platform: "web", displayName: sanitizeDisplayName(body.displayName, guestId).name, region, appearance }), region };
   }
 
   @Post("game-tickets")

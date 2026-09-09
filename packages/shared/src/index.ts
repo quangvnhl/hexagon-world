@@ -17,3 +17,4 @@ export * from "./spatialhash";
 export * from "./totems";
 export * from "./replay";
 export * from "./error-scrub";
+export * from "./display-name";
