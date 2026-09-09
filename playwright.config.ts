@@ -20,6 +20,11 @@ const PORT = 3877;
 
 export default defineConfig({
   testDir: "tests/e2e",
+  // Chỉ smoke. `money-flow.spec.ts` nằm cùng thư mục nhưng thuộc TẦNG 2: nó cần server Nest +
+  // database, còn `webServer` dưới đây chỉ dựng client Next. Không có dòng này thì `test:e2e:smoke`
+  // sẽ kéo bài tiền vào chạy với sai server — và một bài kiểm chạy sai môi trường thì đỏ vì môi
+  // trường, đúng loại đỏ khiến người ta tắt cả cụm smoke đi.
+  testMatch: /smoke\.spec\.ts$/,
   // 120s. Con số này dựa trên ĐO ĐƯỢC, và hai lần đo lệch nhau rất xa — chính vì thế mới để rộng:
   //   • máy dev (Windows, SwiftShader): `/play` mất 30–45 giây để vẽ khung hình đầu;
   //   • runner ubuntu-latest (SwiftShader, run 34197660719): cả bài `/play` chỉ 8,0 giây.

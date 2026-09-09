@@ -24,7 +24,8 @@
     "dev:admin": "pnpm --filter @hexagon/admin dev",
     "build:admin": "pnpm --filter @hexagon/admin build",
     "test:integration": "pnpm --filter @hexagon/server test:integration",
-    "test:e2e:smoke": "playwright test --config playwright.config.ts"
+    "test:e2e:smoke": "playwright test --config playwright.config.ts",
+    "test:e2e:money": "playwright test --config playwright.money.config.ts"
   },
   "devDependencies": {
     "@playwright/test": "^1.63.0",
