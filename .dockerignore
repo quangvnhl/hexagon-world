@@ -13,3 +13,7 @@ coverage
 .env.*
 .implements
 .claude
+
+# Ban Unity da duoc dua ra khoi repo (commit a1e0235) nhung thu muc con nam lai tren may dev.
+# `COPY packages ./packages` se keo ca thu muc Assets vao build context neu khong loai o day.
+packages/BeeKing_Unity

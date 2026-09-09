@@ -67,6 +67,12 @@ jobs:
       - name: DB seed self-test
         run: pnpm test:db-seed
 
+      # Dockerfile là artifact triển khai DUY NHẤT của repo, và lỗi trong nó KHÔNG lộ ra ở
+      # typecheck/test/build vì cả ba chạy trên máy chứ không qua Docker — nó chỉ lộ ra ở lần
+      # deploy đầu tiên. Bài này đối chiếu manifest trong Dockerfile với importer trong lockfile.
+      - name: Dockerfile self-test
+        run: pnpm test:dockerfile
+
       # Cổng review chạy ở workflow `Review` (nó cần diff), nhưng LUẬT của nó phải được test ở đây —
       # một cổng chặn viết sai sẽ hoặc bỏ lọt, hoặc chặn nhầm rồi bị vô hiệu hoá cả cụm.
       - name: Review guard self-test
