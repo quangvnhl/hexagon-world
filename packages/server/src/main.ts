@@ -1,5 +1,6 @@
 import "reflect-metadata";
 import { NestFactory } from "@nestjs/core";
+import { scrubErrorEvent } from "@hexagon/shared";
 import { json } from "express";
 import cookieParser from "cookie-parser";
 import dotenv from "dotenv";
@@ -18,10 +19,39 @@ if (envPath) dotenv.config({ path: envPath, quiet: true });
  * GatewayService sẽ mở NetServer). Bật shutdown hooks để đóng socket sạch khi nhận
  * SIGINT/SIGTERM.
  */
+/**
+ * doc 35 §A4 (lát a4.2) — báo cáo lỗi phía server.
+ *
+ * Cùng ba quyết định với client (xem `packages/client/src/lib/errorReporting.ts`): trung tính nhà
+ * cung cấp (GlitchTip nói đúng giao thức Sentry), DSN rỗng ⇒ tắt hẳn và KHÔNG tải SDK, và làm sạch
+ * bằng mã dùng chung ở `@hexagon/shared`.
+ *
+ * Gọi TRƯỚC `NestFactory.create`: một lỗi lúc dựng DI cũng là lỗi cần biết, và đó lại đúng loại lỗi
+ * làm server không lên được — tức là loại không ai thấy nếu bộ báo lỗi bật sau.
+ */
+async function initErrorReporting(release: string): Promise<void> {
+  const dsn = process.env.ERROR_DSN ?? "";
+  if (dsn.trim().length === 0) return;
+  try {
+    const Sentry = await import("@sentry/node");
+    Sentry.init({
+      dsn,
+      release,
+      tracesSampleRate: 0,
+      sendDefaultPii: false,
+      beforeSend: (event) => scrubErrorEvent(event as unknown as Record<string, unknown>) as never,
+      beforeBreadcrumb: (crumb) => scrubErrorEvent(crumb as unknown as Record<string, unknown>) as never,
+    });
+  } catch {
+    // Không bật được bộ báo lỗi KHÔNG được phép làm server không khởi động.
+  }
+}
+
 async function bootstrap(): Promise<void> {
   // Import sau khi .env đã nạp vì AppModule chọn control/game modules theo SERVER_ROLE.
   const { AppModule } = await import("./app.module");
   const cfg = runtimeConfig();
+  await initErrorReporting(process.env.BUILD_ID ?? "dev");
   const logger = createLogger({ role: cfg.role, region: cfg.region });
   const app = await NestFactory.create(AppModule, {
     // Mọi `Logger` sẵn có trong code cũng đi qua đây ⇒ ra JSON, không phải sửa từng chỗ gọi.

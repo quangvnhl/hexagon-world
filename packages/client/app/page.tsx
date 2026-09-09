@@ -10,6 +10,7 @@ import type { PlayerAppearance } from "@hexagon/shared";
 import { useTelegramWebApp } from "@/lib/telegram";
 import { acquireGameAccess } from "@/lib/backend";
 import { track } from "@/lib/analytics";
+import { initErrorReporting } from "@/lib/errorReporting";
 import { Ftue, ftueAlreadyDone } from "@/components/Ftue";
 import { CLAIM_EPSILON_PCT, type FtueSignals } from "@/components/ftueSteps";
 import type { Stats } from "@/components/HUD";
@@ -91,6 +92,13 @@ function useFtue() {
 }
 
 export default function Home() {
+  // doc 35 §A4 (lát a4.2) — bật báo cáo lỗi ở màn hình gốc, một lần cho cả phiên.
+  //
+  // KHÔNG `await`: không có gì trong game phụ thuộc vào việc SDK đã sẵn sàng, và bắt màn hình đầu
+  // chờ tải nó là đổi một lợi ích không thấy được lấy một thiệt hại thấy được. Khi `NEXT_PUBLIC_
+  // ERROR_DSN` rỗng (dev, CI) hàm trả về ngay và SDK KHÔNG được tải về.
+  useEffect(() => { void initErrorReporting(); }, []);
+
   const [session, setSession] = useState<Session | null>(null);
   const back = useCallback(() => setSession(null), []);
   const ftue = useFtue();
