@@ -284,12 +284,47 @@ Lý do chúng là `high`: chạm tiền, tài khoản người chơi, schema dat
 
 ---
 
+## Việc 9 — QUYẾT ĐỊNH: mua năng lượng khi đầy bình vẫn bị trừ coin 🔴
+
+**Lát `r2.2` phát hiện. Đây là lỗi tiền, chưa sửa — vì cách sửa là một quyết định sản phẩm.**
+
+Đo trong một giao dịch rollback trên database dev (không commit gì):
+
+| tình huống | coin | năng lượng | sổ cái |
+|---|---|---|---|
+| **đầy bình 50/50** | **−100** | **+0** | ghi khoản trừ |
+| còn chỗ 10/50 | −100 | +20 | ghi khoản trừ |
+
+Ở bình đầy, người chơi **trả 100 coin và không nhận được gì**.
+
+**Nguyên nhân** (`supabase/migrations/202608180003_energy_purchase.sql`): `purchase_energy_with_coin`
+trừ coin **vô điều kiện** rồi mới gọi `grant_energy`, mà `grant_energy` chặn trần ở `energy_max`.
+
+Client hiện có thể đang ẩn nút mua khi đầy bình. Đó **không phải** lớp bảo vệ: cả doc 35 §A3 dựng
+lên vì server không được tin client.
+
+**Ba cách sửa, anh chọn một:**
+
+| cách | nghĩa là gì | đánh đổi |
+|---|---|---|
+| **A. Từ chối** khi không nhận được trọn gói | `raise exception 'energy_full'`, không trừ đồng nào | Rõ ràng nhất. Người chơi ở 45/50 không mua được dù còn thiếu 5 — phải chờ hồi |
+| **B. Cho tràn** trên trần | cộng đủ 20 điểm, vượt `energy_max` | Người chơi được đúng thứ đã trả tiền. Nhưng trần năng lượng là một cần điều tiết nhịp chơi — phá nó là đổi thiết kế kinh tế |
+| **C. Tính tiền theo phần nhận được** | ở 45/50 chỉ trừ 5/20 giá | Công bằng nhất, phức tạp nhất; sinh số lẻ trong sổ cái |
+
+Tôi nghiêng về **A**: nó không đổi thiết kế kinh tế nào, và "không bán thứ không giao được" là quy
+tắc dễ giải thích cho người chơi nhất. Nhưng đây là tiền của anh, không phải quyết định kỹ thuật.
+
+Sửa xong cần **migration mới** (không được sửa file đã áp — AGENTS.md §1) và một bài test cho
+đường vừa chọn.
+
+---
+
 ## Việc 8 — Các quyết định sẽ hỏi đúng lúc (chưa cần bây giờ)
 
 | Khi nào | Quyết định |
 |---|---|
 | Lát `d1.1-ftue` | Nội dung 3 bước hướng dẫn + ngưỡng "đạt" mỗi bước (cảm giác chơi — máy không chấm được) |
-| Lát `a4.2` | Chọn Sentry hay GlitchTip self-host, cấp DSN |
+| ~~Lát `a4.2`~~ ✅ | Đã dựng TRUNG TÍNH — cùng SDK chạy được cả Sentry lẫn GlitchTip. Chỉ còn dán DSN vào `ERROR_DSN` + `NEXT_PUBLIC_ERROR_DSN`; để rỗng = tắt hẳn |
 | Đầu Pha 7 | Thưởng cụ thể 7 ngày điểm danh, thưởng theo mốc level |
 | Trước khi bật quyền GHI của Ops API cho agent | Hạn mức ngày mỗi key (vd trần coin/ngày) — sau 2 tuần chạy read-only |
 | Pha 8 | Giá và nội dung Battle Pass mùa 1 |
