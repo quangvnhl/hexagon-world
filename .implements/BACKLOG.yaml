@@ -1348,7 +1348,7 @@ slices:
       — KHÔNG có cột `rewards`. Phải thêm bằng migration mới.
       Có sẵn cột `metadata jsonb` nhưng doc 35 §B4 chốt dùng cột `rewards jsonb` riêng; giữ
       đúng vậy để phân biệt "dữ liệu hiển thị" với "thứ cấp tiền".
-    status: todo
+    status: done
 
   - id: b3-nhiem-vu
     doc: "35#B3"

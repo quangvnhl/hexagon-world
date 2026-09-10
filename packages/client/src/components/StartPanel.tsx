@@ -24,6 +24,7 @@ import { track } from "@/lib/analytics";
 import { useConfigFlag } from "@/lib/useRemoteConfig";
 import { LobbyRewardedAdButton } from "./LobbyRewardedAdButton";
 import { DailyRewardPanel } from "./DailyRewardPanel";
+import { LevelRewardPanel } from "./LevelRewardPanel";
 import { measureServerPing } from "./serverPing";
 import { trailVectorAsset } from "./trailVectorAssets";
 
@@ -644,6 +645,7 @@ export function StartPanel({
         {startError && <div role="alert" style={{ color: "#ff8b9a", fontSize: 11, marginTop: 7, textAlign: "center" }}>{startError}</div>}
         <LobbyRewardedAdButton />
         <DailyRewardPanel />
+        <LevelRewardPanel />
 
         {/* Địa chỉ server nằm sau hành động tìm phòng để giao diện chính gọn hơn. */}
         {mode === "online" && (

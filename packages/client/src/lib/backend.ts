@@ -85,6 +85,11 @@ export async function equipItem(item: CatalogItem): Promise<void> {
 
 // ---- Năng lượng + Campaign (P2) ---------------------------------------------------------------
 
+// doc 35 §B4 — thưởng theo mốc cấp độ.
+export interface LevelRewardMilestone { level: number; coin: number; energy: number; }
+export interface LevelRewardStatus { level: number; total_xp: number; pending: LevelRewardMilestone[]; next: (LevelRewardMilestone & { xp_required: number }) | null; }
+export interface LevelRewardClaimResult { claimed_levels: number[]; coin: number; energy: number; level: number; }
+
 // doc 35 §B2 — điểm danh. Hình dạng khớp jsonb của RPC, để một lời gọi vẽ được cả màn hình.
 export interface DailyRewardDay { cycle_day: number; coin: number; energy: number; label: string; }
 export interface DailyRewardStatus { claimed_today: boolean; streak: number; next_cycle_day: number; next_reset_at: string; config: DailyRewardDay[]; }
@@ -136,6 +141,21 @@ export async function getDailyReward(): Promise<DailyRewardStatus> {
  */
 export async function claimDailyReward(): Promise<DailyClaimResult> {
   return json<DailyClaimResult>("/v1/daily/claim", { method: "POST" });
+}
+
+/** doc 35 §B4 — mốc cấp đã đạt mà chưa nhận. KHÔNG cấp gì. */
+export async function getLevelRewards(): Promise<LevelRewardStatus> {
+  return json<LevelRewardStatus>("/v1/level-rewards", { cache: "no-store" });
+}
+
+/**
+ * Nhận MỌI mốc đã đạt mà chưa nhận, một lượt.
+ *
+ * Không gửi `level`: server đọc cấp từ `player_progression` và tự quét mốc chưa nhận. Cho
+ * client chọn mốc là biến bảng mốc thành thực đơn tự phục vụ.
+ */
+export async function claimLevelRewards(): Promise<LevelRewardClaimResult> {
+  return json<LevelRewardClaimResult>("/v1/level-rewards/claim", { method: "POST" });
 }
 
 /** Danh sách cấp Campaign đã publish (nguồn Supabase — doc 29 L2). */
