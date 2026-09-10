@@ -46,7 +46,7 @@ groups:
             Người chơi đã bị trừ Stars nhưng xử lý webhook ném ngoại lệ. Telegram sẽ gửi lại, nên
             một lần lẻ có thể tự khỏi; lặp lại nghĩa là có người mất tiền mà chưa nhận coin.
           runbook: >-
-            1) Tìm log của POST /v1/payments/webhooks/telegram quanh thời điểm alert.
+            1) Tìm log của POST /v1/webhooks/telegram quanh thời điểm alert.
             2) Đối chiếu purchase_orders theo telegram_payment_charge_id — order còn 'pending'?
             3) Order đã trả tiền mà chưa fulfilled thì xử bằng Ops API, KHÔNG sửa tay trong SQL.
             4) Nếu là lỗi hệ thống kéo dài: doc 18 §refund — hoàn Stars còn hơn để người chơi mất tiền.

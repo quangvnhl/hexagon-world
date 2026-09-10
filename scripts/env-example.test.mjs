@@ -53,6 +53,22 @@ test("bộ đọc của chính bài này không rỗng — nếu không, luật 
   assert.match(hangSoShared("GAME_PROTOCOL_VERSION"), /^\d+$/);
 });
 
+test("NEXT_PUBLIC_SERVER_URL phải trỏ đúng path mà NetServer gắn WebSocket vào", () => {
+  // Client dùng giá trị này NGUYÊN VĂN (`NetGameScene.tsx`: `serverUrl || DEFAULT_SERVER_URL`) —
+  // nó KHÔNG tự nối path. Thiếu `/game` thì bắt tay WebSocket bị từ chối, và giao diện chỉ hiện
+  // "Mất kết nối, đang thử kết nối lại..." mà không nói vì sao. Lỗi này đã xảy ra thật khi dựng
+  // `pnpm dev:tunnel`, và `.env.example` cũng đang mắc đúng nó.
+  const url = khaiTrongEnvExample("NEXT_PUBLIC_SERVER_URL");
+  if (url === null) return;
+  const module = readFileSync(`${root}packages/server/src/game/game.module.ts`, "utf8");
+  const match = /path:\s*"([^"]+)"/.exec(module);
+  assert.ok(match, "không đọc được path WebSocket từ game.module.ts");
+  assert.ok(
+    url.endsWith(match[1]),
+    `NEXT_PUBLIC_SERVER_URL=${url} không kết thúc bằng ${match[1]} ⇒ WebSocket bị từ chối`,
+  );
+});
+
 test("luật BẮT ĐƯỢC bản đột biến — đúng lỗi đã xảy ra thật", () => {
   // Dựng lại chính tình huống cũ: env khai 5 trong khi shared là 6.
   const shared = hangSoShared("GAME_PROTOCOL_VERSION");
