@@ -66,10 +66,28 @@ function db(map: Record<string, { list?: unknown; single?: unknown; count?: numb
   } as unknown as SupabaseService;
 }
 
+// doc 35 §D4 — danh sách cấp đọc từ VIEW `campaign_levels_live`, không từ bảng `campaign_levels`.
+// View mới là chỗ giữ luật "đã duyệt VÀ đã tới giờ"; đọc thẳng bảng sẽ để lọt cấp còn hẹn ngày.
+// Mock dưới đây cố ý CHỈ có khoá `campaign_levels_live`: đọc nhầm bảng ⇒ danh sách rỗng ⇒ đỏ.
+describe("nguồn của danh sách cấp", () => {
+  it("đọc từ VIEW `campaign_levels_live` chứ không từ bảng", async () => {
+    const daGoi: string[] = [];
+    const d = {
+      rpc: vi.fn(),
+      from: (t: string) => { daGoi.push(t); return builder(t === "campaign_levels_live" ? LEVELS : [], null, null); },
+    } as unknown as SupabaseService;
+    const c = new CampaignController(sessions(), d, analyticsStub().service, replayStub());
+    const kq = await c.levels();
+    expect(daGoi).toContain("campaign_levels_live");
+    expect(daGoi).not.toContain("campaign_levels");
+    expect(kq.levels.map((l) => l.id)).toEqual(LEVELS.map((l) => l.id));
+  });
+});
+
 describe("CampaignController.start", () => {
   it("cấp KHÓA (chưa qua cấp trước) ⇒ ForbiddenException, KHÔNG gọi RPC", async () => {
     const rpc = vi.fn();
-    const d = db({ campaign_levels: { list: LEVELS }, player_level_progress: { list: [] } }, rpc);
+    const d = db({ campaign_levels_live: { list: LEVELS }, player_level_progress: { list: [] } }, rpc);
     const c = new CampaignController(sessions(), d, analyticsStub().service, replayStub());
     await expect(c.start({} as never, { levelId: "c2", idempotencyKey: "k1" })).rejects.toBeInstanceOf(ForbiddenException);
     expect(rpc).not.toHaveBeenCalled();
@@ -77,14 +95,14 @@ describe("CampaignController.start", () => {
 
   it("cấp MỞ (requires=null) ⇒ gọi start_campaign_level đúng tham số", async () => {
     const rpc = vi.fn(async () => ({ playId: "p1", energy: {} }));
-    const d = db({ campaign_levels: { list: LEVELS }, player_level_progress: { list: [] } }, rpc);
+    const d = db({ campaign_levels_live: { list: LEVELS }, player_level_progress: { list: [] } }, rpc);
     const c = new CampaignController(sessions(), d, analyticsStub().service, replayStub());
     await c.start({} as never, { levelId: "c1", idempotencyKey: "k1" });
     expect(rpc).toHaveBeenCalledWith("start_campaign_level", { p_player_id: PLAYER.id, p_level_id: "c1", p_idempotency_key: "k1" });
   });
 
   it("cấp không tồn tại trong DB ⇒ BadRequest", async () => {
-    const d = db({ campaign_levels: { list: LEVELS }, player_level_progress: { list: [] } });
+    const d = db({ campaign_levels_live: { list: LEVELS }, player_level_progress: { list: [] } });
     const c = new CampaignController(sessions(), d, analyticsStub().service, replayStub());
     await expect(c.start({} as never, { levelId: "cX", idempotencyKey: "k1" })).rejects.toBeInstanceOf(BadRequestException);
   });

@@ -261,7 +261,7 @@ export class AdminController {
   @Ops({ scope: "levels:read", isWrite: false })
   async listLevels() {
     const { data, error } = await this.db.from("campaign_levels")
-      .select("id,sort_order,name,config,powerups,unlock_requires,rewards,published,version,updated_at").order("sort_order");
+      .select("id,sort_order,name,config,powerups,unlock_requires,rewards,published,published_at,version,updated_at").order("sort_order");
     if (error) throw new BadRequestException({ code: "list_failed", message: error.message, retryable: true });
     return { levels: data ?? [] };
   }
@@ -286,13 +286,32 @@ export class AdminController {
     return { id };
   }
 
-  /** Bật/tắt publish 1 cấp. */
+  /**
+   * Bật/tắt publish 1 cấp, kèm LỊCH tuỳ chọn (doc 35 §D4).
+   *
+   * `publishedAt` ở tương lai = đã duyệt nhưng chưa tới giờ ⇒ người chơi chưa thấy. Không kèm
+   * `publishedAt` thì giữ nguyên hành vi cũ: ra ngay. Gỡ publish luôn xoá lịch (xem RPC).
+   */
   @Put("levels/:id/publish")
   @Ops({ scope: "levels:publish", isWrite: true, dryRun: true })
-  async publishLevel(@Req() req: OpsRequest, @Param("id") id: string, @Body() body: { published?: boolean }) {
-    if (req.opsDryRun) return this.previewPublish(id, body.published !== false);
-    const published = await this.db.rpc<boolean>("publish_campaign_level", { p_id: id, p_published: body.published !== false });
-    return { id, published };
+  async publishLevel(
+    @Req() req: OpsRequest,
+    @Param("id") id: string,
+    @Body() body: { published?: boolean; publishedAt?: string | null },
+  ) {
+    const published = body.published !== false;
+    // Một chuỗi ngày gõ sai mà đi tới database sẽ thành `null` — tức là "ra ngay" — đúng thứ
+    // ngược lại với ý định của người đặt lịch. Chặn ở đây và nói rõ.
+    const at = body.publishedAt ?? null;
+    if (at !== null && Number.isNaN(Date.parse(at))) {
+      throw new BadRequestException({
+        code: "invalid_published_at", message: "publishedAt phải là mốc thời gian ISO 8601", retryable: false,
+      });
+    }
+    if (req.opsDryRun) return this.previewPublish(id, published, at);
+    return this.db.rpc<{ id: string; published: boolean; publishedAt: string | null; live: boolean }>(
+      "publish_campaign_level", { p_id: id, p_published: published, p_published_at: published ? at : null },
+    );
   }
 
   /** "Xóa" = gỡ publish (an toàn với progress đã có). */
@@ -437,14 +456,19 @@ export class AdminController {
   }
 
   /** Dùng chung cho publish và unpublish — hai endpoint, một phép xem trước. */
-  private async previewPublish(id: string, next: boolean) {
-    const { data } = await this.db.from("campaign_levels").select("id,published,name").eq("id", id).maybeSingle();
-    const row = data as { published?: boolean; name?: string } | null;
+  private async previewPublish(id: string, next: boolean, nextAt: string | null = null) {
+    const { data } = await this.db.from("campaign_levels").select("id,published,published_at,name").eq("id", id).maybeSingle();
+    const row = data as { published?: boolean; published_at?: string | null; name?: string } | null;
+    const atSau = next ? nextAt : null;
     return {
       dryRun: true, id, found: row !== null, name: row?.name ?? null,
       from: row?.published ?? null, to: next,
+      publishedAtFrom: row?.published_at ?? null, publishedAtTo: atSau,
+      // Trả lời thẳng câu mà người đặt lịch thực sự hỏi: sau lời gọi này người chơi có thấy không.
+      liveAfter: next && (atSau === null || Date.parse(atSau) <= Date.now()),
       // `noop` cho agent biết lời gọi thật sẽ không đổi gì — đủ để nó bỏ qua thay vì gọi vô ích.
-      noop: row !== null && row.published === next,
+      // Phải xét CẢ lịch: publish một cấp đã publish nhưng đổi ngày hẹn KHÔNG phải là không đổi gì.
+      noop: row !== null && row.published === next && (row.published_at ?? null) === atSau,
     };
   }
 }

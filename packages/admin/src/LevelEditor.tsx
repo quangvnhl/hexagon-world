@@ -42,14 +42,14 @@ const WIN_KINDS: { kind: WinConditionKind; label: string }[] = [
 interface FormState {
   id: string; sortOrder: number; name: string; botCount: number; maxLives: number; radius: number;
   kind: WinConditionKind; targetPct: number; durationSec: number; totemGoal: number; holdMinutes: number; kingPct: number;
-  powerups: PowerupKind[]; unlockRequires: string; coin: number; xp: number; energy: number; published: boolean;
+  powerups: PowerupKind[]; unlockRequires: string; coin: number; xp: number; energy: number; published: boolean; publishedAt: string;
   showColliders: boolean; colliderShape: "hex" | "rect"; botsAllied: boolean;
 }
 
 const BLANK: FormState = {
   id: "", sortOrder: 1, name: "", botCount: 8, maxLives: 3, radius: NEW_LEVEL_RADIUS,
   kind: "territory_pct", targetPct: 0.3, durationSec: 60, totemGoal: 3, holdMinutes: 3, kingPct: 20,
-  powerups: [], unlockRequires: "", coin: 50, xp: 40, energy: 0, published: false, showColliders: false, colliderShape: "hex", botsAllied: false,
+  powerups: [], unlockRequires: "", coin: 50, xp: 40, energy: 0, published: false, publishedAt: "", showColliders: false, colliderShape: "hex", botsAllied: false,
 };
 
 function clampRadius(r: number): number {
@@ -120,7 +120,7 @@ function rowToForm(r: AdminLevelRow): { form: FormState; obstacles: Set<HexKey>;
       targetPct: win.targetPct ?? 0.3, durationSec: win.durationSec ?? 60, totemGoal: win.totemGoal ?? 3,
       holdMinutes: win.winHoldTime ? Math.max(1, Math.round(win.winHoldTime / 60)) : 3, kingPct: win.kingPct ?? 20,
       powerups: (r.powerups ?? []) as PowerupKind[], unlockRequires: r.unlock_requires ?? "",
-      coin: r.rewards?.coin ?? 0, xp: r.rewards?.xp ?? 0, energy: r.rewards?.energy ?? 0, published: r.published,
+      coin: r.rewards?.coin ?? 0, xp: r.rewards?.xp ?? 0, energy: r.rewards?.energy ?? 0, published: r.published, publishedAt: isoToLocalInput(r.published_at),
       showColliders: cfg.map?.showColliders ?? false,
       colliderShape: cfg.map?.colliderShape ?? "hex",
       botsAllied: cfg.rules?.botsAllied ?? false,
@@ -146,6 +146,35 @@ const panelStyle: React.CSSProperties = {
 
 function btn(bg: string): React.CSSProperties {
   return { padding: "8px 14px", borderRadius: 999, border: "1px solid rgba(255,255,255,0.15)", background: bg, color: "#04121f", fontWeight: 700, fontSize: 12, cursor: "pointer", whiteSpace: "nowrap" };
+}
+
+/**
+ * doc 35 §D4 — đổi giữa mốc ISO (UTC, thứ database lưu) và ô `datetime-local` (giờ MÁY người soạn).
+ *
+ * Người đặt lịch nghĩ bằng giờ của họ ("9 giờ sáng thứ Hai"), database lưu UTC. Để trần thì một
+ * biên tập viên ở GMT+7 hẹn 9h và cấp ra lúc 16h — sai bảy tiếng, và không có gì đỏ lên.
+ */
+function isoToLocalInput(iso: string | null): string {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const p = (n: number) => String(n).padStart(2, "0");
+  return `${d.getFullYear()}-${p(d.getMonth() + 1)}-${p(d.getDate())}T${p(d.getHours())}:${p(d.getMinutes())}`;
+}
+
+function localInputToIso(v: string): string | null {
+  if (!v.trim()) return null;
+  const d = new Date(v);
+  return Number.isNaN(d.getTime()) ? null : d.toISOString();
+}
+
+/** Ba trạng thái phát hành mà người soạn cần thấy KHÁC NHAU (doc 35 §D4). */
+function trangThaiPhatHanh(r: AdminLevelRow): { icon: string; ghiChu: string } {
+  if (!r.published) return { icon: "📝", ghiChu: "" };
+  if (r.published_at && new Date(r.published_at).getTime() > Date.now()) {
+    return { icon: "⏳", ghiChu: `ra ${new Date(r.published_at).toLocaleString("vi-VN")}` };
+  }
+  return { icon: "✅", ghiChu: "" };
 }
 
 export default function LevelEditor() {
@@ -247,8 +276,13 @@ export default function LevelEditor() {
     try {
       const draft = toDraft(form, obstacles, totems, strongholds, boundaries, startZone);
       await adminUpsertLevel(adminKey, draft);
-      await adminPublishLevel(adminKey, draft.id, form.published);
-      setStatus(`Đã lưu "${draft.id}"${form.published ? " (đã publish)" : " (nháp)"}`);
+      await adminPublishLevel(adminKey, draft.id, form.published, localInputToIso(form.publishedAt));
+      const hen = localInputToIso(form.publishedAt);
+      const chuaToiGio = form.published && hen !== null && new Date(hen).getTime() > Date.now();
+      setStatus(
+        `Đã lưu "${draft.id}"` +
+        (!form.published ? " (nháp)" : chuaToiGio ? ` (hẹn ra ${new Date(hen as string).toLocaleString("vi-VN")})` : " (đã publish)"),
+      );
       setSelectedId(draft.id);
       setRows(await adminListLevels(adminKey));
     } catch (e) { setStatus(e instanceof Error ? e.message : "Lưu thất bại"); }
@@ -310,7 +344,8 @@ export default function LevelEditor() {
                   return (
                     <div key={r.id} style={{ display: "flex", alignItems: "center", gap: 6, padding: "6px 8px", borderRadius: 8, background: sel ? "rgba(49,176,255,0.18)" : "rgba(255,255,255,0.05)", border: sel ? "1px solid rgba(49,176,255,0.5)" : "1px solid transparent" }}>
                       <span style={{ flex: 1, fontSize: 12, overflow: "hidden", textOverflow: "ellipsis", whiteSpace: "nowrap" }}>
-                        {r.published ? "✅" : "📝"} {r.sort_order}. {r.name} <span style={{ opacity: 0.5 }}>({r.id})</span>
+                        {trangThaiPhatHanh(r).icon} {r.sort_order}. {r.name} <span style={{ opacity: 0.5 }}>({r.id})</span>
+                        {trangThaiPhatHanh(r).ghiChu && <span style={{ opacity: 0.6, fontSize: 11 }}> · {trangThaiPhatHanh(r).ghiChu}</span>}
                       </span>
                       <button onClick={() => editRow(r)} style={{ ...btn("rgba(255,255,255,0.14)"), color: "#cdd7ea", padding: "4px 8px" }}>Sửa</button>
                       {r.published && <button onClick={() => void unpublishRow(r)} style={{ ...btn("rgba(255,120,110,0.18)"), color: "#ffc9c2", padding: "4px 8px" }}>Gỡ</button>}
@@ -384,6 +419,20 @@ export default function LevelEditor() {
         <label style={{ ...labelStyle, display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
           <input type="checkbox" checked={form.published} onChange={(e) => set("published", e.target.checked)} /> Publish (hiện cho người chơi)
         </label>
+        {form.published && (
+          <label style={labelStyle}>
+            Hẹn giờ ra mắt <span style={{ opacity: 0.55 }}>(bỏ trống = ra ngay)</span>
+            <input
+              type="datetime-local"
+              value={form.publishedAt}
+              onChange={(e) => set("publishedAt", e.target.value)}
+              style={{ width: "100%", marginTop: 4, padding: "4px 6px", borderRadius: 6, background: "rgba(255,255,255,0.06)", color: "inherit", border: "1px solid rgba(255,255,255,0.15)" }}
+            />
+            <span style={{ display: "block", marginTop: 3, fontSize: 11, opacity: 0.55 }}>
+              Giờ máy của bạn. Soạn cả tuần một lần rồi quên đi — nhịp 2–4 cấp/tuần không cần ai nhớ bấm nút.
+            </span>
+          </label>
+        )}
 
         {errors.length > 0 && <div style={{ marginTop: 8, fontSize: 11, color: "#ffb3b3" }}>⚠ {errors.join("; ")}</div>}
         <div style={{ display: "flex", gap: 8, marginTop: 12 }}>
