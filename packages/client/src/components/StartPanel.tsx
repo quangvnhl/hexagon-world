@@ -25,6 +25,7 @@ import { useConfigFlag } from "@/lib/useRemoteConfig";
 import { LobbyRewardedAdButton } from "./LobbyRewardedAdButton";
 import { DailyRewardPanel } from "./DailyRewardPanel";
 import { LevelRewardPanel } from "./LevelRewardPanel";
+import { QuestPanel } from "./QuestPanel";
 import { measureServerPing } from "./serverPing";
 import { trailVectorAsset } from "./trailVectorAssets";
 
@@ -646,6 +647,7 @@ export function StartPanel({
         <LobbyRewardedAdButton />
         <DailyRewardPanel />
         <LevelRewardPanel />
+        <QuestPanel />
 
         {/* Địa chỉ server nằm sau hành động tìm phòng để giao diện chính gọn hơn. */}
         {mode === "online" && (

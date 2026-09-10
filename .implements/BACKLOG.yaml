@@ -1371,7 +1371,7 @@ slices:
       `grant_ad_reward` — không có đường nào cho client tự khai. Đây là cùng một bài học với
       lỗ hổng campaign ở A3: thứ gì cấp tiền thì client không được là nguồn tin.
       Khởi điểm 3 nhiệm vụ/ngày + 2 nhiệm vụ/tuần (doc 35 §10 cho phép tự chọn).
-    status: todo
+    status: done
 
   - id: a5-leaderboard
     doc: "35#A5"
