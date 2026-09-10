@@ -24,6 +24,7 @@ import { track } from "@/lib/analytics";
 import { useConfigFlag } from "@/lib/useRemoteConfig";
 import { LobbyRewardedAdButton } from "./LobbyRewardedAdButton";
 import { DailyRewardPanel } from "./DailyRewardPanel";
+import { LeaderboardPanel } from "./LeaderboardPanel";
 import { LevelRewardPanel } from "./LevelRewardPanel";
 import { QuestPanel } from "./QuestPanel";
 import { measureServerPing } from "./serverPing";
@@ -648,6 +649,7 @@ export function StartPanel({
         <DailyRewardPanel />
         <LevelRewardPanel />
         <QuestPanel />
+        <LeaderboardPanel />
 
         {/* Địa chỉ server nằm sau hành động tìm phòng để giao diện chính gọn hơn. */}
         {mode === "online" && (

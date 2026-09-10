@@ -1381,6 +1381,10 @@ slices:
       - packages/server/src/leaderboard/
       - packages/server/test/
       - packages/client/src/
+      # NỚI PHẠM VI: danh sách `scope` phải nằm ở `shared` để server (whitelist) và client (tab)
+      # đọc CÙNG một nguồn. Hai bản sao của một danh sách tên là cách trôi ra khỏi nhau âm thầm —
+      # cùng lý do `QuestGoalKind` (b3) và tên sự kiện analytics (a1.1) đã đặt ở đó.
+      - packages/shared/src/
     depends_on: [b9-bang-kinh-te]
     dod:
       - "pnpm --filter @hexagon/server test"
@@ -1391,7 +1395,36 @@ slices:
       Cập nhật TRONG RPC `record_match_result` / `complete_campaign_level` — một nguồn ghi
       duy nhất. Hai nguồn ghi vào một bảng xếp hạng là cách chắc nhất để có hai con số khác
       nhau cho cùng một người.
-      Gate: chỉ tài khoản đã xác thực; `player_bans` (C3) và risk score chặn trước khi lên bảng.
+      Gate: chỉ tài khoản đã xác thực; `player_bans` (C3) chặn trước khi lên bảng.
+      RISK SCORE: doc 35 §A5 đòi gate theo `player_risk_score`, nhưng bảng đó CHƯA TỪNG được dựng
+      (§A3 lớp 4 không nằm trong pha nào của §7). Chốt với chủ dự án 2026-09-10: lát này gate bằng
+      thứ đã có — `players.status = 'active'`, lọc lúc ĐỌC nên lệnh cấm có hiệu lực ngay — và
+      A3 lớp 4 tách thành lát riêng `a3.4-diem-rui-ro`. Không nhét hai việc vào một PR.
+    status: done
+
+  - id: a3.4-diem-rui-ro
+    doc: "35#A3"
+    title: "Điểm rủi ro + soft-ban — khoá THƯỞNG thay vì khoá tài khoản"
+    files:
+      - supabase/migrations/
+      - packages/server/src/admin/
+      - packages/server/test/
+    depends_on: [a3.3-replay-verify, c3-an-toan-cong-dong, a5-leaderboard]
+    dod:
+      - "pnpm --filter @hexagon/server test"
+      - "người vượt ngưỡng rủi ro KHÔNG lên bảng xếp hạng và KHÔNG nhận được thưởng"
+    risk: high
+    requires_human: true
+    human_note: |
+      Ngưỡng điểm rủi ro là một con số ĐỤNG NGƯỜI THẬT: đặt thấp thì người chơi tử tế bị chặn
+      thưởng mà không hiểu vì sao. Viết code và test thì không cần hỏi; CHỐT NGƯỠNG thì cần.
+    note: |
+      Doc 35 §A3 lớp 4. Bị bỏ sót: §7 không xếp lớp 4 vào Pha 6, 7 hay 8, nhưng §A5 lại viện tới
+      `player_risk_score` như thể nó đã có. Phát hiện khi làm a5-leaderboard (2026-09-10).
+      Tín hiệu đã có sẵn, chưa ai cộng lại: `campaign_plays.verify_status = 'mismatch'` (a3.3),
+      tần suất hoàn thành bất thường (a3.2), và `player_bans` (c3).
+      KHOÁ THƯỞNG, KHÔNG KHOÁ TÀI KHOẢN — doc 35 nói rõ. Một người bị nghi ngờ nhầm mà vẫn chơi
+      được thì ta còn đường sửa; khoá tài khoản nhầm thì họ đã đi rồi.
     status: todo
 
   - id: b1-rewarded-ads-that
