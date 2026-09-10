@@ -92,6 +92,42 @@ export class AdminController {
     return { rows: (data as unknown[]) ?? [] };
   }
 
+  /**
+   * doc 35 §B9 — coin PHÁT HÀNH theo nguồn vs coin TIÊU theo sink, theo ngày UTC.
+   *
+   * Dùng scope `analytics:read` chứ không đẻ thêm `economy:read`: đây là một báo cáo tổng hợp
+   * chỉ đọc, không có PII, và thêm một scope cho một endpoint là nở phạm vi mà không mua thêm
+   * được sự an toàn nào.
+   *
+   * `unclassifiedEntries` được nâng lên tận đầu ra chứ không nằm im trong một cột: nó là câu
+   * "có một nguồn tiền mà bảng này không biết". Một bảng kinh tế bỏ sót nguồn phát vẫn hiện tỉ
+   * lệ lạm phát trông LÀNH MẠNH, và đó là kiểu sai nguy hiểm nhất — nó không giống lỗi.
+   */
+  @Get("economy/daily")
+  @Ops({ scope: "analytics:read", isWrite: false })
+  async economyDaily(@Query("days") days?: string, @Query("currency") currency?: string) {
+    const soNgay = Math.min(Math.max(Number(days) || 30, 1), 365);
+    const tu = new Date(Date.now() - soNgay * 86_400_000).toISOString().slice(0, 10);
+
+    let tong = this.db.from("economy_daily_summary")
+      .select("day,currency_code,issued,spent,net,inflation_ratio,unclassified_entries,unclassified_kinds")
+      .gte("day", tu).order("day", { ascending: false });
+    let chiTiet = this.db.from("economy_daily")
+      .select("day,currency_code,reference_type,source_group,reason,flow,unclassified,entries,players,net,volume")
+      .gte("day", tu).order("day", { ascending: false });
+    if (currency) { tong = tong.eq("currency_code", currency); chiTiet = chiTiet.eq("currency_code", currency); }
+
+    const [{ data: summary }, { data: detail }] = await Promise.all([tong, chiTiet]);
+    const rows = (summary as { unclassified_entries: number }[]) ?? [];
+    return {
+      days: soNgay,
+      summary: rows,
+      detail: (detail as unknown[]) ?? [],
+      // Tổng gộp để người đọc (và agent) không phải tự cộng mới biết có vấn đề.
+      unclassifiedEntries: rows.reduce((a, r) => a + Number(r.unclassified_entries || 0), 0),
+    };
+  }
+
   @Get("config/:key/history")
   @Ops({ scope: "config:write", isWrite: false })
   async configHistory(@Param("key") key: string) {

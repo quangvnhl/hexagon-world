@@ -1299,7 +1299,13 @@ slices:
       phân loại nguồn/sink phải dựa trên DẤU của `delta` là chính, `reason` chỉ để chia nhóm.
       Một `reason` lạ chưa từng thấy phải rơi vào nhóm "khác" và HIỆN RA, không được im lặng
       biến mất khỏi tổng.
-    status: todo
+
+      LÀM XONG — điều chỉnh so với ghi chú ban đầu: phân loại bám `reference_type` chứ không
+      bám `reason`. Đo trên DB: reference_type toàn snake_case (campaign_play, admin_grant,
+      energy_purchase, purchase_order) và nằm trong ràng buộc duy nhất của bảng, tức là cột CÓ
+      CẤU TRÚC; `reason` là chữ tự do và chính là chỗ có `dev top-up`.
+      Chiều tiền vẫn lấy từ dấu của `delta` đúng như ghi chú gốc.
+    status: done
 
   - id: b2-diem-danh-streak
     doc: "35#B2"
