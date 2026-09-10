@@ -85,6 +85,10 @@ export async function equipItem(item: CatalogItem): Promise<void> {
 
 // ---- Năng lượng + Campaign (P2) ---------------------------------------------------------------
 
+// doc 35 §B3 — nhiệm vụ ngày/tuần.
+export interface QuestRow { id: string; period: "daily" | "weekly"; goal_kind: string; goal_value: number; coin: number; energy: number; label: string; period_key: string; progress: number; claimed: boolean; completed: boolean; }
+export interface QuestClaimResult { ok: boolean; reason?: string; quest_id?: string; coin?: number; energy?: number; progress?: number; goal_value?: number; }
+
 // doc 35 §B4 — thưởng theo mốc cấp độ.
 export interface LevelRewardMilestone { level: number; coin: number; energy: number; }
 export interface LevelRewardStatus { level: number; total_xp: number; pending: LevelRewardMilestone[]; next: (LevelRewardMilestone & { xp_required: number }) | null; }
@@ -141,6 +145,21 @@ export async function getDailyReward(): Promise<DailyRewardStatus> {
  */
 export async function claimDailyReward(): Promise<DailyClaimResult> {
   return json<DailyClaimResult>("/v1/daily/claim", { method: "POST" });
+}
+
+/** doc 35 §B3 — nhiệm vụ đang bật kèm tiến độ chu kỳ hiện tại. KHÔNG cấp gì. */
+export async function getQuests(): Promise<QuestRow[]> {
+  return (await json<{ quests: QuestRow[] }>("/v1/quests", { cache: "no-store" })).quests;
+}
+
+/**
+ * Nhận thưởng một nhiệm vụ.
+ *
+ * "Chưa đủ tiến độ" và "đã nhận rồi" trả về `ok: false` kèm `reason` chứ KHÔNG phải lỗi HTTP —
+ * đó là kết quả nghiệp vụ, và client phải hiển thị nó như một lời giải thích, không phải một sự cố.
+ */
+export async function claimQuest(id: string): Promise<QuestClaimResult> {
+  return json<QuestClaimResult>(`/v1/quests/${encodeURIComponent(id)}/claim`, { method: "POST" });
 }
 
 /** doc 35 §B4 — mốc cấp đã đạt mà chưa nhận. KHÔNG cấp gì. */
