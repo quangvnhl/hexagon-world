@@ -1261,4 +1261,286 @@ slices:
       đối chiếu trực tiếp lockfile với Dockerfile.
     status: done
     commit: "7c38b4c"
+  # ══════════════════════════════════════════════════════════════════════════════════════════
+  # PHA 7 — "Giữ chân & doanh thu" (doc 35 §7). Thứ tự trong khối này KHÔNG tuỳ ý:
+  # doc 35 Rủi ro #4 nói rõ B9 phải dựng TRƯỚC B1–B4, nếu không mọi thay đổi thưởng đều là
+  # đoán và coin sẽ lạm phát mà không ai thấy. `depends_on` bên dưới ép đúng điều đó.
+  #
+  # Chủ dự án chốt 2026-09-10: xây HOÀN CHỈNH TRÊN LOCAL trước, việc cần tài khoản
+  # production để sau. Lát nào có phần production thì ghi rõ ở `human_note` — phần đó KHÔNG
+  # chặn lát được đánh dấu done, vì thứ chặn là tài khoản chứ không phải code.
+  # ══════════════════════════════════════════════════════════════════════════════════════════
+
+  - id: b9-bang-kinh-te
+    doc: "35#B9"
+    title: "Bảng theo dõi kinh tế — coin phát hành theo nguồn vs tiêu theo sink"
+    files:
+      - supabase/migrations/
+      - packages/server/src/admin/admin.controller.ts
+      - packages/server/src/admin/economy.service.ts
+      - packages/server/test/
+      - packages/admin/src/
+    depends_on: []
+    dod:
+      - "pnpm --filter @hexagon/server test"
+      - "GET internal/v1/admin/economy/daily trả phát hành/tiêu/lạm phát theo ngày"
+    risk: low
+    requires_human: false
+    note: |
+      DỰNG TRƯỚC B1–B4 (doc 35 Rủi ro #4). Không có bảng này thì thêm bốn nguồn thưởng cùng
+      lúc là thả coin vào một cái thùng không đáy mà không ai đo được.
+
+      ĐO ĐƯỢC trên DB dev (2026-09-10): `wallet_ledger` đang có 4 reason —
+      campaign_reward (+2090), `dev top-up` (+10000), energy_purchase (-700),
+      telegram_stars_purchase (+5050).
+
+      CHÚ Ý một lệch chuẩn có thật: `dev top-up` có DẤU CÁCH và không theo snake_case như ba
+      cái kia. View phải chịu được điều đó thay vì giả định tên đẹp — và đây chính là lý do
+      phân loại nguồn/sink phải dựa trên DẤU của `delta` là chính, `reason` chỉ để chia nhóm.
+      Một `reason` lạ chưa từng thấy phải rơi vào nhóm "khác" và HIỆN RA, không được im lặng
+      biến mất khỏi tổng.
+    status: todo
+
+  - id: b2-diem-danh-streak
+    doc: "35#B2"
+    title: "Điểm danh hằng ngày + chuỗi ngày, reset UTC"
+    files:
+      - supabase/migrations/
+      - packages/shared/src/daily-reward.ts
+      - packages/shared/src/__tests__/
+      - packages/server/src/daily/
+      - packages/server/test/
+      - packages/client/src/
+    depends_on: [b9-bang-kinh-te]
+    dod:
+      - "pnpm --filter @hexagon/server test"
+      - "claim hai lần trong cùng ngày UTC chỉ cộng một lần"
+    risk: medium
+    requires_human: false
+    note: |
+      `player_daily_claims(player_id, claim_date)` UNIQUE ⇒ idempotent tự nhiên, không cần
+      thêm khoá riêng. Mốc reset UTC (chốt #3) đặt ở `shared` để client đếm ngược đúng cùng
+      một mốc với server — lệch múi giờ giữa hai bên là lỗi người chơi thấy ngay.
+    status: todo
+
+  - id: b4-thuong-theo-cap
+    doc: "35#B4"
+    title: "Thưởng khi lên cấp XP — biến progression từ số trang trí thành động lực"
+    files:
+      - supabase/migrations/
+      - packages/server/src/progression/
+      - packages/server/test/
+      - packages/client/src/
+    depends_on: [b9-bang-kinh-te]
+    dod:
+      - "pnpm --filter @hexagon/server test"
+      - "claim mốc chưa đạt bị từ chối; claim lại mốc đã nhận không cộng thêm"
+    risk: low
+    requires_human: false
+    note: |
+      ĐO ĐƯỢC: `progression_levels` đã có 100 cấp (1..100) với `level, xp_required, metadata`
+      — KHÔNG có cột `rewards`. Phải thêm bằng migration mới.
+      Có sẵn cột `metadata jsonb` nhưng doc 35 §B4 chốt dùng cột `rewards jsonb` riêng; giữ
+      đúng vậy để phân biệt "dữ liệu hiển thị" với "thứ cấp tiền".
+    status: todo
+
+  - id: b3-nhiem-vu
+    doc: "35#B3"
+    title: "Nhiệm vụ ngày/tuần — tiến độ chỉ cập nhật trong RPC server"
+    files:
+      - supabase/migrations/
+      - packages/shared/src/quest.ts
+      - packages/shared/src/__tests__/
+      - packages/server/src/quests/
+      - packages/server/test/
+      - packages/client/src/
+    depends_on: [b9-bang-kinh-te, b2-diem-danh-streak]
+    dod:
+      - "pnpm --filter @hexagon/server test"
+      - "client báo tiến độ giả KHÔNG làm đổi player_quest_progress"
+    risk: medium
+    requires_human: false
+    note: |
+      Tiến độ cập nhật TRONG `record_match_result` / `complete_campaign_level` /
+      `grant_ad_reward` — không có đường nào cho client tự khai. Đây là cùng một bài học với
+      lỗ hổng campaign ở A3: thứ gì cấp tiền thì client không được là nguồn tin.
+      Khởi điểm 3 nhiệm vụ/ngày + 2 nhiệm vụ/tuần (doc 35 §10 cho phép tự chọn).
+    status: todo
+
+  - id: a5-leaderboard
+    doc: "35#A5"
+    title: "Bảng xếp hạng — một nguồn ghi, guest không lên bảng"
+    files:
+      - supabase/migrations/
+      - packages/server/src/leaderboard/
+      - packages/server/test/
+      - packages/client/src/
+    depends_on: [b9-bang-kinh-te]
+    dod:
+      - "pnpm --filter @hexagon/server test"
+      - "GET /v1/leaderboard trả top N kèm hạng của chính mình"
+    risk: medium
+    requires_human: false
+    note: |
+      Cập nhật TRONG RPC `record_match_result` / `complete_campaign_level` — một nguồn ghi
+      duy nhất. Hai nguồn ghi vào một bảng xếp hạng là cách chắc nhất để có hai con số khác
+      nhau cho cùng một người.
+      Gate: chỉ tài khoản đã xác thực; `player_bans` (C3) và risk score chặn trước khi lên bảng.
+    status: todo
+
+  - id: b1-rewarded-ads-that
+    doc: "35#B1"
+    title: "Rewarded ads cấp thưởng thật — webhook S2S idempotent theo impression_id"
+    files:
+      - supabase/migrations/
+      - packages/server/src/ads/
+      - packages/server/test/
+      - packages/client/src/
+    depends_on: [b9-bang-kinh-te]
+    dod:
+      - "pnpm --filter @hexagon/server test"
+      - "callback giả (sai chữ ký) KHÔNG cấp coin; gửi lặp cùng impression_id không cộng hai lần"
+    risk: high
+    requires_human: true
+    human_note: |
+      PHẦN PRODUCTION (làm sau): cấu hình Reward URL trong bảng điều khiển AdsGram trỏ tới
+      `POST /v1/webhooks/adsgram` của domain thật, và lấy secret ký.
+      Phần LOCAL làm được trọn vẹn: webhook, verify chữ ký, RPC idempotent, trần 5 lượt/ngày
+      + giãn 3 phút, và test bắn callback giả lẫn callback lặp.
+    note: |
+      Rủi ro cao vì đây là một đường CẤP TIỀN mở ra Internet, do bên thứ ba gọi. Idempotency
+      theo `impression_id` và verify chữ ký là hai chốt chặn, không phải một.
+      Trần lấy từ remote config (A2) chứ không gõ cứng — chốt #5: 5 lượt/ngày, giãn ≥ 3 phút,
+      ngày tính theo UTC (chốt #3).
+    status: todo
+
+  - id: b7-gioi-thieu-ban
+    doc: "35#B7"
+    title: "Giới thiệu bạn qua Telegram start_param — thưởng khi invitee đạt mốc thật"
+    files:
+      - supabase/migrations/
+      - packages/server/src/referrals/
+      - packages/server/test/
+      - packages/client/src/
+    depends_on: [b9-bang-kinh-te, b4-thuong-theo-cap]
+    dod:
+      - "pnpm --filter @hexagon/server test"
+      - "tự giới thiệu chính mình bị từ chối; thưởng chỉ trả khi invitee đạt mốc"
+    risk: medium
+    requires_human: false
+    note: |
+      Thưởng khi invitee đạt MỐC THẬT (level 3 hoặc hoàn thành cấp 3), không phải khi đăng ký
+      — nếu không thì đây là một cỗ máy farm tài khoản ảo trả bằng tiền của chính dự án.
+      Diễn tập được trọn vẹn trên local bằng `pnpm dev:tunnel` (Mini App thật, start_param thật).
+    status: todo
+
+  - id: d4-nhip-noi-dung
+    doc: "35#D4"
+    title: "Lịch phát hành cấp — published_at + xem thử trước khi công bố"
+    files:
+      - supabase/migrations/
+      - packages/server/src/campaign/
+      - packages/server/test/
+      - packages/admin/src/
+    depends_on: []
+    dod:
+      - "pnpm --filter @hexagon/server test"
+      - "cấp có published_at ở tương lai KHÔNG hiện với người chơi thường"
+    risk: low
+    requires_human: false
+    note: |
+      Level editor đã sẵn; thứ thiếu là LỊCH. Nhịp mục tiêu 2–4 cấp/tuần (doc 35 §D4).
+    status: todo
+
+  - id: c2.3-ops-api-doc
+    doc: "35#C2"
+    title: "Ops API — nhóm endpoint ĐỌC (người chơi, kinh tế, hệ thống)"
+    files:
+      - packages/server/src/admin/
+      - packages/server/test/
+    depends_on: [b9-bang-kinh-te]
+    dod:
+      - "pnpm --filter @hexagon/server test"
+      - "mỗi endpoint đọc có scope riêng và để lại vết trong ops_audit_log"
+    risk: low
+    requires_human: false
+    note: |
+      Đọc trước, ghi sau — doc 35 §C2 rủi ro: agent chạy read-only trước. Nền (C2.1/C2.2) đã
+      xong ở Pha 6: `ops_api_keys` có scope, audit, idempotency, `dry_run`.
+    status: todo
+
+  - id: c2.4-ops-api-ghi
+    doc: "35#C2"
+    title: "Ops API — nhóm endpoint GHI + rào rủi ro cao (X-Ops-Confirm)"
+    files:
+      - packages/server/src/admin/
+      - packages/server/test/
+    depends_on: [c2.3-ops-api-doc]
+    dod:
+      - "pnpm --filter @hexagon/server test"
+      - "thao tác rủi ro cao KHÔNG có X-Ops-Confirm bị chặn; vượt hạn mức ngày bị chặn"
+    risk: high
+    requires_human: true
+    human_note: |
+      Doc 35 §10 liệt kê đây là hạng mục PHẢI xin xác nhận trước khi BẬT cho agent: quyền ghi
+      của Ops API, và ngưỡng `daily_limits` từng key. Viết code và test thì không cần hỏi;
+      CẤP KEY GHI cho một agent thì cần.
+    status: todo
+
+  - id: c2.5-ops-playbooks
+    doc: "35#C2"
+    title: "ops_playbooks + 5 playbook đầu, gắn với alert ở C1"
+    files:
+      - supabase/migrations/
+      - packages/server/src/admin/
+      - packages/server/test/
+      - deploy/alerts.yml
+    depends_on: [c2.4-ops-api-ghi]
+    dod:
+      - "pnpm --filter @hexagon/server test"
+      - "mỗi alert trong deploy/alerts.yml có một playbook tương ứng"
+    risk: medium
+    requires_human: false
+    note: |
+      `deploy/alerts.yml` (C1) đã có 6 luật, mỗi luật kèm runbook bằng CHỮ. Playbook là bản
+      MÁY ĐỌC ĐƯỢC của cùng thứ đó: các bước gọi API, ngưỡng dừng, và khi nào phải gọi người.
+    status: todo
+
+  - id: c2.6-admin-ui-mong
+    doc: "35#C2"
+    title: "UI admin mỏng dựng trên chính Ops API"
+    files:
+      - packages/admin/src/
+    depends_on: [c2.4-ops-api-ghi]
+    dod:
+      - "pnpm --filter @hexagon/admin build"
+      - "không có thao tác nào UI làm được mà API không làm được"
+    risk: low
+    requires_human: false
+    note: |
+      Nguyên tắc 1 của §C2: UI và agent là HAI CLIENT NGANG HÀNG của cùng bộ API. UI không
+      được có đường tắt riêng — nếu có, thì agent vĩnh viễn không vận hành được việc đó.
+    status: todo
+
+  - id: d3-thong-bao-quay-lai
+    doc: "35#D3"
+    title: "Thông báo quay lại qua Telegram bot — năng lượng đầy, streak sắp mất"
+    files:
+      - supabase/migrations/
+      - packages/server/src/notifications/
+      - packages/server/test/
+      - packages/client/src/
+    depends_on: [b2-diem-danh-streak]
+    dod:
+      - "pnpm --filter @hexagon/server test"
+      - "người chưa opt-in KHÔNG nhận thông báo; không gửi quá tần suất trần"
+    risk: medium
+    requires_human: true
+    human_note: |
+      PHẦN PRODUCTION (làm sau): bot Telegram thật để gửi tin. Phần LOCAL làm được: opt-in,
+      hàng đợi, trần tần suất, và test rằng người chưa đồng ý thì không bao giờ bị gửi.
+    note: |
+      Gửi quá tay là bị người dùng CHẶN BOT — mất luôn kênh, không lấy lại được. Trần tần
+      suất phải nằm trong remote config (A2) để hạ được mà không cần deploy.
+    status: todo
 
