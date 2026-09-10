@@ -54,9 +54,16 @@ function protocolVersion() {
 
 /** Mọi tiến trình con đã sinh, để dọn sạch khi thoát. */
 const children = [];
+/** Bật khi ta CHỦ ĐỘNG dừng, để phân biệt "Ctrl+C" với "dịch vụ tự chết". */
+let dangDong = false;
 
 function spawnChild(label, command, args, env) {
   // `shell: true` vì trên Windows `pnpm`/`cloudflared` là shim .cmd, spawn thẳng sẽ EINVAL.
+  //
+  //
+  // ĐÃ THỬ `detached: true` để tách nhóm tiến trình (cho Ctrl+C khỏi giết con) và ĐÃ BỎ: trên
+  // Windows nó cắt luôn đường ống stdout, nên cloudflared in URL mà cha không đọc được, và
+  // script chết vì hết giờ chờ. Nó hỏng nặng hơn thứ nó định sửa.
   const child = spawn(command, args, { shell: true, env: { ...process.env, ...env } });
   children.push({ label, child });
   return child;
@@ -133,7 +140,49 @@ function noiDuongOng(label, child) {
   child.stderr.on("data", (buf) => inRaVoiNhan(label, buf));
 }
 
+/**
+ * Xác nhận server đang phục vụ trên cổng CHÍNH LÀ server ta vừa khởi động, trước khi in banner.
+ *
+ * ┌─ VÌ SAO PHẢI HỎI, THAY VÌ NGHE TIẾN TRÌNH CON CHẾT ───────────────────────────────────────┐
+ * │ Gặp thật 2026-09-10: chạy `pnpm dev:tunnel` lần hai trong khi lần một còn giữ cổng 8910.   │
+ * │ Server con chết ngay với EADDRINUSE, nhưng script vẫn in banner — và hai tunnel MỚI trỏ    │
+ * │ vào cổng do server CŨ phục vụ. Hậu quả không hề giống một lỗi:                              │
+ * │   • `curl <tunnel-mới>/health/ready` trả 200, vì server CŨ trả lời;                         │
+ * │   • nhưng `/v1/regions` công bố URL của tunnel CŨ;                                          │
+ * │   • client nối vào một tunnel khác cái đang được quảng cáo, và khi tunnel cũ tắt thì game   │
+ * │     hỏng mà không có gì chỉ về nguyên nhân.                                                 │
+ * │                                                                                            │
+ * │ Nghe sự kiện `exit` của tiến trình con KHÔNG giải được: Ctrl+C gửi tín hiệu cho cả nhóm nên │
+ * │ con chết trước khi cha kịp biết mình đang dừng ⇒ báo động giả mỗi lần dừng stack; và đo     │
+ * │ được rằng `next dev` bắt SIGTERM rồi thoát MÃ 0, tức không có tín hiệu nào để nhận ra.      │
+ * │ Đoán theo mã thoát là bịt được hôm nay và vỡ vào hôm khác.                                  │
+ * │                                                                                            │
+ * │ Hỏi `/v1/regions` thì không có cuộc đua nào: `wsUrl` server công bố PHẢI là tunnel của lần  │
+ * │ chạy NÀY. Server của người khác trả lời thì `wsUrl` khác ⇒ lộ ra ngay, đúng bản chất lỗi.   │
+ * └──────────────────────────────────────────────────────────────────────────────────────────┘
+ */
+async function xacNhanDungServerCuaMinh(wsServer, hanGiayCho = 90) {
+  const dich = `http://127.0.0.1:${SERVER_PORT}/v1/regions`;
+  let cuoi = "chưa trả lời";
+  for (let i = 0; i < hanGiayCho; i++) {
+    try {
+      const r = await fetch(dich, { signal: AbortSignal.timeout(3000) });
+      const body = await r.json();
+      const cong = body?.regions?.[0]?.wsUrl;
+      if (cong === wsServer) return;
+      cuoi = `server trên cổng ${SERVER_PORT} công bố wsUrl=${cong}`;
+    } catch (e) { cuoi = e.message; }
+    await new Promise((r) => setTimeout(r, 1000));
+  }
+  throw new Error(
+    `server không phải của lần chạy này (${cuoi}).\n` +
+    `  Gần như chắc chắn một lần chạy trước còn giữ cổng ${SERVER_PORT}. Dọn bằng:\n` +
+    `    netstat -ano | grep ":${SERVER_PORT}.*LISTENING"    rồi taskkill /F /T /PID <pid>`,
+  );
+}
+
 function donDep() {
+  dangDong = true;
   for (const { child } of children) {
     if (child.pid === undefined || child.exitCode !== null) continue;
     // Trên Windows phải giết CẢ CÂY: `pnpm` sinh `node`, giết mỗi pnpm là bỏ lại server chạy mồ côi
@@ -184,6 +233,11 @@ async function main() {
   noiDuongOng("server", spawnChild("server", "pnpm", ["--filter", "@hexagon/server", "start:dev"], envServer));
   noiDuongOng("client", spawnChild("client", "pnpm", ["--filter", "@hexagon/client", "dev"], envClient));
 
+  // In banner SAU khi xác nhận, không phải trước: một banner đúng dán lên một hệ sai còn tệ hơn
+  // không có banner, vì nó làm người đọc tin rằng thứ họ vừa dán vào BotFather là thứ đang chạy.
+  console.log("\nChờ server trả lời và xác nhận đúng là của lần chạy này...");
+  await xacNhanDungServerCuaMinh(wsServer);
+
   console.log([
     "",
     "═".repeat(78),
@@ -214,7 +268,7 @@ async function main() {
 }
 
 for (const tin of ["SIGINT", "SIGTERM"]) {
-  process.on(tin, () => { console.log("\nĐang dọn tiến trình con..."); donDep(); process.exit(0); });
+  process.on(tin, () => { dangDong = true; console.log("\nĐang dọn tiến trình con..."); donDep(); process.exit(0); });
 }
 process.on("exit", donDep);
 
