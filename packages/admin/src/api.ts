@@ -15,6 +15,8 @@ export interface AdminLevelRow {
   unlock_requires: string | null;
   rewards: { coin: number; xp: number; energy: number };
   published: boolean;
+  /** doc 35 §D4 — `null` = đã ra; mốc ở tương lai = đã duyệt nhưng chưa tới giờ. */
+  published_at: string | null;
   version: number;
   updated_at: string;
 }
@@ -47,8 +49,14 @@ export async function adminUpsertLevel(key: string, draft: CampaignLevelDraft): 
   return (await json<{ id: string }>("/internal/v1/admin/levels", { method: "POST", headers: adminHeaders(key), body: JSON.stringify(draft) })).id;
 }
 
-export async function adminPublishLevel(key: string, id: string, published: boolean): Promise<void> {
-  await json(`/internal/v1/admin/levels/${encodeURIComponent(id)}/publish`, { method: "PUT", headers: adminHeaders(key), body: JSON.stringify({ published }) });
+/**
+ * doc 35 §D4 — publish kèm LỊCH tuỳ chọn.
+ *
+ * `publishedAt` bỏ trống (null) giữ nguyên hành vi cũ: ra ngay. Mốc ở tương lai = đã duyệt nhưng
+ * người chơi chưa thấy.
+ */
+export async function adminPublishLevel(key: string, id: string, published: boolean, publishedAt: string | null = null): Promise<void> {
+  await json(`/internal/v1/admin/levels/${encodeURIComponent(id)}/publish`, { method: "PUT", headers: adminHeaders(key), body: JSON.stringify({ published, publishedAt }) });
 }
 
 // ---- Remote config (doc 35 §A2 — lát a2.3) ------------------------------------------------------

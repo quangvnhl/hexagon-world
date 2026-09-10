@@ -291,9 +291,16 @@ export class CampaignController {
     }
   }
 
+  /**
+   * doc 35 §D4 — đọc từ VIEW `campaign_levels_live`, không từ bảng.
+   *
+   * Luật "cấp nào đang sống" (đã duyệt VÀ đã tới giờ) nằm trong SQL, nên `now()` luôn là đồng hồ
+   * của database. Tính mốc ở đây rồi gửi xuống thì hai node game có đồng hồ lệch nhau sẽ bất đồng
+   * về việc một cấp đã ra hay chưa, và người chơi thấy cấp mới hiện rồi biến mất tuỳ node.
+   */
   private async publishedLevels(): Promise<CampaignLevel[]> {
-    const { data, error } = await this.db.from("campaign_levels")
-      .select("id,sort_order,name,config,powerups,unlock_requires,rewards").eq("published", true).order("sort_order");
+    const { data, error } = await this.db.from("campaign_levels_live")
+      .select("id,sort_order,name,config,powerups,unlock_requires,rewards").order("sort_order");
     if (error) throw new BadRequestException(error.message);
     return ((data ?? []) as LevelRow[]).map(toLevel);
   }

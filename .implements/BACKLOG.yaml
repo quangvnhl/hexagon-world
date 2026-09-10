@@ -1479,6 +1479,9 @@ slices:
     files:
       - supabase/migrations/
       - packages/server/src/campaign/
+      # NỚI PHẠM VI: lịch được ĐẶT qua Ops API (`PUT levels/:id/publish`), nằm ở admin.controller.
+      # `files:` gốc chỉ có đường ĐỌC (campaign) và giao diện (admin UI) — thiếu đúng chỗ ghi.
+      - packages/server/src/admin/
       - packages/server/test/
       - packages/admin/src/
     depends_on: []
@@ -1489,7 +1492,10 @@ slices:
     requires_human: false
     note: |
       Level editor đã sẵn; thứ thiếu là LỊCH. Nhịp mục tiêu 2–4 cấp/tuần (doc 35 §D4).
-    status: todo
+      "Xem thử trước khi công bố" = dựng trên STAGING rồi publish ngay ở đó; không làm thêm một
+      đường preview riêng trên production, vì đường đó sẽ là một cách thứ hai để vào cấp chưa ra
+      mắt — tức là đúng thứ lát này sinh ra để chặn.
+    status: done
 
   - id: c2.3-ops-api-doc
     doc: "35#C2"
