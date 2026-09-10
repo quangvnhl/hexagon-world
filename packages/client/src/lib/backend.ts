@@ -85,6 +85,11 @@ export async function equipItem(item: CatalogItem): Promise<void> {
 
 // ---- Năng lượng + Campaign (P2) ---------------------------------------------------------------
 
+// doc 35 §B2 — điểm danh. Hình dạng khớp jsonb của RPC, để một lời gọi vẽ được cả màn hình.
+export interface DailyRewardDay { cycle_day: number; coin: number; energy: number; label: string; }
+export interface DailyRewardStatus { claimed_today: boolean; streak: number; next_cycle_day: number; next_reset_at: string; config: DailyRewardDay[]; }
+export interface DailyClaimResult { already_claimed: boolean; streak: number; cycle_day: number; coin: number; energy: number; next_reset_at: string; }
+
 export interface EnergyStatus { current: number; max: number; regen_interval_seconds: number; next_at: string | null; refill_coin_cost: number; refill_energy_amount: number; }
 export interface LevelProgress { level_id: string; status: string; stars: number; best_score: number; completed_at: string; }
 export interface StartPlayResult {
@@ -115,6 +120,22 @@ export async function purchaseEnergy(): Promise<EnergyStatus> {
     method: "POST",
     body: JSON.stringify({ idempotencyKey: crypto.randomUUID() }),
   });
+}
+
+/** doc 35 §B2 — trạng thái điểm danh + cấu hình 7 ngày. KHÔNG cấp gì. */
+export async function getDailyReward(): Promise<DailyRewardStatus> {
+  return json<DailyRewardStatus>("/v1/daily", { cache: "no-store" });
+}
+
+/**
+ * Nhận thưởng điểm danh hôm nay.
+ *
+ * Không gửi khoá idempotency: khoá chính `(player_id, claim_date)` của `player_daily_claims`
+ * ĐÃ là khoá đó, và nó là khoá tự nhiên nên client không thể gửi sai. Gọi lại trong cùng ngày
+ * UTC trả `already_claimed: true` kèm đúng con số của lần nhận thật.
+ */
+export async function claimDailyReward(): Promise<DailyClaimResult> {
+  return json<DailyClaimResult>("/v1/daily/claim", { method: "POST" });
 }
 
 /** Danh sách cấp Campaign đã publish (nguồn Supabase — doc 29 L2). */

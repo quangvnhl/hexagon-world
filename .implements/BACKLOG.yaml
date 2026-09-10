@@ -1327,7 +1327,7 @@ slices:
       `player_daily_claims(player_id, claim_date)` UNIQUE ⇒ idempotent tự nhiên, không cần
       thêm khoá riêng. Mốc reset UTC (chốt #3) đặt ở `shared` để client đếm ngược đúng cùng
       một mốc với server — lệch múi giờ giữa hai bên là lỗi người chơi thấy ngay.
-    status: todo
+    status: done
 
   - id: b4-thuong-theo-cap
     doc: "35#B4"
