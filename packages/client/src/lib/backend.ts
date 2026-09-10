@@ -1,5 +1,6 @@
 import type { PlayerAppearance, CampaignLevel, CampaignOutcomeFacts } from "@hexagon/shared";
 import type { InputTrace } from "@hexagon/shared";
+import type { LeaderboardScope } from "@hexagon/shared";
 import { getTelegramWebApp } from "./telegram";
 
 export const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8910";
@@ -86,6 +87,8 @@ export async function equipItem(item: CatalogItem): Promise<void> {
 // ---- Năng lượng + Campaign (P2) ---------------------------------------------------------------
 
 // doc 35 §B3 — nhiệm vụ ngày/tuần.
+export interface LeaderboardRow { rank: number; displayName: string; score: number; isMe: boolean; }
+export interface LeaderboardResponse { scope: LeaderboardScope; periodKey: string; top: LeaderboardRow[]; me: { rank: number; score: number } | null; }
 export interface QuestRow { id: string; period: "daily" | "weekly"; goal_kind: string; goal_value: number; coin: number; energy: number; label: string; period_key: string; progress: number; claimed: boolean; completed: boolean; }
 export interface QuestClaimResult { ok: boolean; reason?: string; quest_id?: string; coin?: number; energy?: number; progress?: number; goal_value?: number; }
 
@@ -160,6 +163,19 @@ export async function getQuests(): Promise<QuestRow[]> {
  */
 export async function claimQuest(id: string): Promise<QuestClaimResult> {
   return json<QuestClaimResult>(`/v1/quests/${encodeURIComponent(id)}/claim`, { method: "POST" });
+}
+
+/**
+ * doc 35 §A5 — bảng xếp hạng. CHỈ ĐỌC, và xem được cả khi chưa đăng nhập.
+ *
+ * `me` là `null` khi chưa đăng nhập hoặc chưa có điểm ở kỳ này — hai chuyện khác nhau với người
+ * chơi nhưng giống nhau với giao diện, nên component tự phân biệt bằng trạng thái đăng nhập.
+ */
+export async function getLeaderboard(scope: LeaderboardScope, limit = 10): Promise<LeaderboardResponse> {
+  return json<LeaderboardResponse>(
+    `/v1/leaderboard?scope=${encodeURIComponent(scope)}&limit=${limit}`,
+    { cache: "no-store" },
+  );
 }
 
 /** doc 35 §B4 — mốc cấp đã đạt mà chưa nhận. KHÔNG cấp gì. */

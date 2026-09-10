@@ -9,6 +9,7 @@ export * from "./campaign";
 export * from "./energy";
 export * from "./daily-reward";
 export * from "./quest";
+export * from "./leaderboard";
 export * from "./analytics";
 export * from "./remote-config";
 export * from "./arena";
