@@ -27,6 +27,9 @@ packages/*/dist/
 # đầu bằng ".env", nên KHÔNG bao che được `deploy/staging.env` — thiếu dòng này là secret có
 # thể bị commit khi chạy `git add .`.
 deploy/*.env
+
+# Rac cua tien trinh nen chay tay luc go loi (vd ).
+*.pid
 deploy/**/*.env
 # ...và ở BẤT KỲ đâu khác. Ngày 2026-09-09 hai file `control.env`/`game.env` sinh ra để kiểm
 # `release-gate.mjs` đã lọt vào một commit ở GỐC repo: `.env*` chỉ khớp tên BẮT ĐẦU bằng ".env",
